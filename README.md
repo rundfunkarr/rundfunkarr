@@ -50,6 +50,18 @@ services:
 
 Nach dem Start ist die Web-Oberfläche unter `http://localhost:6767` erreichbar. Beim ersten Start führt der **Setup-Wizard** durch die Konfiguration (API Keys, Pfade, etc.).
 
+Für reproduzierbare Deployments kann statt `latest` auch eine feste Version verwendet werden:
+
+```yaml
+image: ghcr.io/rundfunkarr/rundfunkarr:1.2.1
+```
+
+Der Git-Tag-Alias mit `v`-Präfix ist ebenfalls verfügbar:
+
+```bash
+docker pull ghcr.io/rundfunkarr/rundfunkarr:v1.2.1
+```
+
 ### Starten
 
 ```bash
