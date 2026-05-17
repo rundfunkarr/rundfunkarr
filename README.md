@@ -50,6 +50,13 @@ services:
 
 Nach dem Start ist die Web-Oberfläche unter `http://localhost:6767` erreichbar. Beim ersten Start führt der **Setup-Wizard** durch die Konfiguration (API Keys, Pfade, etc.).
 
+Für Tests mit dem aktuellen `main`-Stand werden täglich Nightly-Images für `linux/amd64` und `linux/arm64` gebaut. `nightly` zeigt immer auf den neuesten Daily-Build; datierte Tags wie
+`nightly-20260517` bleiben als konkreter Build erhalten:
+
+```yaml
+image: ghcr.io/rundfunkarr/rundfunkarr:nightly
+```
+
 Für reproduzierbare Deployments kann statt `latest` auch eine feste Version verwendet werden:
 
 ```yaml

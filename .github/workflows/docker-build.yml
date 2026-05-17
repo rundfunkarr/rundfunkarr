@@ -5,10 +5,12 @@ on:
     branches:
       - main
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: "17 3 * * *"
 
 env:
   REGISTRY: ghcr.io
@@ -80,7 +82,7 @@ jobs:
 
   build-arm64:
     runs-on: ubuntu-24.04-arm
-    if: ${{ github.ref_type == 'tag' }}
+    if: ${{ github.ref_type == 'tag' || github.event_name == 'schedule' }}
     permissions:
       contents: read
       packages: write
@@ -162,9 +164,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
+            type=ref,event=branch,enable=${{ github.event_name != 'schedule' }}
             type=ref,event=pr
             type=ref,event=tag
+            type=schedule,pattern=nightly
+            type=schedule,pattern=nightly-{{date 'YYYYMMDD'}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
