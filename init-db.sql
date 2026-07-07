@@ -68,11 +68,11 @@ CREATE TABLE IF NOT EXISTS GeneratedRuleset (
 CREATE INDEX IF NOT EXISTS GeneratedRuleset_tvdbId_idx ON GeneratedRuleset(tvdbId);
 
 CREATE TABLE IF NOT EXISTS TopicCategory (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL PRIMARY KEY,
     topic TEXT NOT NULL UNIQUE,
     category TEXT NOT NULL,
     tmdbId INTEGER,
-    cachedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    cachedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS TopicCategory_topic_idx ON TopicCategory(topic);
