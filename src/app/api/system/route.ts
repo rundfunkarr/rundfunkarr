@@ -42,6 +42,15 @@ export async function GET() {
       ffmpegVersion = null;
     }
 
+    // yt-dlp check
+    let ytdlpVersion = null;
+    try {
+      const output = execSync("yt-dlp --version", { encoding: "utf-8", timeout: 5000 });
+      ytdlpVersion = output.trim();
+    } catch {
+      ytdlpVersion = null;
+    }
+
     // Node.js version
     const nodeVersion = process.version;
 
@@ -52,6 +61,7 @@ export async function GET() {
       version: {
         node: nodeVersion,
         ffmpeg: ffmpegVersion,
+        ytdlp: ytdlpVersion,
       },
       database: {
         sizeBytes: dbSizeBytes,

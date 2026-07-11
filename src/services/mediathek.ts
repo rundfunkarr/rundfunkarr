@@ -46,6 +46,11 @@ const MEDIATHEK_API_URL = "https://mediathekviewweb.de/api/query";
 const QUERY_FIELDS = ["topic", "title"];
 const VALID_QUALITIES: QualityPreference[] = ["all", "best", "1080p", "720p", "480p"];
 
+async function isHlsEnabled(): Promise<boolean> {
+  const setting = await getSetting("download.enableHLS");
+  return setting === "true";
+}
+
 async function getQualityPreference(): Promise<QualityPreference> {
   const setting = await getSetting("download.quality");
   if (setting && VALID_QUALITIES.includes(setting as QualityPreference)) {
@@ -99,9 +104,13 @@ async function fetchMediathekViewApiResponse(
   return "";
 }
 
-function shouldSkipItem(item: ApiResultItem, minDuration: number): boolean {
-  // Skip m3u8 streams, items with skip keywords, and items shorter than minDuration
-  if (item.url_video.endsWith(".m3u8")) return true;
+function shouldSkipItem(
+  item: ApiResultItem,
+  minDuration: number,
+  hlsEnabled: boolean = false
+): boolean {
+  // Skip m3u8 streams unless HLS is enabled, items with skip keywords, and items shorter than minDuration
+  if (!hlsEnabled && item.url_video.endsWith(".m3u8")) return true;
   if (SKIP_KEYWORDS.some((kw) => item.title.includes(kw))) return true;
   if (minDuration > 0 && item.duration < minDuration) return true;
   return false;
@@ -511,8 +520,9 @@ async function applyRulesetFilters(
   await ensureRulesetsLoaded();
   const minDuration = await getMinDuration();
   const matchingSettings = await getMatchingSettings();
+  const hlsEnabled = await isHlsEnabled();
   console.log(
-    `[Mediathek] Matching settings: strategy=${matchingSettings.strategy}, threshold=${matchingSettings.threshold}, minDuration=${minDuration}s`
+    `[Mediathek] Matching settings: strategy=${matchingSettings.strategy}, threshold=${matchingSettings.threshold}, minDuration=${minDuration}s, hlsEnabled=${hlsEnabled}`
   );
 
   const matchedEpisodes: MatchedEpisodeInfo[] = [];
@@ -554,7 +564,7 @@ async function applyRulesetFilters(
 
   let checkedCount = 0;
   for (const item of results) {
-    if (shouldSkipItem(item, minDuration)) {
+    if (shouldSkipItem(item, minDuration, hlsEnabled)) {
       const idx = unmatchedItems.indexOf(item);
       if (idx > -1) unmatchedItems.splice(idx, 1);
       continue;
@@ -1098,9 +1108,10 @@ export async function fetchMovieSearchByQuery(
     return response;
   }
 
-  // Filter: skip trailers, m3u8, and apply movie minimum duration (60 min)
+  // Filter: skip trailers, m3u8 (unless HLS enabled), and apply movie minimum duration (60 min)
+  const hlsEnabled = await isHlsEnabled();
   const filteredResults = results.filter((item) => {
-    if (item.url_video.endsWith(".m3u8")) return false;
+    if (!hlsEnabled && item.url_video.endsWith(".m3u8")) return false;
     if (SKIP_KEYWORDS.some((kw) => item.title.includes(kw))) return false;
     if (item.duration < MOVIE_MIN_DURATION) return false;
     return true;

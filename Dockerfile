@@ -39,15 +39,21 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 # Install runtime dependencies for FFmpeg, user management, and DB init
+# Note: yt-dlp standalone binary includes bundled Python, no separate install needed
 RUN apk add --no-cache \
     tar \
     xz \
     wget \
+    curl \
     su-exec \
     shadow \
     sqlite \
     ffmpeg \
     && rm -rf /var/cache/apk/*
+
+# Install yt-dlp binary
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod +x /usr/local/bin/yt-dlp
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -72,9 +78,10 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY init-db.sql /app/init-db.sql
 
 # Create directories for data and downloads
-# Symlink system FFmpeg so the app finds it at expected location
-RUN mkdir -p /app/prisma/data /app/downloads /app/ffmpeg \
+# Symlink system FFmpeg and yt-dlp so the app finds them at expected locations
+RUN mkdir -p /app/prisma/data /app/downloads /app/ffmpeg /app/ytdlp \
     && ln -s /usr/bin/ffmpeg /app/ffmpeg/ffmpeg \
+    && ln -s /usr/local/bin/yt-dlp /app/ytdlp/yt-dlp \
     && chown -R nextjs:nodejs /app
 
 # Copy entrypoint script

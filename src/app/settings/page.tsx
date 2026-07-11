@@ -69,7 +69,7 @@ export default function SettingsPage() {
   const [validatingApi, setValidatingApi] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState<Record<string, boolean | null>>({});
   const [systemInfo, setSystemInfo] = useState<{
-    version: { node: string; ffmpeg: string | null };
+    version: { node: string; ffmpeg: string | null; ytdlp: string | null };
     database: { sizeBytes: number; shows: number; episodes: number; configEntries: number };
     downloads: { completed: number; inQueue: number; failed: number };
     uptime: number;
@@ -291,6 +291,72 @@ export default function SettingsPage() {
                   </Button>
                 </CardContent>
               </Card>
+
+              {/* HLS/Streaming Settings Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Streaming-Einstellungen</CardTitle>
+                  <CardDescription>
+                    HLS-Streaming und Proxy-Konfiguration für SRF/ORF-Inhalte
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm font-medium">HLS-Streams aktivieren</label>
+                      <p className="text-xs text-muted-foreground">
+                        Ermöglicht das Herunterladen von HLS-Streams (z.B. SRF, ORF)
+                      </p>
+                    </div>
+                    <select
+                      value={getFieldValue("download.enableHLS")}
+                      onChange={(e) => setFieldValue("download.enableHLS", e.target.value)}
+                      className="w-24 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="false">Aus</option>
+                      <option value="true">An</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">yt-dlp Pfad (optional)</label>
+                    <Input
+                      value={getFieldValue("download.ytdlpPath")}
+                      onChange={(e) => setFieldValue("download.ytdlpPath", e.target.value)}
+                      placeholder="Leer = automatischer Download"
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Pfad zur yt-dlp-Binary. Leer lassen für automatischen Download.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Proxy-URL (optional)</label>
+                    <Input
+                      value={getFieldValue("download.proxyUrl")}
+                      onChange={(e) => setFieldValue("download.proxyUrl", e.target.value)}
+                      placeholder="socks5://localhost:1080"
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Proxy für geo-blockierte Inhalte (SRF/ORF). Unterstützt HTTP, HTTPS, SOCKS4
+                      und SOCKS5.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() =>
+                      handleSave(["download.enableHLS", "download.ytdlpPath", "download.proxyUrl"])
+                    }
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    Speichern
+                  </Button>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* API Keys Tab */}
@@ -409,8 +475,58 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
+              <Card>
+                <CardHeader>
+                  <CardTitle>SRG-SSR API (SRF/RTS/RSI)</CardTitle>
+                  <CardDescription>
+                    Schweizer Sender API für SRF, RTS, RSI Inhalte.{" "}
+                    <a
+                      href="https://developer.srgssr.ch/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      API-Zugang beantragen
+                    </a>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium">Consumer Key</label>
+                    <Input
+                      value={getFieldValue("api.srgssr.consumerKey")}
+                      onChange={(e) => setFieldValue("api.srgssr.consumerKey", e.target.value)}
+                      placeholder="SRG-SSR Consumer Key"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Consumer Secret</label>
+                    <Input
+                      type="password"
+                      value={getFieldValue("api.srgssr.consumerSecret")}
+                      onChange={(e) => setFieldValue("api.srgssr.consumerSecret", e.target.value)}
+                      placeholder="SRG-SSR Consumer Secret"
+                      className="mt-1"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Hinweis: Inhalte von SRF sind oft geo-blockiert. Konfiguriere einen Schweizer
+                    Proxy in den Streaming-Einstellungen für Zugriff aus dem Ausland.
+                  </p>
+                </CardContent>
+              </Card>
+
               <Button
-                onClick={() => handleSave(["api.tvdb.key", "api.tvdb.pin", "api.tmdb.key"])}
+                onClick={() =>
+                  handleSave([
+                    "api.tvdb.key",
+                    "api.tvdb.pin",
+                    "api.tmdb.key",
+                    "api.srgssr.consumerKey",
+                    "api.srgssr.consumerSecret",
+                  ])
+                }
                 disabled={isSaving}
               >
                 {isSaving ? (
@@ -577,7 +693,7 @@ export default function SettingsPage() {
                   {/* Version Info */}
                   <div>
                     <h4 className="text-sm font-medium mb-3">Versionen</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                       <div>
                         <p className="text-xs text-muted-foreground">RundfunkArr</p>
                         <p className="font-medium">{packageJson.version}</p>
@@ -591,6 +707,18 @@ export default function SettingsPage() {
                         <p className="font-medium">
                           {systemInfo?.version.ffmpeg ? (
                             <span className="text-green-500">{systemInfo.version.ffmpeg}</span>
+                          ) : systemInfo ? (
+                            <span className="text-red-500">Nicht gefunden</span>
+                          ) : (
+                            "..."
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">yt-dlp</p>
+                        <p className="font-medium">
+                          {systemInfo?.version.ytdlp ? (
+                            <span className="text-green-500">{systemInfo.version.ytdlp}</span>
                           ) : systemInfo ? (
                             <span className="text-red-500">Nicht gefunden</span>
                           ) : (

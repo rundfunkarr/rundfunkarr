@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { convertMp4ToMkv, ensureFfmpegExists } from "./ffmpeg";
+import { isHlsUrl, downloadHlsStream, ensureYtdlpExists } from "./ytdlp";
 import * as fs from "fs/promises";
 import { createWriteStream } from "fs";
 import * as path from "path";
@@ -54,8 +55,9 @@ const downloadSemaphore = new Semaphore(MAX_CONCURRENT_DOWNLOADS);
 let isProcessing = false;
 let processingPromise: Promise<void> | null = null;
 
-// Initialize FFmpeg on startup
+// Initialize FFmpeg and yt-dlp on startup
 ensureFfmpegExists().catch(console.error);
+ensureYtdlpExists().catch(console.error);
 
 export async function startDownloadProcessing(): Promise<void> {
   if (isProcessing) {
@@ -121,6 +123,72 @@ async function processDownload(downloadId: string): Promise<void> {
     await fs.mkdir(downloadTempPath, { recursive: true });
     await fs.mkdir(categoryDir, { recursive: true });
 
+    // Check if this is an HLS stream
+    const isHls = isHlsUrl(download.url);
+
+    if (isHls) {
+      // HLS download path - use yt-dlp
+      console.log(`[Download] Detected HLS stream, using yt-dlp`);
+
+      const tempMkvPath = path.join(downloadTempPath, `${download.title}.mkv`);
+      const finalMkvPath = path.join(categoryDir, `${download.title}.mkv`);
+
+      const hlsResult = await downloadHlsStream(
+        download.url,
+        tempMkvPath,
+        async (progress, downloadedBytes, totalBytes, speed) => {
+          await prisma.download.update({
+            where: { id: downloadId },
+            data: {
+              progress,
+              downloadedBytes,
+              totalSize: totalBytes,
+              speed,
+            },
+          });
+        }
+      );
+
+      if (!hlsResult.success) {
+        await markAsFailed(downloadId, hlsResult.error || "HLS download failed");
+        return;
+      }
+
+      // Move to final location
+      const outputPath = hlsResult.outputPath || tempMkvPath;
+      console.log(`[Download] Moving HLS result to final location: ${finalMkvPath}`);
+      await fs.rename(outputPath, finalMkvPath);
+
+      // Get file size
+      const stats = await fs.stat(finalMkvPath);
+
+      // Calculate storage path (may be mapped differently)
+      const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
+      const storagePath = downloadFolderMapping
+        ? path.join(downloadFolderMapping, download.category, `${download.title}.mkv`)
+        : finalMkvPath;
+
+      // Mark as completed
+      const downloadTime = Math.floor((Date.now() - startTime) / 1000);
+
+      await prisma.download.update({
+        where: { id: downloadId },
+        data: {
+          status: "completed",
+          progress: 100,
+          size: stats.size,
+          filePath: storagePath,
+          completedAt: new Date(),
+        },
+      });
+
+      console.log(
+        `[Download] HLS completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB in ${downloadTime}s)`
+      );
+      return;
+    }
+
+    // Standard direct download path
     // Determine file extension from URL
     const urlPath = new URL(download.url).pathname;
     const fileExtension = path.extname(urlPath) || ".mp4";
