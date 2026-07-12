@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCategoriesForTopics, CategoryType } from "@/services/category";
+import { getMinDurationSeconds } from "@/lib/settings";
 
 const MEDIATHEK_API_URL = "https://mediathekviewweb.de/api/query";
 
@@ -57,9 +58,8 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
     const items = data.result?.results || [];
 
-    // Filter out m3u8 streams and transform results
-    // For movies: only items >= 60 minutes (3600 seconds)
-    const minDuration = type === "movie" ? 3600 : 0;
+    // Filter out m3u8 streams and apply the configured minimum duration to movies
+    const minDuration = type === "movie" ? await getMinDurationSeconds() : 0;
 
     const filteredItems = items
       .filter(

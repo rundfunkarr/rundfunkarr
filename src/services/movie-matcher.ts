@@ -88,7 +88,8 @@ export interface MovieMatchResult {
  */
 export async function matchMovieItems(
   items: ApiResultItem[],
-  movieData: TmdbMovieData
+  movieData: TmdbMovieData,
+  minDurationSeconds: number
 ): Promise<MovieMatchResult[]> {
   const durationTolerance = await getDurationTolerance();
   const results: MovieMatchResult[] = [];
@@ -113,8 +114,7 @@ export async function matchMovieItems(
     const itemDurationMinutes = Math.floor(item.duration / 60);
     const durationDiff = Math.abs(movieRuntimeMinutes - itemDurationMinutes);
 
-    // Check if it's a movie-length item (at least 60 minutes)
-    if (itemDurationMinutes < 60) continue;
+    if (minDurationSeconds > 0 && item.duration < minDurationSeconds) continue;
 
     let titleMatch: "exact" | "fuzzy" | "partial" | null = null;
     let titleScore = 0;

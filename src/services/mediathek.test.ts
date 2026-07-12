@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ApiResultItem } from "@/types";
+import type { ApiResultItem, TmdbMovieData } from "@/types";
 
 // Keep the unit hermetic: no DB, no network, no ruleset store.
 vi.mock("@/lib/settings", () => ({
   // null -> defaults kick in: quality "all", minDuration 300s, fuzzy/0.7
   getSetting: vi.fn().mockResolvedValue(null),
+  getMinDurationSeconds: vi.fn().mockResolvedValue(300),
 }));
 vi.mock("@/lib/cache", () => ({
   mediathekCache: { get: vi.fn().mockReturnValue(undefined), set: vi.fn() },
@@ -18,11 +19,22 @@ vi.mock("./rulesets", () => ({
   getAllTopics: vi.fn().mockReturnValue([]),
   getOrGenerateRulesetForShow: vi.fn().mockResolvedValue(null),
 }));
+vi.mock("./tmdb", () => ({
+  searchMovieByTitle: vi.fn().mockResolvedValue(null),
+}));
 
-import { fetchSearchResultsByString } from "./mediathek";
+import {
+  fetchMovieSearchByQuery,
+  fetchMovieSearchResults,
+  fetchSearchResultsByString,
+} from "./mediathek";
 import { fetchWithRetry } from "@/lib/fetch-retry";
+import { mediathekCache } from "@/lib/cache";
+import { getMinDurationSeconds } from "@/lib/settings";
 
 const mockedFetch = vi.mocked(fetchWithRetry);
+const mockedGetMinDuration = vi.mocked(getMinDurationSeconds);
+const mockedCacheSet = vi.mocked(mediathekCache.set);
 
 function makeItem(overrides: Partial<ApiResultItem> = {}): ApiResultItem {
   return {
@@ -50,6 +62,7 @@ function mockApi(results: ApiResultItem[]): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedGetMinDuration.mockResolvedValue(300);
 });
 
 describe("fetchSearchResultsByString – generic result gating", () => {
@@ -83,5 +96,56 @@ describe("fetchSearchResultsByString – generic result gating", () => {
 
     expect(xml).toContain('total="0"');
     expect(xml).not.toContain("<item>");
+  });
+});
+
+describe("fetchMovieSearchByQuery – configured minimum duration", () => {
+  it("includes movies at the configured boundary and rejects shorter results", async () => {
+    mockedGetMinDuration.mockResolvedValue(2700);
+    mockApi([
+      makeItem({ topic: "Too Short", title: "Documentary", duration: 2699 }),
+      makeItem({ topic: "At Boundary", title: "Documentary", duration: 2700 }),
+    ]);
+
+    const xml = await fetchMovieSearchByQuery("Documentary", 100, 0);
+
+    expect(xml).toContain("At.Boundary");
+    expect(xml).not.toContain("Too.Short");
+    expect(mockedCacheSet).toHaveBeenCalledWith(
+      expect.stringContaining("movie_query_Documentary__100_0_all_2700"),
+      expect.any(Object)
+    );
+  });
+});
+
+describe("fetchMovieSearchResults – configured minimum duration", () => {
+  it("applies the configured boundary to TMDB and IMDB-backed searches", async () => {
+    mockedGetMinDuration.mockResolvedValue(2700);
+    mockApi([
+      makeItem({ topic: "Documentary", title: "Documentary", duration: 2699 }),
+      makeItem({
+        topic: "Documentary",
+        title: "Documentary",
+        duration: 2700,
+        url_video: "https://example.com/boundary_720.mp4",
+      }),
+    ]);
+    const movie: TmdbMovieData = {
+      tmdbId: 28,
+      imdbId: "tt0000028",
+      title: "Documentary",
+      germanTitle: "Documentary",
+      runtime: 45,
+      releaseDate: "2026-07-12",
+    };
+
+    const xml = await fetchMovieSearchResults(movie, 100, 0);
+
+    expect(xml).toContain("boundary_720.mp4");
+    expect(xml).not.toContain("show_720.mp4");
+    expect(mockedCacheSet).toHaveBeenCalledWith(
+      expect.stringContaining("movie_28_100_0_all_2700"),
+      expect.any(Object)
+    );
   });
 });

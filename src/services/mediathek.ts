@@ -1,6 +1,6 @@
 import { mediathekCache } from "@/lib/cache";
 import { fetchWithRetry } from "@/lib/fetch-retry";
-import { getSetting } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import { getShowInfoByTvdbId } from "./shows";
 import {
   ensureRulesetsLoaded,
@@ -52,17 +52,6 @@ async function getQualityPreference(): Promise<QualityPreference> {
     return setting as QualityPreference;
   }
   return "all"; // Default to all qualities
-}
-
-async function getMinDuration(): Promise<number> {
-  const setting = await getSetting("matching.minDuration");
-  if (setting) {
-    const parsed = parseInt(setting, 10);
-    if (!isNaN(parsed) && parsed >= 0) {
-      return parsed;
-    }
-  }
-  return 300; // Default: 5 minutes
 }
 
 // Keywords that are always skipped (trailers, outtakes, etc.)
@@ -509,7 +498,7 @@ async function applyRulesetFilters(
   tvdbData?: TvdbData
 ): Promise<{ matchedEpisodes: MatchedEpisodeInfo[]; unmatchedItems: ApiResultItem[] }> {
   await ensureRulesetsLoaded();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   console.log(
     `[Mediathek] Matching settings: strategy=${matchingSettings.strategy}, threshold=${matchingSettings.threshold}, minDuration=${minDuration}s`
@@ -704,7 +693,7 @@ export async function fetchSearchResultsById(
   offset: number
 ): Promise<string> {
   const quality = await getQualityPreference();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   console.log(
     `[Mediathek] fetchSearchResultsById: tvdbId=${tvdbData.id}, name="${tvdbData.name}", germanName="${tvdbData.germanName}", season=${season}, episode=${episodeNumber}, quality=${quality}, minDuration=${minDuration}`
@@ -791,7 +780,7 @@ export async function fetchSearchResultsByString(
   // (API query, cache keys, and generic gating) so behavior stays consistent.
   const trimmedQ = q?.trim() || null;
   const quality = await getQualityPreference();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const cacheKey = `q_${trimmedQ ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
@@ -858,7 +847,7 @@ export async function fetchSearchResultsByString(
 
 export async function fetchSearchResultsForRssSync(limit: number, offset: number): Promise<string> {
   const quality = await getQualityPreference();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const cacheKey = `rss_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
@@ -911,11 +900,12 @@ export async function fetchMovieSearchResults(
   offset: number
 ): Promise<string> {
   const quality = await getQualityPreference();
+  const minDuration = await getMinDurationSeconds();
   console.log(
-    `[Mediathek] fetchMovieSearchResults: tmdbId=${movieData.tmdbId}, title="${movieData.title}", germanTitle="${movieData.germanTitle}", runtime=${movieData.runtime} min, quality=${quality}`
+    `[Mediathek] fetchMovieSearchResults: tmdbId=${movieData.tmdbId}, title="${movieData.title}", germanTitle="${movieData.germanTitle}", runtime=${movieData.runtime} min, quality=${quality}, minDuration=${minDuration}s`
   );
 
-  const cacheKey = `movie_${movieData.tmdbId}_${limit}_${offset}_${quality}`;
+  const cacheKey = `movie_${movieData.tmdbId}_${limit}_${offset}_${quality}_${minDuration}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -999,7 +989,7 @@ export async function fetchMovieSearchResults(
   }
 
   // Match results against movie data
-  const matchResults = await matchMovieItems(filteredResults, movieData);
+  const matchResults = await matchMovieItems(filteredResults, movieData, minDuration);
 
   if (matchResults.length === 0) {
     console.log(`[Mediathek] No matches found for movie`);
@@ -1032,7 +1022,7 @@ export async function fetchMovieSearchByQuery(
   offset: number
 ): Promise<string> {
   const quality = await getQualityPreference();
-  const MOVIE_MIN_DURATION = 60 * 60; // 60 minutes in seconds
+  const minDuration = await getMinDurationSeconds();
 
   // Strip trailing year from query (Radarr sends "Movie Title 2018")
   const cleanedQuery = query.replace(/\s+\d{4}$/, "").trim();
@@ -1040,7 +1030,7 @@ export async function fetchMovieSearchByQuery(
   const searchYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
 
   console.log(
-    `[Mediathek] fetchMovieSearchByQuery: query="${query}", cleanedQuery="${cleanedQuery}", year=${searchYear}, quality=${quality}, minDuration=${MOVIE_MIN_DURATION}s`
+    `[Mediathek] fetchMovieSearchByQuery: query="${query}", cleanedQuery="${cleanedQuery}", year=${searchYear}, quality=${quality}, minDuration=${minDuration}s`
   );
 
   // Try to find the movie on TMDB to get IDs for Radarr matching
@@ -1051,7 +1041,7 @@ export async function fetchMovieSearchByQuery(
     );
   }
 
-  const cacheKey = `movie_query_${cleanedQuery}_${searchYear || ""}_${limit}_${offset}_${quality}`;
+  const cacheKey = `movie_query_${cleanedQuery}_${searchYear || ""}_${limit}_${offset}_${quality}_${minDuration}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -1098,16 +1088,16 @@ export async function fetchMovieSearchByQuery(
     return response;
   }
 
-  // Filter: skip trailers, m3u8, and apply movie minimum duration (60 min)
+  // Filter: skip trailers, m3u8, and apply the configured minimum duration
   const filteredResults = results.filter((item) => {
     if (item.url_video.endsWith(".m3u8")) return false;
     if (SKIP_KEYWORDS.some((kw) => item.title.includes(kw))) return false;
-    if (item.duration < MOVIE_MIN_DURATION) return false;
+    if (minDuration > 0 && item.duration < minDuration) return false;
     return true;
   });
 
   console.log(
-    `[Mediathek] Results after movie filtering (min ${MOVIE_MIN_DURATION / 60} min): ${filteredResults.length}`
+    `[Mediathek] Results after movie filtering (min ${minDuration}s): ${filteredResults.length}`
   );
 
   if (filteredResults.length === 0) {

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 // Cache for settings to avoid repeated DB queries
 const settingsCache: Map<string, { value: string; expiry: number }> = new Map();
 const CACHE_TTL = 60 * 1000; // 1 minute
+const DEFAULT_MIN_DURATION_SECONDS = 300;
 
 export async function getSetting(key: string): Promise<string | null> {
   // Check cache first
@@ -65,6 +66,18 @@ export async function getSettings(keys: string[]): Promise<Record<string, string
   }
 
   return result;
+}
+
+export async function getMinDurationSeconds(): Promise<number> {
+  const setting = await getSetting("matching.minDuration");
+  if (setting) {
+    const parsed = parseInt(setting, 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+
+  return DEFAULT_MIN_DURATION_SECONDS;
 }
 
 export function clearSettingsCache(): void {
