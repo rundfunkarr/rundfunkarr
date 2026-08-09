@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db";
 import { isMkvConversionEnabled } from "@/lib/settings";
-import { convertMp4ToMkv } from "./ffmpeg";
 import * as fs from "fs/promises";
 import { createWriteStream } from "fs";
 import * as path from "path";
@@ -163,6 +162,7 @@ async function processDownload(downloadId: string): Promise<void> {
         data: { status: "converting" },
       });
 
+      const { convertMp4ToMkv } = await import("./ffmpeg");
       const conversionResult = await convertMp4ToMkv(mp4Path, tempMkvPath);
 
       if (!conversionResult.success) {

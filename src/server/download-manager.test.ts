@@ -3,14 +3,21 @@ import { access, mkdtemp, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
-const { configFindUnique, downloadCount, downloadFindUnique, downloadUpdate, convertMp4ToMkv } =
-  vi.hoisted(() => ({
-    configFindUnique: vi.fn(),
-    downloadCount: vi.fn(),
-    downloadFindUnique: vi.fn(),
-    downloadUpdate: vi.fn(),
-    convertMp4ToMkv: vi.fn(),
-  }));
+const {
+  configFindUnique,
+  downloadCount,
+  downloadFindUnique,
+  downloadUpdate,
+  ffmpegModuleLoaded,
+  convertMp4ToMkv,
+} = vi.hoisted(() => ({
+  configFindUnique: vi.fn(),
+  downloadCount: vi.fn(),
+  downloadFindUnique: vi.fn(),
+  downloadUpdate: vi.fn(),
+  ffmpegModuleLoaded: vi.fn(),
+  convertMp4ToMkv: vi.fn(),
+}));
 
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -23,7 +30,10 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("./ffmpeg", () => ({ convertMp4ToMkv }));
+vi.mock("./ffmpeg", () => {
+  ffmpegModuleLoaded();
+  return { convertMp4ToMkv };
+});
 
 import { clearSettingsCache } from "@/lib/settings";
 import { processDownload } from "./download-manager";
@@ -81,6 +91,7 @@ describe("processDownload", () => {
 
     await processDownload("download-1");
 
+    expect(ffmpegModuleLoaded).not.toHaveBeenCalled();
     expect(convertMp4ToMkv).not.toHaveBeenCalled();
     await expect(readFile(path.join(testRoot, category, `${title}.mp4`))).resolves.toEqual(
       Buffer.from(mediaBytes)
