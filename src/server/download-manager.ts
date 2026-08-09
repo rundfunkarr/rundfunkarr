@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { convertMp4ToMkv, ensureFfmpegExists } from "./ffmpeg";
+import { isMkvConversionEnabled } from "@/lib/settings";
+import { convertMp4ToMkv } from "./ffmpeg";
 import * as fs from "fs/promises";
 import { createWriteStream } from "fs";
 import * as path from "path";
@@ -53,9 +54,6 @@ class Semaphore {
 const downloadSemaphore = new Semaphore(MAX_CONCURRENT_DOWNLOADS);
 let isProcessing = false;
 let processingPromise: Promise<void> | null = null;
-
-// Initialize FFmpeg on startup
-ensureFfmpegExists().catch(console.error);
 
 export async function startDownloadProcessing(): Promise<void> {
   if (isProcessing) {
@@ -152,8 +150,8 @@ async function processDownload(downloadId: string): Promise<void> {
 
     console.log(`[Download] File downloaded to temp: ${mp4Path}`);
 
-    // Convert to MKV if it's an MP4
-    if (fileExtension === ".mp4") {
+    // Convert MP4 files to MKV unless the user disabled this step.
+    if (fileExtension.toLowerCase() === ".mp4" && (await isMkvConversionEnabled())) {
       // Convert in temp folder first
       const tempMkvPath = path.join(downloadTempPath, `${download.title}.mkv`);
       const finalMkvPath = path.join(categoryDir, `${download.title}.mkv`);
@@ -208,11 +206,16 @@ async function processDownload(downloadId: string): Promise<void> {
         `[Download] Completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB in ${downloadTime}s)`
       );
     } else {
-      // Non-MP4 file, move to final location
+      // Keep non-MP4 files and MP4 files with disabled conversion unchanged.
       const finalPath = path.join(categoryDir, `${download.title}${fileExtension}`);
       await fs.rename(mp4Path, finalPath);
 
       const stats = await fs.stat(finalPath);
+
+      const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
+      const storagePath = downloadFolderMapping
+        ? path.join(downloadFolderMapping, download.category, `${download.title}${fileExtension}`)
+        : finalPath;
 
       await prisma.download.update({
         where: { id: downloadId },
@@ -220,7 +223,7 @@ async function processDownload(downloadId: string): Promise<void> {
           status: "completed",
           progress: 100,
           size: stats.size,
-          filePath: finalPath,
+          filePath: storagePath,
           completedAt: new Date(),
         },
       });

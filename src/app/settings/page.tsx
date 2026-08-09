@@ -277,9 +277,28 @@ export default function SettingsPage() {
                       Welche Qualitäten sollen im Newznab-Feed angezeigt werden?
                     </p>
                   </div>
+                  <label className="flex items-center justify-between gap-4 rounded-md border border-input p-3">
+                    <span>
+                      <span className="block text-sm font-medium">MP4 in MKV konvertieren</span>
+                      <span className="block text-xs text-muted-foreground mt-1">
+                        Deaktivieren, wenn ein externes Tool wie Tdarr die Medienverarbeitung
+                        übernimmt. Heruntergeladene MP4-Dateien bleiben dann unverändert.
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={getFieldValue("download.convertToMkv") !== "false"}
+                      onChange={(e) =>
+                        setFieldValue("download.convertToMkv", String(e.target.checked))
+                      }
+                      className="h-4 w-4 shrink-0 accent-primary"
+                    />
+                  </label>
 
                   <Button
-                    onClick={() => handleSave(["download.path", "download.quality"])}
+                    onClick={() =>
+                      handleSave(["download.path", "download.quality", "download.convertToMkv"])
+                    }
                     disabled={isSaving}
                   >
                     {isSaving ? (

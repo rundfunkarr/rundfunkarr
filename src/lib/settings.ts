@@ -80,6 +80,10 @@ export async function getMinDurationSeconds(): Promise<number> {
   return DEFAULT_MIN_DURATION_SECONDS;
 }
 
+export async function isMkvConversionEnabled(): Promise<boolean> {
+  return (await getSetting("download.convertToMkv")) !== "false";
+}
+
 export function clearSettingsCache(): void {
   settingsCache.clear();
 }

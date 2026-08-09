@@ -10,7 +10,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { clearSettingsCache, getMinDurationSeconds } from "./settings";
+import { clearSettingsCache, getMinDurationSeconds, isMkvConversionEnabled } from "./settings";
 
 beforeEach(() => {
   clearSettingsCache();
@@ -38,4 +38,21 @@ describe("getMinDurationSeconds", () => {
       await expect(getMinDurationSeconds()).resolves.toBe(300);
     }
   );
+});
+
+describe("isMkvConversionEnabled", () => {
+  it("defaults to enabled when the setting does not exist", async () => {
+    findUnique.mockResolvedValue(null);
+
+    await expect(isMkvConversionEnabled()).resolves.toBe(true);
+  });
+
+  it.each([
+    ["true", true],
+    ["false", false],
+  ])("maps %s to %s", async (value, expected) => {
+    findUnique.mockResolvedValue({ value });
+
+    await expect(isMkvConversionEnabled()).resolves.toBe(expected);
+  });
 });

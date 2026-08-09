@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // General
   "download.path": "/downloads",
   "download.quality": "all",
+  "download.convertToMkv": "true",
 
   // API Keys
   "api.tvdb.key": "",

@@ -21,7 +21,7 @@ Rundfunk-Indexer für Sonarr/Radarr - Automatischer Download von ARD, ZDF und an
 
 - **Newznab-kompatibler Indexer** - Funktioniert mit Prowlarr, NZB Hydra, Sonarr und Radarr
 - **SABnzbd-kompatibler Downloader** - Direkter HTTP-Download von den Mediatheken
-- **Automatische MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
+- **Optionale MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
 - **Flexible Metadaten-Quellen** - Lokale Datenbank, TVDB oder TMDB
 - **Community-Rulesets** - Lokale Rulesets via Pull Request erweiterbar
 - **SQLite-Datenbank** - Persistente Speicherung von Cache und Download-Historie
@@ -120,7 +120,7 @@ RundfunkArr bietet eine vollständige Web-Oberfläche mit:
 - **Suche** - Direkte Suche in den Mediatheken
 - **Downloads** - Queue und Historie verwalten
 - **Settings** - Alle Einstellungen konfigurieren:
-  - Download-Pfad und Qualitäts-Präferenzen
+  - Download-Pfad, Qualitäts-Präferenzen und optionale MKV-Konvertierung
   - API Keys für TVDB/TMDB
   - Matching-Strategie und Schwellwerte
   - Cache-TTL Einstellungen
