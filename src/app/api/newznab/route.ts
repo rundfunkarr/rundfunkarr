@@ -8,7 +8,13 @@ import {
 } from "@/services/mediathek";
 import { getShowInfoByTvdbId } from "@/services/shows";
 import { getMovieInfoByTmdbId, getMovieInfoByImdbId } from "@/services/tmdb";
-import { serializeRss, getEmptyRssResult } from "@/services/newznab";
+import {
+  serializeRss,
+  getEmptyRssResult,
+  getValidationRss,
+  isMovieCategoryRequest,
+  parseNewznabCategoryIds,
+} from "@/services/newznab";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -22,6 +28,7 @@ export async function GET(request: NextRequest) {
   const tmdbid = searchParams.get("tmdbid");
   const season = searchParams.get("season");
   const episode = searchParams.get("ep");
+  const categoryIds = parseNewznabCategoryIds(searchParams.get("cat"));
 
   // Handle capabilities request
   if (t === "caps") {
@@ -118,26 +125,8 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // No search criteria provided - return dummy for Radarr test
-      const dummyMovieRss = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
-  <channel>
-    <title>RundfunkArr</title>
-    <description>RundfunkArr API results</description>
-    <newznab:response offset="0" total="1"/>
-    <item>
-      <title>RundfunkArr.Test.2024.GERMAN.1080p.WEB.h264-MEDiATHEK</title>
-      <guid>rundfunkarr-movie-test-item</guid>
-      <pubDate>${new Date().toUTCString()}</pubDate>
-      <category>Movies &gt; HD</category>
-      <enclosure url="http://localhost/test.nzb" length="1000000000" type="application/x-nzb"/>
-      <newznab:attr name="category" value="2000"/>
-      <newznab:attr name="category" value="2040"/>
-      <newznab:attr name="size" value="1000000000"/>
-    </item>
-  </channel>
-</rss>`;
-      return new NextResponse(dummyMovieRss, {
+      // No search criteria provided - return a category-compatible validation item
+      return new NextResponse(getValidationRss(["2000", "2040"]), {
         status: 200,
         headers: { "Content-Type": "application/xml; charset=utf-8" },
       });
@@ -152,14 +141,13 @@ export async function GET(request: NextRequest) {
 
   // Handle TV search requests
   if (t === "tvsearch" || t === "search") {
-    const cat = searchParams.get("cat");
-
     // Check if this is a movie search (by category)
-    const movieCategories = ["2000", "2010", "2020", "2030", "2040", "2045", "2050", "2060"];
-    const isMovieSearch = cat && movieCategories.some((c) => cat.includes(c));
+    const isMovieSearch = isMovieCategoryRequest(categoryIds);
 
     if (isMovieSearch && q) {
-      console.log(`[Newznab] Movie search via t=search detected: q=${q}, cat=${cat}`);
+      console.log(
+        `[Newznab] Movie search via t=search detected: q=${q}, cat=${categoryIds.join(",")}`
+      );
 
       try {
         const searchResults = await fetchMovieSearchByQuery(q, limit, offset);
@@ -217,26 +205,9 @@ export async function GET(request: NextRequest) {
       if (!q && !season && !imdbid && !tvdbid && !tmdbid) {
         const searchResults = await fetchSearchResultsForRssSync(limit, offset);
 
-        // If no results, return a dummy item so Sonarr accepts the indexer
+        // If no results, return an item in the categories requested by the *arr app
         if (searchResults.includes('total="0"')) {
-          const dummyRss = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
-  <channel>
-    <title>RundfunkArr</title>
-    <description>RundfunkArr API results</description>
-    <newznab:response offset="0" total="1"/>
-    <item>
-      <title>RundfunkArr Test - Indexer funktioniert</title>
-      <guid>rundfunkarr-test-item</guid>
-      <pubDate>${new Date().toUTCString()}</pubDate>
-      <category>5000</category>
-      <enclosure url="http://localhost/test.nzb" length="1000000" type="application/x-nzb"/>
-      <newznab:attr name="category" value="5000"/>
-      <newznab:attr name="size" value="1000000"/>
-    </item>
-  </channel>
-</rss>`;
-          return new NextResponse(dummyRss, {
+          return new NextResponse(getValidationRss(categoryIds), {
             status: 200,
             headers: { "Content-Type": "application/xml; charset=utf-8" },
           });

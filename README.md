@@ -172,6 +172,11 @@ Für Shows die nicht in TVDB/TMDB sind, können Einträge in `data/shows.json` h
 3. Port: `6767`
 4. API Key: beliebig
 
+Prowlarr synchronisiert nur den Indexer zu Sonarr und Radarr. Richte RundfunkArr
+als Download Client zusätzlich direkt in jeder *arr App ein. Ein in Prowlarr
+konfigurierter Download Client wird nur für manuelle Downloads aus Prowlarr
+verwendet.
+
 ## Rulesets & Shows hinzufügen
 
 ### Neue Show hinzufügen

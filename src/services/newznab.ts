@@ -16,6 +16,19 @@ const XML_BUILDER = new Builder({
   renderOpts: { pretty: true },
 });
 
+const MOVIE_CATEGORY_IDS = new Set([
+  "2000",
+  "2010",
+  "2020",
+  "2030",
+  "2040",
+  "2045",
+  "2050",
+  "2060",
+]);
+const TV_CATEGORY_IDS = new Set(["5000", "5030", "5040"]);
+const ADVERTISED_CATEGORY_IDS = new Set([...MOVIE_CATEGORY_IDS, ...TV_CATEGORY_IDS]);
+
 export function generateAttributes(
   season: string | null,
   categoryValues: string[],
@@ -117,6 +130,74 @@ export function convertItemsToRss(items: NewznabItem[], limit: number, offset: n
   };
 
   return serializeRss(rss);
+}
+
+export function parseNewznabCategoryIds(categoryParam: string | null): string[] {
+  if (!categoryParam) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      categoryParam
+        .split(",")
+        .map((category) => category.trim())
+        .filter((category) => /^\d+$/.test(category))
+    ),
+  ];
+}
+
+export function isMovieCategoryRequest(categoryIds: string[]): boolean {
+  return categoryIds.some((categoryId) => MOVIE_CATEGORY_IDS.has(categoryId));
+}
+
+export function getValidationRss(requestedCategoryIds: string[], now: Date = new Date()): string {
+  const categoryIds = requestedCategoryIds.filter((categoryId) =>
+    ADVERTISED_CATEGORY_IDS.has(categoryId)
+  );
+  const hasMovieCategory = categoryIds.some((categoryId) => MOVIE_CATEGORY_IDS.has(categoryId));
+  const hasTvCategory = categoryIds.some((categoryId) => TV_CATEGORY_IDS.has(categoryId));
+
+  if (hasMovieCategory && !categoryIds.includes("2000")) {
+    categoryIds.push("2000");
+  }
+  if (hasTvCategory && !categoryIds.includes("5000")) {
+    categoryIds.push("5000");
+  }
+  if (categoryIds.length === 0) {
+    categoryIds.push("2000", "5000");
+  }
+
+  const movieOnly =
+    categoryIds.some((categoryId) => MOVIE_CATEGORY_IDS.has(categoryId)) &&
+    !categoryIds.some((categoryId) => TV_CATEGORY_IDS.has(categoryId));
+  const title = movieOnly
+    ? "RundfunkArr.Validation.2024.GERMAN.1080p.WEB.h264-TEST"
+    : "RundfunkArr.Validation.S01E01.GERMAN.1080p.WEB.h264-TEST";
+
+  const validationItem: NewznabItem = {
+    title,
+    guid: {
+      isPermaLink: false,
+      value: `rundfunkarr-validation-${movieOnly ? "movie" : "tv"}`,
+    },
+    link: "https://example.invalid/rundfunkarr-validation",
+    comments: "https://example.invalid/rundfunkarr-validation",
+    pubDate: now.toUTCString(),
+    category: movieOnly ? "Movies > HD" : "TV > HD",
+    description: "Synthetic result used to validate RundfunkArr category support.",
+    enclosure: {
+      url: "https://example.invalid/rundfunkarr-validation.nzb",
+      length: 1_000_000,
+      type: "application/x-nzb",
+    },
+    attributes: [
+      ...categoryIds.map((categoryId) => ({ name: "category", value: categoryId })),
+      { name: "size", value: "1000000" },
+    ],
+  };
+
+  return convertItemsToRss([validationItem], 1, 0);
 }
 
 // Title formatting utilities

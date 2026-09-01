@@ -7,6 +7,9 @@ import {
   generateFakeNzb,
   getCapabilitiesXml,
   generateGenericRssItems,
+  getValidationRss,
+  isMovieCategoryRequest,
+  parseNewznabCategoryIds,
 } from "./newznab";
 import type { NewznabItem, ApiResultItem } from "@/types";
 
@@ -124,6 +127,25 @@ describe("convertItemsToRss", () => {
     expect(xml).toContain("Item0");
     expect(xml).toContain("Item1");
     expect(xml).not.toContain("Item2");
+  });
+});
+
+describe("Newznab validation categories", () => {
+  it("parses unique numeric category IDs", () => {
+    expect(parseNewznabCategoryIds("2040, 2030,2040,invalid")).toEqual(["2040", "2030"]);
+  });
+
+  it("detects movie categories using exact IDs", () => {
+    expect(isMovieCategoryRequest(["2040"])).toBe(true);
+    expect(isMovieCategoryRequest(["12000"])).toBe(false);
+  });
+
+  it("adds the movie parent category to a validation result", () => {
+    const xml = getValidationRss(["2040"], new Date("2026-09-01T00:00:00Z"));
+
+    expect(xml).toContain('name="category" value="2040"');
+    expect(xml).toContain('name="category" value="2000"');
+    expect(xml).not.toContain('name="category" value="5000"');
   });
 });
 

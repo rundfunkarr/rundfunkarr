@@ -759,8 +759,10 @@ export default function SetupPage() {
                       4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Prowlarr synct Indexer und Download-Client automatisch zu deinen anderen *arr
-                      Apps.
+                      Prowlarr synchronisiert den Indexer automatisch zu deinen anderen *arr Apps.
+                      Den Download-Client synchronisiert Prowlarr nicht. Richte RundfunkArr dafür
+                      zusätzlich direkt in Sonarr und Radarr ein. Der Download-Client hier ist nur
+                      für manuelle Downloads aus Prowlarr gedacht.
                     </p>
                   </div>
                 </TabsContent>
