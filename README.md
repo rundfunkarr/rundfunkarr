@@ -42,9 +42,9 @@ services:
       - DOWNLOAD_FOLDER_PATH=/downloads
     volumes:
       - ./data:/app/prisma/data
-      - ./downloads:/app/downloads
+      - ./downloads:/downloads
     ports:
-      - "127.0.0.1:6767:6767"
+      - 6767:6767
     restart: unless-stopped
 ```
 
