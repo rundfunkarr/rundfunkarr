@@ -13,7 +13,7 @@ Vielen Dank für dein Interesse an RundfunkArr! Wir freuen uns über jede Art vo
 
 ### Voraussetzungen
 
-- Node.js >= 20
+- Node.js >= 24
 - npm
 - FFmpeg (optional, für MKV-Konvertierung)
 - Git

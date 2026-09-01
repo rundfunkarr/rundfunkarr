@@ -1,5 +1,5 @@
 # Stage 1: Dependencies
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 # Install dependencies needed for native modules
@@ -11,7 +11,7 @@ COPY prisma ./prisma
 RUN npm ci
 
 # Stage 2: Builder
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 # Copy dependencies
@@ -35,7 +35,7 @@ RUN mkdir -p /app/standalone-out && \
     ls -la /app/standalone-out/
 
 # Stage 3: Runner
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 # Install runtime dependencies for FFmpeg, user management, and DB init

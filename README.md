@@ -79,7 +79,7 @@ docker-compose up -d
 
 ### Voraussetzungen
 
-- Node.js >= 20
+- Node.js >= 24
 - npm
 - FFmpeg (für MKV-Konvertierung)
 
