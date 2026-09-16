@@ -28,10 +28,12 @@ const ABSOLUTE_EPISODE_PATTERNS = [
  * comment for why this used to be a separate, buggy reimplementation).
  */
 async function searchMediathekApi(query: string): Promise<ApiResultItem[]> {
-  return queryMediathekView([{ fields: ["topic"], query }], 50, {
-    sortBy: "timestamp",
-    future: false,
-  });
+  return (
+    (await queryMediathekView([{ fields: ["topic"], query }], 50, {
+      sortBy: "timestamp",
+      future: false,
+    })) ?? []
+  );
 }
 
 /**

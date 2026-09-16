@@ -28,14 +28,14 @@ export interface MediathekQueryOptions {
 
 /**
  * Query MediathekViewWeb and return the parsed result items.
- * Returns an empty array (never throws) on any request or parse failure,
- * matching every existing call site's error-handling expectations.
+ * Returns null on request, API, or parse failures so callers can avoid
+ * caching an outage as a successful empty result.
  */
 export async function queryMediathekView(
   queries: MediathekQueryField[],
   size: number,
   options: MediathekQueryOptions = {}
-): Promise<ApiResultItem[]> {
+): Promise<ApiResultItem[] | null> {
   const requestBody = {
     queries,
     sortBy: options.sortBy ?? "filmlisteTimestamp",
@@ -54,13 +54,17 @@ export async function queryMediathekView(
 
     if (!response.ok) {
       console.error(`[MediathekClient] API request failed with status ${response.status}`);
-      return [];
+      return null;
     }
 
     const parsed: MediathekApiResponse = await response.json();
-    return parsed.result?.results || [];
+    if (parsed?.err || !Array.isArray(parsed?.result?.results)) {
+      console.error("[MediathekClient] Invalid or unsuccessful API response");
+      return null;
+    }
+    return parsed.result.results;
   } catch (error) {
     console.error("[MediathekClient] Error fetching from API:", error);
-    return [];
+    return null;
   }
 }

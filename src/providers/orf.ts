@@ -122,7 +122,7 @@ export class OrfProvider extends BaseProvider {
         limit * 3
       );
 
-      const items = this.filterResults(results, query.type);
+      const items = this.filterResults(results ?? [], query.type);
 
       console.log(`[${this.id}] Found ${items.length} items after filtering`);
 
@@ -162,9 +162,14 @@ export class OrfProvider extends BaseProvider {
         1
       );
       return {
-        available: results.length > 0,
+        available: results !== null && results.length > 0,
         lastCheck: Date.now(),
-        error: results.length > 0 ? undefined : "MediathekView returned no ORF results",
+        error:
+          results === null
+            ? "Failed to query MediathekView"
+            : results.length > 0
+              ? undefined
+              : "MediathekView returned no ORF results",
       };
     } catch (error) {
       return {

@@ -6,6 +6,27 @@ function b64(value: string): string {
 }
 
 describe("parseNzbContent", () => {
+  it.each(["https://example.com/video.mp4", "http://example.com/video.mp4?token=abc&quality=hd"])(
+    "accepts a saved legacy NZB with raw URL %s",
+    (url) => {
+      const content = `filename="Show.S01E01.nzb"\n<!-- Show title -->\n<!-- ${url} -->`;
+      expect(parseNzbContent(content)).toEqual({ fileName: "Show.S01E01", url });
+    }
+  );
+
+  it("accepts a legacy NZB with a single URL comment", () => {
+    expect(parseNzbContent('filename="Show.nzb"\n<!-- https://example.com/video.mp4 -->')).toEqual({
+      fileName: "Show",
+      url: "https://example.com/video.mp4",
+    });
+  });
+
+  it("does not treat an arbitrary title comment as a legacy URL", () => {
+    expect(
+      parseNzbContent('filename="Show.nzb"\n<!-- https://example.com is mentioned here -->')
+    ).toBeNull();
+  });
+
   // Real generator output: title comment first, then URL comment, both
   // base64-encoded - see the doc comment on COMMENT_REGEX in ./download
   // for why (a raw URL containing "--" broke XML comment syntax outright).

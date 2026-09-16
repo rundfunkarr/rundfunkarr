@@ -51,12 +51,13 @@ RUN apk add --no-cache \
     ffmpeg \
     && rm -rf /var/cache/apk/*
 
-# Install yt-dlp binary
-# The generic "yt-dlp" asset is a Python zipapp (needs a python3 interpreter,
-# not present in this image) rather than a true standalone binary. Use the
-# musllinux_aarch64 static build instead, matching this image's base
-# (Alpine/musl) and arm64 hosts (e.g. Raspberry Pi).
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_musllinux_aarch64 -o /usr/local/bin/yt-dlp \
+# Select the standalone musl binary for the image's architecture.
+RUN case "$(apk --print-arch)" in \
+        x86_64) asset=yt-dlp_musllinux ;; \
+        aarch64) asset=yt-dlp_musllinux_aarch64 ;; \
+        *) echo "Unsupported yt-dlp architecture" >&2; exit 1 ;; \
+    esac \
+    && curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${asset}" -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp
 
 ENV NODE_ENV=production

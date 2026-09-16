@@ -704,7 +704,7 @@ export async function fetchSearchResultsById(
 
   // Check for cached API response
   const apiCacheKey = `mediathekapi_${tvdbData.id}`;
-  let results: ApiResultItem[];
+  let results: ApiResultItem[] | null;
   const cachedApi = mediathekCache.get(apiCacheKey);
 
   if (cachedApi) {
@@ -714,7 +714,7 @@ export async function fetchSearchResultsById(
     console.log(`[Mediathek] Searching MediathekView API with query: "${searchQuery}"`);
     results = await queryMediathekView([{ fields: QUERY_FIELDS, query: searchQuery }], 10000);
 
-    if (results.length === 0) {
+    if (results === null || results.length === 0) {
       return serializeRss(getEmptyRssResult());
     }
 
@@ -763,7 +763,7 @@ export async function fetchSearchResultsByString(
   }
 
   const apiCacheKey = `mediathekapi_${q ?? "null"}_${season ?? "null"}`;
-  let results: ApiResultItem[];
+  let results: ApiResultItem[] | null;
   const cachedApi = mediathekCache.get(apiCacheKey);
 
   if (cachedApi) {
@@ -781,6 +781,9 @@ export async function fetchSearchResultsByString(
     }
 
     results = await queryMediathekView(queries, 1500);
+    if (results === null) {
+      return serializeRss(getEmptyRssResult());
+    }
     mediathekCache.set(apiCacheKey, { results });
   }
 
@@ -806,13 +809,16 @@ export async function fetchSearchResultsForRssSync(limit: number, offset: number
   }
 
   const apiCacheKey = "rss_mediathekview_results";
-  let results: ApiResultItem[];
+  let results: ApiResultItem[] | null;
   const cachedApi = mediathekCache.get(apiCacheKey);
 
   if (cachedApi) {
     results = (cachedApi as { results: ApiResultItem[] }).results;
   } else {
     results = await queryMediathekView([], 6000);
+    if (results === null) {
+      return serializeRss(getEmptyRssResult());
+    }
     mediathekCache.set(apiCacheKey, { results });
   }
 
@@ -856,7 +862,7 @@ export async function fetchMovieSearchResults(
   }
 
   // Helper function to fetch results for a single search term
-  async function fetchForTerm(searchTerm: string): Promise<ApiResultItem[]> {
+  async function fetchForTerm(searchTerm: string): Promise<ApiResultItem[] | null> {
     const apiCacheKey = `mediathekapi_movie_${searchTerm}`;
     const cachedApi = mediathekCache.get(apiCacheKey);
 
@@ -867,6 +873,7 @@ export async function fetchMovieSearchResults(
 
     console.log(`[Mediathek] Searching MediathekView API for movie: "${searchTerm}"`);
     const results = await queryMediathekView([{ fields: QUERY_FIELDS, query: searchTerm }], 500);
+    if (results === null) return null;
     console.log(`[Mediathek] API returned ${results.length} results for "${searchTerm}"`);
     mediathekCache.set(apiCacheKey, { results });
     return results;
@@ -874,11 +881,13 @@ export async function fetchMovieSearchResults(
 
   // Fetch all search terms in parallel
   const resultsPerTerm = await Promise.all(searchTerms.map(fetchForTerm));
+  const hasFailedTerm = resultsPerTerm.some((results) => results === null);
 
   // Merge results, avoiding duplicates by URL
   const allResults: ApiResultItem[] = [];
   const existingUrls = new Set<string>();
   for (const results of resultsPerTerm) {
+    if (results === null) continue;
     for (const result of results) {
       if (!existingUrls.has(result.url_video)) {
         existingUrls.add(result.url_video);
@@ -890,7 +899,7 @@ export async function fetchMovieSearchResults(
   if (allResults.length === 0) {
     console.log(`[Mediathek] No results found for movie`);
     const response = serializeRss(getEmptyRssResult());
-    mediathekCache.set(cacheKey, { response });
+    if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
     return response;
   }
 
@@ -905,7 +914,7 @@ export async function fetchMovieSearchResults(
   if (filteredResults.length === 0) {
     console.log(`[Mediathek] No results after filtering for movie`);
     const response = serializeRss(getEmptyRssResult());
-    mediathekCache.set(cacheKey, { response });
+    if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
     return response;
   }
 
@@ -915,7 +924,7 @@ export async function fetchMovieSearchResults(
   if (matchResults.length === 0) {
     console.log(`[Mediathek] No matches found for movie`);
     const response = serializeRss(getEmptyRssResult());
-    mediathekCache.set(cacheKey, { response });
+    if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
     return response;
   }
 
@@ -929,7 +938,7 @@ export async function fetchMovieSearchResults(
   );
 
   const response = convertItemsToRss(newznabItems, limit, offset);
-  mediathekCache.set(cacheKey, { response });
+  if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
   return response;
 }
 
@@ -972,7 +981,7 @@ export async function fetchMovieSearchByQuery(
 
   // Search Mediathek by query (without year)
   const apiCacheKey = `mediathekapi_movie_query_${cleanedQuery}`;
-  let results: ApiResultItem[];
+  let results: ApiResultItem[] | null;
   const cachedApi = mediathekCache.get(apiCacheKey);
 
   if (cachedApi) {
@@ -981,6 +990,9 @@ export async function fetchMovieSearchByQuery(
   } else {
     console.log(`[Mediathek] Searching MediathekView API for movie query: "${cleanedQuery}"`);
     results = await queryMediathekView([{ fields: QUERY_FIELDS, query: cleanedQuery }], 500);
+    if (results === null) {
+      return serializeRss(getEmptyRssResult());
+    }
     console.log(
       `[Mediathek] API returned ${results.length} results for movie query "${cleanedQuery}"`
     );

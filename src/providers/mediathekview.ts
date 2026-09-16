@@ -72,7 +72,7 @@ export class MediathekViewProvider extends BaseProvider {
         limit * 3 // Fetch more to account for filtering
       );
 
-      const items = this.filterResults(results, query.type);
+      const items = this.filterResults(results ?? [], query.type);
 
       console.log(`[${this.id}] Found ${items.length} items after filtering`);
 
