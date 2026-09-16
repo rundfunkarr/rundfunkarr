@@ -144,3 +144,9 @@ describe("formatSabnzbdTimeleft", () => {
     }
   });
 });
+
+it("rejects a Base64 title containing a URL followed by whitespace and text", () => {
+  expect(
+    parseNzbContent(`filename="Show.nzb"\n<!-- ${b64("https://example.com is mentioned here")} -->`)
+  ).toBeNull();
+});

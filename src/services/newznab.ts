@@ -1,4 +1,5 @@
 import { Builder } from "xml2js";
+import { isStreamingUrl } from "@/lib/stream-url";
 import type {
   NewznabRss,
   NewznabItem,
@@ -270,7 +271,7 @@ function createRssItem(
   const encodedTitle = Buffer.from(formattedTitle).toString("base64");
   const encodedUrl = Buffer.from(url).toString("base64");
 
-  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodedUrl}&encodedTitle=${encodedTitle}`;
+  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
   const item = info.item;
 
   return {
@@ -466,7 +467,7 @@ function createMovieRssItem(
   const encodedTitle = Buffer.from(formattedTitle).toString("base64");
   const encodedUrl = Buffer.from(url).toString("base64");
 
-  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodedUrl}&encodedTitle=${encodedTitle}`;
+  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
 
   return {
     title: formattedTitle,
@@ -494,7 +495,8 @@ function createMovieRssItem(
 export function generateMovieRssItems(
   matchResult: MovieMatchResult,
   movieData: TmdbMovieData,
-  qualityPreference: QualityPreference = "all"
+  qualityPreference: QualityPreference = "all",
+  hlsEnabled: boolean = false
 ): NewznabItem[] {
   const items: NewznabItem[] = [];
   const item = matchResult.item;
@@ -502,9 +504,10 @@ export function generateMovieRssItems(
   // Movie categories (2000 = Movies)
   const baseCategories = ["2000"];
 
-  const has1080p = !!item.url_video_hd;
-  const has720p = !!item.url_video;
-  const has480p = !!item.url_video_low;
+  const allowed = (url: string) => !!url && (hlsEnabled || !isStreamingUrl(url));
+  const has1080p = allowed(item.url_video_hd);
+  const has720p = allowed(item.url_video);
+  const has480p = allowed(item.url_video_low);
 
   let include1080p = false;
   let include720p = false;
@@ -771,7 +774,7 @@ function createGenericRssItem(
   const encodedTitle = Buffer.from(formattedTitle).toString("base64");
   const encodedUrl = Buffer.from(url).toString("base64");
 
-  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodedUrl}&encodedTitle=${encodedTitle}`;
+  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
 
   const attributes: NewznabAttribute[] = categoryValues.map((v) => ({
     name: "category",

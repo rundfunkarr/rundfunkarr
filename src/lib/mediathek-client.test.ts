@@ -31,3 +31,47 @@ describe("queryMediathekView", () => {
     expect(await queryMediathekView([], 10)).toBeNull();
   });
 });
+
+const validItem = {
+  channel: "ARD",
+  topic: "News",
+  title: "News",
+  description: "",
+  filmlisteTimestamp: 1,
+  duration: 1800,
+  size: 100,
+  url_website: "",
+  url_video: "https://example.org/video.mp4",
+  url_video_low: "",
+  url_video_hd: "",
+};
+it("returns complete valid items unchanged", async () => {
+  vi.mocked(fetchWithRetry).mockResolvedValue(Response.json({ result: { results: [validItem] } }));
+  expect(await queryMediathekView([], 10)).toEqual([validItem]);
+});
+it.each([
+  null,
+  {},
+  { ...validItem, title: null },
+  { ...validItem, duration: "1800" },
+  { ...validItem, size: "unknown" },
+])("rejects malformed result entries: %j", async (item) => {
+  vi.mocked(fetchWithRetry).mockResolvedValue(
+    Response.json({ result: { results: [validItem, item] } })
+  );
+
+  expect(await queryMediathekView([], 10)).toBeNull();
+});
+
+it("normalizes the unknown size of live ORF HLS entries to zero", async () => {
+  vi.mocked(fetchWithRetry).mockResolvedValue(
+    Response.json({
+      result: {
+        results: [{ ...validItem, size: null, url_video: "https://example.org/orf.m3u8" }],
+      },
+    })
+  );
+  expect(await queryMediathekView([], 10)).toEqual([
+    { ...validItem, size: 0, url_video: "https://example.org/orf.m3u8" },
+  ]);
+});

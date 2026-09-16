@@ -237,6 +237,16 @@ describe("generateGenericRssItems", () => {
     url_video_hd: "https://example.com/video_1080.mp4",
   };
 
+  it("URL-encodes Base64 plus characters in generated download links", () => {
+    const url = "https://example.org/~~~";
+    const encoded = Buffer.from(url).toString("base64");
+    expect(encoded).toContain("+");
+    const [item] = generateGenericRssItems({ ...baseItem, url_video: url }, "720p");
+    expect(new URL(item.enclosure.url, "http://localhost").searchParams.get("encodedUrl")).toBe(
+      encoded
+    );
+  });
+
   it("emits one item per available quality with preference all", () => {
     const items = generateGenericRssItems(baseItem, "all");
 

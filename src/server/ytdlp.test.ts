@@ -93,3 +93,23 @@ it("reports rejected progress writes without an unhandled rejection", async () =
   child.emit("close", 0);
   expect((await done).success).toBe(false);
 });
+
+it.each([480, 720, 1080] as const)(
+  "limits HLS renditions to the requested %ip height",
+  async (height) => {
+    const done = downloadHlsStream(
+      "https://example.org/master.m3u8",
+      "/tmp/result.mkv",
+      undefined,
+      "mkv",
+      height
+    );
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    const args = spawn.mock.calls[0][1];
+    expect(args[args.indexOf("-f") + 1]).toBe(
+      `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
+    );
+    child.emit("close", 0);
+    expect((await done).success).toBe(true);
+  }
+);

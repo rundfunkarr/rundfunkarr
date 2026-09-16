@@ -1,4 +1,5 @@
 import { BaseProvider } from "./base";
+import { withStreamQuality } from "@/lib/stream-url";
 import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import {
   searchVideos,
@@ -160,10 +161,10 @@ export class SrfProvider extends BaseProvider {
       try {
         const composition = await getMediaComposition(urn);
         if (composition) {
-          const streamUrl = getBestStreamUrl(composition);
+          const streamUrl = getBestStreamUrl(composition, preferredQuality);
           if (streamUrl) {
             return {
-              url: streamUrl,
+              url: withStreamQuality(streamUrl, preferredQuality),
               isHls: true,
               filename: this.generateFilename(
                 item,
@@ -266,7 +267,9 @@ export class SrfProvider extends BaseProvider {
       duration: durationSeconds,
       size: 0, // Unknown until download
       websiteUrl: `https://www.srf.ch/play/tv/sendung/${result.show?.id || result.id}`,
-      videoUrl,
+      videoUrl: withStreamQuality(videoUrl, "standard"),
+      videoUrlLow: withStreamQuality(videoUrl, "low"),
+      videoUrlHigh: withStreamQuality(videoUrl, "high"),
     });
   }
 

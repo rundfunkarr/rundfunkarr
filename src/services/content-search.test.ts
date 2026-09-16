@@ -57,7 +57,7 @@ describe("configured providers in normal search flows", () => {
     const body = await response.json();
     expect(body.results).toHaveLength(1);
     expect(body.results[0].url_video).toBe(
-      "https://www.srf.ch/play/tv/redirect/detail/11111111-1111-4111-8111-111111111111"
+      "https://www.srf.ch/play/tv/redirect/detail/11111111-1111-4111-8111-111111111111#rundfunkarr-height=720"
     );
   });
 
@@ -113,4 +113,18 @@ describe("configured providers in normal search flows", () => {
     settings.set("download.enableHLS", "false");
     expect(await queryContent([], 50)).toEqual([]);
   });
+});
+
+it("restricts ORF-only upstream searches before applying the requested limit", async () => {
+  settings.set("provider.mediathekview.enabled", "false");
+  settings.set("provider.orf.enabled", "true");
+  settings.set("provider.srf.enabled", "false");
+  const queries = [{ fields: ["topic"], query: "News" }];
+  await queryContent(queries, 5);
+  expect(queryMediathekView).toHaveBeenCalledWith(
+    [...queries, { fields: ["channel"], query: "ORF" }],
+    5,
+    {}
+  );
+  expect(queries).toHaveLength(1);
 });

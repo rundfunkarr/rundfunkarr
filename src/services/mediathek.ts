@@ -937,8 +937,9 @@ export async function fetchMovieSearchResults(
   }
 
   // Generate RSS items for matches
+  const hlsEnabled = await isHlsEnabled();
   const newznabItems: NewznabItem[] = matchResults.flatMap((match) =>
-    generateMovieRssItems(match, movieData, quality)
+    generateMovieRssItems(match, movieData, quality, hlsEnabled)
   );
 
   console.log(
@@ -1087,7 +1088,7 @@ export async function fetchMovieSearchByQuery(
 
       const encodedTitle = Buffer.from(releaseTitle).toString("base64");
       const encodedUrl = Buffer.from(q.url).toString("base64");
-      const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodedUrl}&encodedTitle=${encodedTitle}`;
+      const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
 
       newznabItems.push({
         title: releaseTitle,

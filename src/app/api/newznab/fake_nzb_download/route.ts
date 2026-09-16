@@ -9,12 +9,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
   }
 
-  try {
-    // Only validate the base64 decodes cleanly - the *decoded* value isn't
-    // used below, see the comment on the XML body.
-    Buffer.from(encodedUrl, "base64").toString("utf-8");
-    Buffer.from(encodedTitle, "base64").toString("utf-8");
-  } catch {
+  if (
+    [encodedUrl, encodedTitle].some(
+      (value) =>
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value) ||
+        Buffer.from(value, "base64").toString("base64") !== value
+    )
+  ) {
     return NextResponse.json({ error: "Invalid base64 string" }, { status: 400 });
   }
 

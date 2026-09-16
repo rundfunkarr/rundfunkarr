@@ -226,6 +226,29 @@ export interface SrgssrSubtitle {
 // API Methods
 // ============================================================================
 
+const VIDEO_URN = /^urn:(srf|rts|rsi|rtr|swi):video:([a-zA-Z0-9-]+)$/;
+
+function validateMediaItems(items: unknown, source: string): SrgssrMediaItem[] {
+  if (
+    !Array.isArray(items) ||
+    !items.every(
+      (item) =>
+        item !== null &&
+        typeof item === "object" &&
+        (item.mediaType !== "VIDEO" ||
+          (typeof item.title === "string" &&
+            typeof item.urn === "string" &&
+            VIDEO_URN.test(item.urn) &&
+            typeof item.date === "string" &&
+            Number.isFinite(Date.parse(item.date)) &&
+            typeof item.duration === "number" &&
+            Number.isFinite(item.duration)))
+    )
+  )
+    throw new Error(`Invalid SRF ${source} response`);
+  return items;
+}
+
 /**
  * Search for videos
  */
@@ -241,15 +264,14 @@ export async function searchVideos(
 
   if (!response) throw new Error("SRF search failed");
   const items = response.searchResultListMedia ?? response.SearchResultListMedia;
-  if (!Array.isArray(items)) throw new Error("Invalid SRF search response");
-  return items;
+  return validateMediaItems(items, "search");
 }
 
 /**
  * Get video details including stream URLs
  */
 export async function getMediaComposition(urn: string): Promise<SrgssrMediaComposition | null> {
-  const match = urn.match(/^urn:(srf|rts|rsi|rtr|swi):video:([a-zA-Z0-9-]+)$/);
+  const match = urn.match(VIDEO_URN);
   if (!match) return null;
   return apiRequest<SrgssrMediaComposition>(
     `/${encodeURIComponent(match[2])}/mediaComposition?bu=${match[1]}`
@@ -272,15 +294,17 @@ export async function getLatestVideos(
 
   if (!response) throw new Error("SRF latest episodes failed");
   const items = response.mediaList ?? response.MediaList;
-  if (!Array.isArray(items)) throw new Error("Invalid SRF latest episodes response");
-  return items;
+  return validateMediaItems(items, "latest episodes");
 }
 
 /**
  * Get the best streaming URL for a video
  * Returns the HLS URL for the highest available quality
  */
-export function getBestStreamUrl(composition: SrgssrMediaComposition): string | null {
+export function getBestStreamUrl(
+  composition: SrgssrMediaComposition,
+  preferredQuality: "low" | "standard" | "high" = "high"
+): string | null {
   if (!composition.chapterList || composition.chapterList.length === 0) {
     return null;
   }
@@ -292,17 +316,21 @@ export function getBestStreamUrl(composition: SrgssrMediaComposition): string | 
     return null;
   }
 
-  // Prefer HLS, then HD quality
+  // Prefer HLS and choose the closest advertised quality. The downloader also
+  // limits manifest rendition height to the requested resolution.
   const hlsResources = chapter.resourceList.filter((r) => r.protocol === "HLS");
-  if (hlsResources.length > 0) {
-    // Prefer HD over SD
-    const hdResource = hlsResources.find((r) => r.quality === "HD");
-    return hdResource?.url || hlsResources[0].url;
+  const resources = hlsResources.length ? hlsResources : chapter.resourceList;
+  const qualities =
+    preferredQuality === "low"
+      ? ["SD", "HQ", "HD"]
+      : preferredQuality === "standard"
+        ? ["HQ", "HD", "SD"]
+        : ["HD", "HQ", "SD"];
+  for (const quality of qualities) {
+    const resource = resources.find((item) => item.quality === quality);
+    if (resource) return resource.url;
   }
-
-  // Fallback to any available resource
-  const hdResource = chapter.resourceList.find((r) => r.quality === "HD");
-  return hdResource?.url || chapter.resourceList[0].url;
+  return resources[0].url;
 }
 
 /**

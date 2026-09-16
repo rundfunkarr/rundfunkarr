@@ -24,7 +24,15 @@ export async function queryContent(
 
   try {
     const [indexed, swiss] = await Promise.all([
-      mvEnabled || orfEnabled ? queryMediathekView(queries, size, options) : Promise.resolve([]),
+      mvEnabled || orfEnabled
+        ? queryMediathekView(
+            !mvEnabled && orfEnabled
+              ? [...queries, { fields: ["channel"], query: "ORF" }]
+              : queries,
+            size,
+            options
+          )
+        : Promise.resolve([]),
       srfEnabled
         ? srfProvider.search({
             query: queries.find((q) => q.fields.includes("topic"))?.query || "",

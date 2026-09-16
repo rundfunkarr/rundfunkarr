@@ -111,7 +111,13 @@ export async function matchMovieItems(
 
   for (const item of items) {
     // Skip m3u8 streams unless HLS is enabled
-    if (!hlsEnabled && isStreamingUrl(item.url_video)) continue;
+    if (
+      !hlsEnabled &&
+      ![item.url_video, item.url_video_low, item.url_video_hd].some(
+        (url) => url && !isStreamingUrl(url)
+      )
+    )
+      continue;
 
     const normalizedTopic = normalizeTitle(item.topic);
     const normalizedTitle = normalizeTitle(item.title);

@@ -21,3 +21,17 @@ export function isHlsUrl(value: string): boolean {
 export function isStreamingUrl(value: string): boolean {
   return isHlsUrl(value) || srfUrnFromUrl(value) !== null;
 }
+
+export type StreamHeight = 480 | 720 | 1080;
+
+/** Keep the requested rendition with a stable URL through NZB and queue storage. */
+export function withStreamQuality(value: string, quality: "low" | "standard" | "high"): string {
+  const url = new URL(value);
+  url.hash = `rundfunkarr-height=${quality === "low" ? 480 : quality === "standard" ? 720 : 1080}`;
+  return url.toString();
+}
+
+export function getStreamHeight(value: string): StreamHeight | undefined {
+  const match = value.match(/#rundfunkarr-height=(480|720|1080)$/);
+  return match ? (Number(match[1]) as StreamHeight) : undefined;
+}

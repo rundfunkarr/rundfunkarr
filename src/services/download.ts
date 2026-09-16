@@ -76,7 +76,7 @@ export function parseNzbContent(nzbContent: string): { fileName: string; url: st
     } catch {
       continue;
     }
-    if (/^https?:\/\//.test(decoded)) {
+    if (/^https?:\/\/\S+$/.test(decoded)) {
       url = decoded;
       break;
     }

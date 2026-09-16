@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { isMkvConversionEnabled } from "@/lib/settings";
 import { downloadHlsStream } from "./ytdlp";
-import { isStreamingUrl, srfUrnFromUrl } from "@/lib/stream-url";
+import { getStreamHeight, isStreamingUrl, srfUrnFromUrl } from "@/lib/stream-url";
 import * as fs from "fs/promises";
 import { createWriteStream } from "fs";
 import * as path from "path";
@@ -165,7 +165,12 @@ async function processDownload(downloadId: string): Promise<void> {
       // Resolve stable SRF references at download time. The SRGSSR extractor
       // also obtains Akamai tokens and uses the configured proxy for metadata.
       const urn = srfUrnFromUrl(download.url);
-      const streamUrl = urn ? urn.replace(/^urn:/, "srgssr:") : download.url;
+      const maxHeight = getStreamHeight(download.url);
+      const streamUrl = urn
+        ? urn.replace(/^urn:/, "srgssr:")
+        : maxHeight
+          ? download.url.split("#")[0]
+          : download.url;
       const container = (await isMkvConversionEnabled()) ? "mkv" : "mp4";
       const tempMkvPath = path.join(downloadTempPath, `${download.title}.${container}`);
       const finalMkvPath = path.join(categoryDir, `${download.title}.${container}`);
@@ -184,7 +189,8 @@ async function processDownload(downloadId: string): Promise<void> {
             },
           });
         },
-        container
+        container,
+        maxHeight
       );
 
       if (!hlsResult.success) {
@@ -391,6 +397,8 @@ async function downloadFile(
   ) => Promise<void>
 ): Promise<boolean> {
   const abortController = new AbortController();
+  let fileStream: ReturnType<typeof createWriteStream> | undefined;
+  let completed = false;
   let stallTimer: ReturnType<typeof setTimeout> | undefined;
   const resetStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
@@ -410,7 +418,8 @@ async function downloadFile(
     }
 
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
-    const fileStream = createWriteStream(destPath);
+    fileStream = createWriteStream(destPath);
+    fileStream.on("error", () => abortController.abort());
 
     const reader = response.body.getReader();
     let downloadedBytes = 0;
@@ -427,7 +436,9 @@ async function downloadFile(
         break;
       }
 
-      fileStream.write(Buffer.from(value));
+      await new Promise<void>((resolve, reject) => {
+        fileStream!.write(Buffer.from(value), (error) => (error ? reject(error) : resolve()));
+      });
       downloadedBytes += value.length;
 
       // Calculate speed every second
@@ -450,20 +461,31 @@ async function downloadFile(
       }
     }
 
-    fileStream.end();
-
-    return new Promise((resolve) => {
-      fileStream.on("finish", () => resolve(true));
-      fileStream.on("error", (err) => {
+    completed = await new Promise<boolean>((resolve) => {
+      fileStream!.once("finish", () => resolve(true));
+      fileStream!.once("error", (err) => {
         console.error(`[Download] Write error: ${err}`);
         resolve(false);
       });
+      fileStream!.end();
     });
+    return completed;
   } catch (error) {
     console.error(`[Download] Error downloading file:`, error);
     return false;
   } finally {
     clearTimeout(stallTimer);
+    if (!completed) {
+      abortController.abort();
+      if (fileStream) {
+        await new Promise<void>((resolve) => {
+          if (fileStream!.closed) return resolve();
+          fileStream!.once("close", resolve);
+          fileStream!.destroy();
+        });
+        await fs.unlink(destPath).catch(() => {});
+      }
+    }
   }
 }
 

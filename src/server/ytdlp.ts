@@ -414,14 +414,17 @@ export async function downloadHlsStream(
     totalBytes: number,
     speed: number
   ) => Promise<void>,
-  container: "mkv" | "mp4" = "mkv"
+  container: "mkv" | "mp4" = "mkv",
+  maxHeight?: 480 | 720 | 1080
 ): Promise<YtdlpDownloadResult> {
   let lastPercent = 0;
 
   return downloadVideo(hlsUrl, {
     outputPath,
     container,
-    format: "bestvideo+bestaudio/best",
+    format: maxHeight
+      ? `bestvideo[height<=${maxHeight}]+bestaudio/best[height<=${maxHeight}]`
+      : "bestvideo+bestaudio/best",
     onProgress: async (percent, speedStr) => {
       if (onProgress && percent > lastPercent) {
         lastPercent = percent;

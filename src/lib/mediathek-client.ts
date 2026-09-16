@@ -62,7 +62,36 @@ export async function queryMediathekView(
       console.error("[MediathekClient] Invalid or unsuccessful API response");
       return null;
     }
-    return parsed.result.results;
+    // HLS entries use null for an unknown byte size in the live API.
+    const items = parsed.result.results.map((item) =>
+      item && typeof item === "object" && item.size === null ? { ...item, size: 0 } : item
+    );
+    if (
+      !items.every(
+        (item) =>
+          item !== null &&
+          typeof item === "object" &&
+          [
+            "channel",
+            "topic",
+            "title",
+            "description",
+            "url_website",
+            "url_video",
+            "url_video_low",
+            "url_video_hd",
+          ].every((key) => typeof item[key as keyof ApiResultItem] === "string") &&
+          ["filmlisteTimestamp", "duration", "size"].every(
+            (key) =>
+              typeof item[key as keyof ApiResultItem] === "number" &&
+              Number.isFinite(item[key as keyof ApiResultItem])
+          )
+      )
+    ) {
+      console.error("[MediathekClient] Invalid result item");
+      return null;
+    }
+    return items;
   } catch (error) {
     console.error("[MediathekClient] Error fetching from API:", error);
     return null;

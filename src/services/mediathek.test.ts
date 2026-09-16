@@ -149,3 +149,29 @@ describe("fetchMovieSearchResults – configured minimum duration", () => {
     );
   });
 });
+
+it.each(["standard", "high"])("keeps direct movie variants when %s is HLS", async (streaming) => {
+  const movie: TmdbMovieData = {
+    tmdbId: 123,
+    imdbId: null,
+    title: "Mixed Movie",
+    germanTitle: "Mixed Movie",
+    runtime: 60,
+    releaseDate: "2026-01-01",
+  };
+  mockApi([
+    makeItem({
+      topic: "Mixed Movie",
+      title: "Mixed Movie",
+      url_video:
+        streaming === "standard" ? "https://example.org/720.m3u8" : "https://example.org/720.mp4",
+      url_video_hd:
+        streaming === "high" ? "https://example.org/1080.m3u8" : "https://example.org/1080.mp4",
+      url_video_low: "https://example.org/480.mp4",
+    }),
+  ]);
+  const xml = await fetchMovieSearchResults(movie, 100, 0);
+  expect(xml).toContain("480p");
+  expect(xml).toContain(streaming === "standard" ? "1080p" : "720p");
+  expect(xml).not.toContain(streaming === "standard" ? "720p" : "1080p");
+});

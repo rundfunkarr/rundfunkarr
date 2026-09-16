@@ -530,6 +530,7 @@ export default function SettingsPage() {
                     <label className="text-sm font-medium">Consumer Key</label>
                     <Input
                       value={getFieldValue("api.srgssr.consumerKey")}
+                      onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => setFieldValue("api.srgssr.consumerKey", e.target.value)}
                       placeholder="SRG-SSR Consumer Key"
                       className="mt-1"
@@ -540,6 +541,7 @@ export default function SettingsPage() {
                     <Input
                       type="password"
                       value={getFieldValue("api.srgssr.consumerSecret")}
+                      onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => setFieldValue("api.srgssr.consumerSecret", e.target.value)}
                       placeholder="SRG-SSR Consumer Secret"
                       className="mt-1"

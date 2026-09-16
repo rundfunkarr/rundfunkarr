@@ -70,7 +70,7 @@ it.each(["mkv", "mp4"])(
       title: "Rundschau",
       category: "tv",
       status: "queued",
-      url: "https://www.srf.ch/play/tv/redirect/detail/11111111-1111-4111-8111-111111111111",
+      url: "https://www.srf.ch/play/tv/redirect/detail/11111111-1111-4111-8111-111111111111#rundfunkarr-height=480",
     });
     downloadUpdate.mockResolvedValue({});
     downloadCount.mockResolvedValue(0);
@@ -86,7 +86,8 @@ it.each(["mkv", "mp4"])(
       "srgssr:srf:video:11111111-1111-4111-8111-111111111111",
       expect.stringContaining(`Rundschau.${container}`),
       expect.any(Function),
-      container
+      container,
+      480
     );
     expect(await readFile(path.join(testRoot, "tv", `Rundschau.${container}`), "utf8")).toBe(
       "media"
@@ -314,4 +315,55 @@ describe("processDownload", () => {
       data: expect.objectContaining({ status: "completed" }),
     });
   });
+});
+
+it.each(["network error", "stall"])("removes partial files after a %s", async (failure) => {
+  configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
+    Promise.resolve(where.key === "download.path" ? { value: testRoot } : null)
+  );
+  downloadFindUnique.mockResolvedValue({
+    id: "failed-transfer",
+    title: "Partial",
+    category: "tv",
+    status: "queued",
+    url: "https://example.org/video.mp4",
+  });
+  downloadUpdate.mockResolvedValue({});
+  downloadCount.mockResolvedValue(0);
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url, options) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          source = controller;
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+        },
+      });
+      options.signal.addEventListener("abort", () => source.error(new Error("aborted")), {
+        once: true,
+      });
+      return new Response(body, { headers: { "content-length": "100" } });
+    })
+  );
+  vi.useFakeTimers();
+  try {
+    const done = processDownload("failed-transfer");
+    await vi.waitFor(() =>
+      expect(downloadUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ downloadedBytes: 3 }),
+        })
+      )
+    );
+    if (failure === "stall") await vi.advanceTimersByTimeAsync(60001);
+    else source.error(new Error("connection lost"));
+    await done;
+    await expect(access(path.join(testRoot, "incomplete", "Partial.mp4"))).rejects.toThrow();
+    expect(downloadUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
