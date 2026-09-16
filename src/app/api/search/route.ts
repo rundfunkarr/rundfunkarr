@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCategoriesForTopics, CategoryType } from "@/services/category";
-import { getSetting } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import { providerRegistry, initializeProviders } from "@/providers";
 import type { ProviderContentItem } from "@/types/provider";
 
-const MEDIATHEK_API_URL = "https://mediathekviewweb.de/api/query";
+import { queryContent } from "@/services/content-search";
+import { isStreamingUrl } from "@/lib/stream-url";
 
 async function isHlsEnabled(): Promise<boolean> {
   const setting = await getSetting("download.enableHLS");
@@ -70,8 +71,8 @@ export async function GET(request: NextRequest) {
     return handleProviderSearch(q, limit, type, providerId);
   }
 
-  // Legacy direct API search (for backward compatibility)
-  return handleLegacySearch(q, limit, type);
+  // UI searches and Newznab use the same enabled sources.
+  return handleDefaultSearch(q, limit, type);
 }
 
 /**
@@ -134,9 +135,9 @@ async function handleProviderSearch(
 }
 
 /**
- * Handle legacy direct API search (backward compatibility)
+ * Search enabled sources while preserving the UI response format
  */
-async function handleLegacySearch(
+async function handleDefaultSearch(
   q: string,
   limit: number,
   type: string | null
@@ -147,37 +148,20 @@ async function handleLegacySearch(
   const fetchSize = type === "movie" ? Math.max(limit * 3, 150) : Math.max(limit * 3, 100);
 
   try {
-    const requestBody = {
-      queries: [{ fields: ["topic", "title"], query: q }],
-      sortBy: "filmlisteTimestamp",
-      sortOrder: "desc",
-      future: true,
-      offset: 0,
-      size: fetchSize,
-    };
-
-    const response = await fetch(MEDIATHEK_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      return NextResponse.json({ results: [], error: "API error" }, { status: 500 });
+    const items = await queryContent([{ fields: ["topic", "title"], query: q }], fetchSize);
+    if (items === null) {
+      return NextResponse.json({ results: [], error: "Provider search failed" }, { status: 502 });
     }
-
-    const data = await response.json();
-    const items = data.result?.results || [];
 
     // Filter out m3u8 streams (unless HLS enabled) and transform results
     // For movies: only items >= 60 minutes (3600 seconds)
-    const minDuration = type === "movie" ? 3600 : 0;
+    const minDuration = type === "movie" ? await getMinDurationSeconds() : 0;
     const hlsEnabled = await isHlsEnabled();
 
     const filteredItems = items
       .filter(
         (item: { url_video: string; duration: number }) =>
-          (hlsEnabled || !item.url_video.endsWith(".m3u8")) && item.duration >= minDuration
+          (hlsEnabled || !isStreamingUrl(item.url_video)) && item.duration >= minDuration
       )
       .slice(0, limit);
 

@@ -1,0 +1,11 @@
+{
+  "version": "2026.08.19",
+  "sha256": {
+    "yt-dlp.exe": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+    "yt-dlp_macos": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202",
+    "yt-dlp_linux": "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a",
+    "yt-dlp_linux_aarch64": "b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc",
+    "yt-dlp_musllinux": "f3dec9cfeaf304cec98290fe41c6ad465d4b747d302473559643e7af24929722",
+    "yt-dlp_musllinux_aarch64": "17b164c4d258be92bb1ad146cb7c336b783aedb380814aabbcb7d52937f77e57"
+  }
+}

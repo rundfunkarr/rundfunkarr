@@ -1,3 +1,4 @@
+import { isStreamingUrl } from "@/lib/stream-url";
 import type { ApiResultItem, TmdbMovieData } from "@/types";
 import { getSetting } from "@/lib/settings";
 
@@ -93,7 +94,8 @@ export interface MovieMatchResult {
  */
 export async function matchMovieItems(
   items: ApiResultItem[],
-  movieData: TmdbMovieData
+  movieData: TmdbMovieData,
+  minDurationSeconds: number
 ): Promise<MovieMatchResult[]> {
   const durationTolerance = await getDurationTolerance();
   const hlsEnabled = await isHlsEnabled();
@@ -109,7 +111,7 @@ export async function matchMovieItems(
 
   for (const item of items) {
     // Skip m3u8 streams unless HLS is enabled
-    if (!hlsEnabled && item.url_video.endsWith(".m3u8")) continue;
+    if (!hlsEnabled && isStreamingUrl(item.url_video)) continue;
 
     const normalizedTopic = normalizeTitle(item.topic);
     const normalizedTitle = normalizeTitle(item.title);
@@ -119,8 +121,7 @@ export async function matchMovieItems(
     const itemDurationMinutes = Math.floor(item.duration / 60);
     const durationDiff = Math.abs(movieRuntimeMinutes - itemDurationMinutes);
 
-    // Check if it's a movie-length item (at least 60 minutes)
-    if (itemDurationMinutes < 60) continue;
+    if (minDurationSeconds > 0 && item.duration < minDurationSeconds) continue;
 
     let titleMatch: "exact" | "fuzzy" | "partial" | null = null;
     let titleScore = 0;

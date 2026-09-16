@@ -1,6 +1,7 @@
+import { isStreamingUrl } from "@/lib/stream-url";
 import { BaseProvider } from "./base";
 import { fetchWithRetry } from "@/lib/fetch-retry";
-import { getSetting } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import { queryMediathekView } from "@/lib/mediathek-client";
 import type { ApiResultItem } from "@/types";
 import type {
@@ -57,6 +58,8 @@ export class MediathekViewProvider extends BaseProvider {
   }
 
   async search(query: ProviderSearchQuery): Promise<ProviderContentItem[]> {
+    this.minDuration = await getMinDurationSeconds();
+    this.hlsEnabled = (await getSetting("download.enableHLS")) === "true";
     const limit = query.limit || 100;
     const searchQuery = query.query.trim();
 
@@ -72,7 +75,8 @@ export class MediathekViewProvider extends BaseProvider {
         limit * 3 // Fetch more to account for filtering
       );
 
-      const items = this.filterResults(results ?? [], query.type);
+      if (results === null) throw new Error("MediathekView search failed");
+      const items = this.filterResults(results, query.type);
 
       console.log(`[${this.id}] Found ${items.length} items after filtering`);
 
@@ -118,17 +122,18 @@ export class MediathekViewProvider extends BaseProvider {
    */
   private filterResults(
     results: ApiResultItem[],
-    type?: "all" | "movie" | "series"
+    _type?: "all" | "movie" | "series"
   ): ProviderContentItem[] {
     const items: ProviderContentItem[] = [];
 
     // For movie search, require at least 60 minutes
-    const movieMinDuration = 60 * 60;
-    const effectiveMinDuration = type === "movie" ? movieMinDuration : this.minDuration;
+    const effectiveMinDuration = this.minDuration;
 
     for (const result of results) {
+      // ORF has its own opt-in provider in aggregated searches.
+      if (/^ORF\b/i.test(result.channel)) continue;
       // Skip HLS unless enabled
-      if (!this.hlsEnabled && result.url_video.endsWith(".m3u8")) {
+      if (!this.hlsEnabled && isStreamingUrl(result.url_video)) {
         continue;
       }
 

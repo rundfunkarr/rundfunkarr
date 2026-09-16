@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { tvdbCache } from "@/lib/cache";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { getSettings } from "@/lib/settings";
+import { buildTvdbLoginPayload } from "@/lib/tvdb-auth";
 import type { TvdbData, TvdbEpisode, TvdbAlias } from "@/types";
 
 const TVDB_API_URL = "https://api4.thetvdb.com/v4";
@@ -9,6 +10,18 @@ const TVDB_API_URL = "https://api4.thetvdb.com/v4";
 // Token management
 let cachedToken: string | null = null;
 let tokenExpiry: Date | null = null;
+
+export function clearTvdbTokenMemoryCache(): void {
+  cachedToken = null;
+  tokenExpiry = null;
+}
+
+export async function clearTvdbTokenCache(): Promise<void> {
+  clearTvdbTokenMemoryCache();
+  await prisma.config.deleteMany({
+    where: { key: { in: ["tvdb_token", "tvdb_token_expiry"] } },
+  });
+}
 
 async function getToken(): Promise<string | null> {
   // Check if we have a valid cached token
@@ -42,8 +55,9 @@ async function refreshToken(): Promise<string | null> {
   const settings = await getSettings(["api.tvdb.key", "api.tvdb.pin"]);
   const apiKey = settings["api.tvdb.key"];
   const pin = settings["api.tvdb.pin"];
+  const payload = buildTvdbLoginPayload(apiKey, pin);
 
-  if (!apiKey) {
+  if (!payload) {
     console.error("TVDB API key not configured in settings");
     return null;
   }
@@ -52,7 +66,7 @@ async function refreshToken(): Promise<string | null> {
     const response = await fetchWithRetry(`${TVDB_API_URL}/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apikey: apiKey, pin: pin || undefined }),
+      body: JSON.stringify(payload),
     });
 
     const data = await response.json();

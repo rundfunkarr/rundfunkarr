@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS Download (
     completedAt DATETIME
 );
 
+CREATE INDEX IF NOT EXISTS Download_status_idx ON Download(status);
+
 CREATE TABLE IF NOT EXISTS Config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -64,6 +66,16 @@ CREATE TABLE IF NOT EXISTS GeneratedRuleset (
 );
 
 CREATE INDEX IF NOT EXISTS GeneratedRuleset_tvdbId_idx ON GeneratedRuleset(tvdbId);
+
+CREATE TABLE IF NOT EXISTS TopicCategory (
+    id TEXT NOT NULL PRIMARY KEY,
+    topic TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL,
+    tmdbId INTEGER,
+    cachedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS TopicCategory_topic_idx ON TopicCategory(topic);
 
 -- Prisma migrations table (for compatibility)
 CREATE TABLE IF NOT EXISTS _prisma_migrations (

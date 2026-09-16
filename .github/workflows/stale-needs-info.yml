@@ -7,11 +7,11 @@ on:
 
 jobs:
   close-stale:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       issues: write
     steps:
-      - uses: actions/stale@v9
+      - uses: actions/stale@v11
         with:
           stale-issue-label: 'needs-info'
           only-labels: 'needs-info'

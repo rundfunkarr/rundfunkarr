@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSettings } from "@/contexts/settings-context";
+import { buildTvdbLoginPayload } from "@/lib/tvdb-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -74,12 +75,13 @@ export default function SetupPage() {
     setIsValidating(true);
 
     // Validate TVDB
-    if (tvdbKey && tvdbPin) {
+    const tvdbPayload = buildTvdbLoginPayload(tvdbKey, tvdbPin);
+    if (tvdbPayload) {
       try {
         const res = await fetch("https://api4.thetvdb.com/v4/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apikey: tvdbKey, pin: tvdbPin }),
+          body: JSON.stringify(tvdbPayload),
         });
         setTvdbValid(res.ok);
       } catch {
@@ -261,7 +263,8 @@ export default function SetupPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">TheTVDB</CardTitle>
                   <CardDescription>
-                    Für TV-Serien Metadaten.{" "}
+                    Für TV-Serien-Metadaten. Project API Keys funktionieren ohne PIN;
+                    Subscriber-Keys können weiterhin eine PIN verwenden.{" "}
                     <a
                       href="https://thetvdb.com/api-information"
                       target="_blank"
@@ -281,7 +284,7 @@ export default function SetupPage() {
                   <Input
                     value={tvdbPin}
                     onChange={(e) => setValue("api.tvdb.pin", e.target.value)}
-                    placeholder="PIN"
+                    placeholder="PIN (optional)"
                   />
                   {tvdbValid !== null && (
                     <Badge variant={tvdbValid ? "default" : "destructive"}>
@@ -756,8 +759,10 @@ export default function SetupPage() {
                       4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Prowlarr synct Indexer und Download-Client automatisch zu deinen anderen *arr
-                      Apps.
+                      Prowlarr synchronisiert den Indexer automatisch zu deinen anderen *arr Apps.
+                      Den Download-Client synchronisiert Prowlarr nicht. Richte RundfunkArr dafür
+                      zusätzlich direkt in Sonarr und Radarr ein. Der Download-Client hier ist nur
+                      für manuelle Downloads aus Prowlarr gedacht.
                     </p>
                   </div>
                 </TabsContent>

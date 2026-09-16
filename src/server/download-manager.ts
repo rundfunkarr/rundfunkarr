@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
-import { convertMp4ToMkv, ensureFfmpegExists } from "./ffmpeg";
-import { isHlsUrl, downloadHlsStream, ensureYtdlpExists } from "./ytdlp";
+import { isMkvConversionEnabled } from "@/lib/settings";
+import { downloadHlsStream } from "./ytdlp";
+import { isStreamingUrl, srfUrnFromUrl } from "@/lib/stream-url";
 import * as fs from "fs/promises";
 import { createWriteStream } from "fs";
 import * as path from "path";
@@ -55,10 +56,6 @@ const downloadSemaphore = new Semaphore(MAX_CONCURRENT_DOWNLOADS);
 let isProcessing = false;
 let processingPromise: Promise<void> | null = null;
 
-// Initialize FFmpeg and yt-dlp on startup
-ensureFfmpegExists().catch(console.error);
-ensureYtdlpExists().catch(console.error);
-
 export async function startDownloadProcessing(): Promise<void> {
   if (isProcessing) {
     return processingPromise || Promise.resolve();
@@ -89,6 +86,41 @@ async function processQueue(): Promise<void> {
 
     // Small delay to prevent tight loop
     await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/**
+ * Move a finished file into the category folder.
+ *
+ * The folder was created when the download started, but *arr apps remove the
+ * imported file from the category folder while later downloads are still
+ * running, and delete the folder once it is empty -- so it is re-created
+ * right before the move. That still leaves a moment between mkdir and rename;
+ * if an import deletes the folder in exactly that instant, the ENOENT is
+ * answered with one more re-create and retry. A missing SOURCE file also
+ * surfaces as ENOENT and fails the retry identically, which is correct.
+ */
+async function moveIntoCategoryDir(
+  sourcePath: string,
+  targetPath: string,
+  categoryDir: string
+): Promise<void> {
+  await fs.mkdir(categoryDir, { recursive: true });
+  const move = async () => {
+    try {
+      await fs.rename(sourcePath, targetPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+      await fs.copyFile(sourcePath, targetPath);
+      await fs.unlink(sourcePath);
+    }
+  };
+  try {
+    await move();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await fs.mkdir(categoryDir, { recursive: true });
+    await move();
   }
 }
 
@@ -124,17 +156,22 @@ async function processDownload(downloadId: string): Promise<void> {
     await fs.mkdir(categoryDir, { recursive: true });
 
     // Check if this is an HLS stream
-    const isHls = isHlsUrl(download.url);
+    const isHls = isStreamingUrl(download.url);
 
     if (isHls) {
       // HLS download path - use yt-dlp
       console.log(`[Download] Detected HLS stream, using yt-dlp`);
 
-      const tempMkvPath = path.join(downloadTempPath, `${download.title}.mkv`);
-      const finalMkvPath = path.join(categoryDir, `${download.title}.mkv`);
+      // Resolve stable SRF references at download time. The SRGSSR extractor
+      // also obtains Akamai tokens and uses the configured proxy for metadata.
+      const urn = srfUrnFromUrl(download.url);
+      const streamUrl = urn ? urn.replace(/^urn:/, "srgssr:") : download.url;
+      const container = (await isMkvConversionEnabled()) ? "mkv" : "mp4";
+      const tempMkvPath = path.join(downloadTempPath, `${download.title}.${container}`);
+      const finalMkvPath = path.join(categoryDir, `${download.title}.${container}`);
 
       const hlsResult = await downloadHlsStream(
-        download.url,
+        streamUrl,
         tempMkvPath,
         async (progress, downloadedBytes, totalBytes, speed) => {
           await prisma.download.update({
@@ -146,7 +183,8 @@ async function processDownload(downloadId: string): Promise<void> {
               speed,
             },
           });
-        }
+        },
+        container
       );
 
       if (!hlsResult.success) {
@@ -157,7 +195,7 @@ async function processDownload(downloadId: string): Promise<void> {
       // Move to final location
       const outputPath = hlsResult.outputPath || tempMkvPath;
       console.log(`[Download] Moving HLS result to final location: ${finalMkvPath}`);
-      await fs.rename(outputPath, finalMkvPath);
+      await moveIntoCategoryDir(outputPath, finalMkvPath, categoryDir);
 
       // Get file size
       const stats = await fs.stat(finalMkvPath);
@@ -165,7 +203,7 @@ async function processDownload(downloadId: string): Promise<void> {
       // Calculate storage path (may be mapped differently)
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
       const storagePath = downloadFolderMapping
-        ? path.join(downloadFolderMapping, download.category, `${download.title}.mkv`)
+        ? path.join(downloadFolderMapping, download.category, `${download.title}.${container}`)
         : finalMkvPath;
 
       // Mark as completed
@@ -220,8 +258,8 @@ async function processDownload(downloadId: string): Promise<void> {
 
     console.log(`[Download] File downloaded to temp: ${mp4Path}`);
 
-    // Convert to MKV if it's an MP4
-    if (fileExtension === ".mp4") {
+    // Convert MP4 files to MKV unless the user disabled this step.
+    if (fileExtension.toLowerCase() === ".mp4" && (await isMkvConversionEnabled())) {
       // Convert in temp folder first
       const tempMkvPath = path.join(downloadTempPath, `${download.title}.mkv`);
       const finalMkvPath = path.join(categoryDir, `${download.title}.mkv`);
@@ -233,6 +271,7 @@ async function processDownload(downloadId: string): Promise<void> {
         data: { status: "converting" },
       });
 
+      const { convertMp4ToMkv } = await import("./ffmpeg");
       const conversionResult = await convertMp4ToMkv(mp4Path, tempMkvPath);
 
       if (!conversionResult.success) {
@@ -242,9 +281,10 @@ async function processDownload(downloadId: string): Promise<void> {
         return;
       }
 
-      // Move completed MKV to final location
+      // Move completed MKV to final location; see moveIntoCategoryDir for why
+      // the category directory is re-created here.
       console.log(`[Download] Moving to final location: ${finalMkvPath}`);
-      await fs.rename(tempMkvPath, finalMkvPath);
+      await moveIntoCategoryDir(tempMkvPath, finalMkvPath, categoryDir);
 
       // Clean up temp MP4 file
       await fs.unlink(mp4Path).catch(() => {});
@@ -276,11 +316,16 @@ async function processDownload(downloadId: string): Promise<void> {
         `[Download] Completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB in ${downloadTime}s)`
       );
     } else {
-      // Non-MP4 file, move to final location
+      // Keep non-MP4 files and MP4 files with disabled conversion unchanged.
       const finalPath = path.join(categoryDir, `${download.title}${fileExtension}`);
-      await fs.rename(mp4Path, finalPath);
+      await moveIntoCategoryDir(mp4Path, finalPath, categoryDir);
 
       const stats = await fs.stat(finalPath);
+
+      const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
+      const storagePath = downloadFolderMapping
+        ? path.join(downloadFolderMapping, download.category, `${download.title}${fileExtension}`)
+        : finalPath;
 
       await prisma.download.update({
         where: { id: downloadId },
@@ -288,7 +333,7 @@ async function processDownload(downloadId: string): Promise<void> {
           status: "completed",
           progress: 100,
           size: stats.size,
-          filePath: finalPath,
+          filePath: storagePath,
           completedAt: new Date(),
         },
       });

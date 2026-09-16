@@ -16,6 +16,7 @@ import type {
 class ProviderRegistry {
   private providers: Map<string, ContentProvider> = new Map();
   private initialized = false;
+  private initializing: Promise<void> | null = null;
 
   /**
    * Register a provider
@@ -37,6 +38,12 @@ class ProviderRegistry {
       return;
     }
 
+    if (this.initializing) return this.initializing;
+    this.initializing = this.initializeAll();
+    await this.initializing;
+  }
+
+  private async initializeAll(): Promise<void> {
     console.log(`[ProviderRegistry] Initializing ${this.providers.size} providers...`);
 
     const initPromises = Array.from(this.providers.values()).map(async (provider) => {

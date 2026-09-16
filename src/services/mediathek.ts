@@ -1,6 +1,7 @@
+import { isStreamingUrl } from "@/lib/stream-url";
 import { mediathekCache } from "@/lib/cache";
-import { getSetting } from "@/lib/settings";
-import { queryMediathekView } from "@/lib/mediathek-client";
+import { getMinDurationSeconds, getSetting } from "@/lib/settings";
+import { queryContent } from "./content-search";
 import { getShowInfoByTvdbId } from "./shows";
 import {
   ensureRulesetsLoaded,
@@ -12,6 +13,7 @@ import {
 import {
   generateRssItems,
   generateMovieRssItems,
+  generateGenericRssItems,
   convertItemsToRss,
   serializeRss,
   getEmptyRssResult,
@@ -56,17 +58,6 @@ async function getQualityPreference(): Promise<QualityPreference> {
   return "all"; // Default to all qualities
 }
 
-async function getMinDuration(): Promise<number> {
-  const setting = await getSetting("matching.minDuration");
-  if (setting) {
-    const parsed = parseInt(setting, 10);
-    if (!isNaN(parsed) && parsed >= 0) {
-      return parsed;
-    }
-  }
-  return 300; // Default: 5 minutes
-}
-
 // Keywords that are always skipped (trailers, outtakes, etc.)
 const SKIP_KEYWORDS = ["Trailer", "Outtakes:", "(klare Sprache)"];
 
@@ -76,7 +67,7 @@ function shouldSkipItem(
   hlsEnabled: boolean = false
 ): boolean {
   // Skip m3u8 streams unless HLS is enabled, items with skip keywords, and items shorter than minDuration
-  if (!hlsEnabled && item.url_video.endsWith(".m3u8")) return true;
+  if (!hlsEnabled && isStreamingUrl(item.url_video)) return true;
   if (SKIP_KEYWORDS.some((kw) => item.title.includes(kw))) return true;
   if (minDuration > 0 && item.duration < minDuration) return true;
   return false;
@@ -484,7 +475,7 @@ async function applyRulesetFilters(
   tvdbData?: TvdbData
 ): Promise<{ matchedEpisodes: MatchedEpisodeInfo[]; unmatchedItems: ApiResultItem[] }> {
   await ensureRulesetsLoaded();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const hlsEnabled = await isHlsEnabled();
   console.log(
@@ -588,6 +579,8 @@ async function applyRulesetFilters(
 
       if (matchInfo) {
         matchedEpisodes.push(matchInfo);
+        const idx = unmatchedItems.indexOf(item);
+        if (idx > -1) unmatchedItems.splice(idx, 1);
         break;
       } else {
         const idx = unmatchedItems.indexOf(item);
@@ -678,7 +671,7 @@ export async function fetchSearchResultsById(
   offset: number
 ): Promise<string> {
   const quality = await getQualityPreference();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const searchQuery = tvdbData.germanName || tvdbData.name;
   console.log(
@@ -712,7 +705,7 @@ export async function fetchSearchResultsById(
     results = (cachedApi as { results: ApiResultItem[] }).results;
   } else {
     console.log(`[Mediathek] Searching MediathekView API with query: "${searchQuery}"`);
-    results = await queryMediathekView([{ fields: QUERY_FIELDS, query: searchQuery }], 10000);
+    results = await queryContent([{ fields: QUERY_FIELDS, query: searchQuery }], 10000);
 
     if (results === null || results.length === 0) {
       return serializeRss(getEmptyRssResult());
@@ -752,17 +745,20 @@ export async function fetchSearchResultsByString(
   limit: number,
   offset: number
 ): Promise<string> {
+  // Normalize once: a whitespace-only q is treated as no query everywhere
+  // (API query, cache keys, and generic gating) so behavior stays consistent.
+  const trimmedQ = q?.trim() || null;
   const quality = await getQualityPreference();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
-  const cacheKey = `q_${q ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
+  const cacheKey = `q_${trimmedQ ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached) {
     return (cached as { response: string }).response;
   }
 
-  const apiCacheKey = `mediathekapi_${q ?? "null"}_${season ?? "null"}`;
+  const apiCacheKey = `mediathekapi_${trimmedQ ?? "null"}_${season ?? "null"}`;
   let results: ApiResultItem[] | null;
   const cachedApi = mediathekCache.get(apiCacheKey);
 
@@ -771,8 +767,8 @@ export async function fetchSearchResultsByString(
   } else {
     const queries: Array<{ fields: string[]; query: string }> = [];
 
-    if (q) {
-      queries.push({ fields: QUERY_FIELDS, query: q });
+    if (trimmedQ) {
+      queries.push({ fields: QUERY_FIELDS, query: trimmedQ });
     }
 
     if (season) {
@@ -780,18 +776,29 @@ export async function fetchSearchResultsByString(
       queries.push({ fields: ["title"], query: `S${zeroPadded}` });
     }
 
-    results = await queryMediathekView(queries, 1500);
+    results = await queryContent(queries, 1500);
     if (results === null) {
       return serializeRss(getEmptyRssResult());
     }
     mediathekCache.set(apiCacheKey, { results });
   }
 
-  const { matchedEpisodes } = await applyRulesetFilters(results);
+  const { matchedEpisodes, unmatchedItems } = await applyRulesetFilters(results);
   const newznabItems: NewznabItem[] = matchedEpisodes.flatMap((info) =>
     generateRssItems(info, quality)
   );
-  const response = convertItemsToRss(newznabItems, limit, offset);
+
+  // Generic (no-ruleset) results are only meaningful for an actual text search.
+  // A season-only query (e.g. tvsearch&season=01 with no q) would otherwise emit
+  // every title that merely contains "S01" across unrelated shows. Gate on a
+  // non-empty q to keep the previous (matched-only) behavior for those queries.
+  const hasTextQuery = !!trimmedQ;
+  const genericItems: NewznabItem[] = hasTextQuery
+    ? unmatchedItems.flatMap((item) => generateGenericRssItems(item, quality))
+    : [];
+
+  const allItems = [...newznabItems, ...genericItems];
+  const response = convertItemsToRss(allItems, limit, offset);
 
   mediathekCache.set(cacheKey, { response });
   return response;
@@ -799,7 +806,7 @@ export async function fetchSearchResultsByString(
 
 export async function fetchSearchResultsForRssSync(limit: number, offset: number): Promise<string> {
   const quality = await getQualityPreference();
-  const minDuration = await getMinDuration();
+  const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const cacheKey = `rss_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
@@ -815,7 +822,7 @@ export async function fetchSearchResultsForRssSync(limit: number, offset: number
   if (cachedApi) {
     results = (cachedApi as { results: ApiResultItem[] }).results;
   } else {
-    results = await queryMediathekView([], 6000);
+    results = await queryContent([], 6000);
     if (results === null) {
       return serializeRss(getEmptyRssResult());
     }
@@ -843,11 +850,12 @@ export async function fetchMovieSearchResults(
   offset: number
 ): Promise<string> {
   const quality = await getQualityPreference();
+  const minDuration = await getMinDurationSeconds();
   console.log(
-    `[Mediathek] fetchMovieSearchResults: tmdbId=${movieData.tmdbId}, title="${movieData.title}", germanTitle="${movieData.germanTitle}", runtime=${movieData.runtime} min, quality=${quality}`
+    `[Mediathek] fetchMovieSearchResults: tmdbId=${movieData.tmdbId}, title="${movieData.title}", germanTitle="${movieData.germanTitle}", runtime=${movieData.runtime} min, quality=${quality}, minDuration=${minDuration}s`
   );
 
-  const cacheKey = `movie_${movieData.tmdbId}_${limit}_${offset}_${quality}`;
+  const cacheKey = `movie_${movieData.tmdbId}_${limit}_${offset}_${quality}_${minDuration}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -872,7 +880,7 @@ export async function fetchMovieSearchResults(
     }
 
     console.log(`[Mediathek] Searching MediathekView API for movie: "${searchTerm}"`);
-    const results = await queryMediathekView([{ fields: QUERY_FIELDS, query: searchTerm }], 500);
+    const results = await queryContent([{ fields: QUERY_FIELDS, query: searchTerm }], 500);
     if (results === null) return null;
     console.log(`[Mediathek] API returned ${results.length} results for "${searchTerm}"`);
     mediathekCache.set(apiCacheKey, { results });
@@ -919,7 +927,7 @@ export async function fetchMovieSearchResults(
   }
 
   // Match results against movie data
-  const matchResults = await matchMovieItems(filteredResults, movieData);
+  const matchResults = await matchMovieItems(filteredResults, movieData, minDuration);
 
   if (matchResults.length === 0) {
     console.log(`[Mediathek] No matches found for movie`);
@@ -952,7 +960,7 @@ export async function fetchMovieSearchByQuery(
   offset: number
 ): Promise<string> {
   const quality = await getQualityPreference();
-  const MOVIE_MIN_DURATION = 60 * 60; // 60 minutes in seconds
+  const minDuration = await getMinDurationSeconds();
 
   // Strip trailing year from query (Radarr sends "Movie Title 2018")
   const cleanedQuery = query.replace(/\s+\d{4}$/, "").trim();
@@ -960,7 +968,7 @@ export async function fetchMovieSearchByQuery(
   const searchYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
 
   console.log(
-    `[Mediathek] fetchMovieSearchByQuery: query="${query}", cleanedQuery="${cleanedQuery}", year=${searchYear}, quality=${quality}, minDuration=${MOVIE_MIN_DURATION}s`
+    `[Mediathek] fetchMovieSearchByQuery: query="${query}", cleanedQuery="${cleanedQuery}", year=${searchYear}, quality=${quality}, minDuration=${minDuration}s`
   );
 
   // Try to find the movie on TMDB to get IDs for Radarr matching
@@ -971,7 +979,7 @@ export async function fetchMovieSearchByQuery(
     );
   }
 
-  const cacheKey = `movie_query_${cleanedQuery}_${searchYear || ""}_${limit}_${offset}_${quality}`;
+  const cacheKey = `movie_query_${cleanedQuery}_${searchYear || ""}_${limit}_${offset}_${quality}_${minDuration}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -989,7 +997,7 @@ export async function fetchMovieSearchByQuery(
     results = (cachedApi as { results: ApiResultItem[] }).results;
   } else {
     console.log(`[Mediathek] Searching MediathekView API for movie query: "${cleanedQuery}"`);
-    results = await queryMediathekView([{ fields: QUERY_FIELDS, query: cleanedQuery }], 500);
+    results = await queryContent([{ fields: QUERY_FIELDS, query: cleanedQuery }], 500);
     if (results === null) {
       return serializeRss(getEmptyRssResult());
     }
@@ -1009,14 +1017,14 @@ export async function fetchMovieSearchByQuery(
   // Filter: skip trailers, m3u8 (unless HLS enabled), and apply movie minimum duration (60 min)
   const hlsEnabled = await isHlsEnabled();
   const filteredResults = results.filter((item) => {
-    if (!hlsEnabled && item.url_video.endsWith(".m3u8")) return false;
+    if (!hlsEnabled && isStreamingUrl(item.url_video)) return false;
     if (SKIP_KEYWORDS.some((kw) => item.title.includes(kw))) return false;
-    if (item.duration < MOVIE_MIN_DURATION) return false;
+    if (minDuration > 0 && item.duration < minDuration) return false;
     return true;
   });
 
   console.log(
-    `[Mediathek] Results after movie filtering (min ${MOVIE_MIN_DURATION / 60} min): ${filteredResults.length}`
+    `[Mediathek] Results after movie filtering (min ${minDuration}s): ${filteredResults.length}`
   );
 
   if (filteredResults.length === 0) {

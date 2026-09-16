@@ -6,6 +6,7 @@ interface Settings {
   // General
   "download.path": string;
   "download.quality": string;
+  "download.convertToMkv": string;
 
   // API Keys
   "api.tvdb.key": string;

@@ -1,5 +1,5 @@
 # Stage 1: Dependencies
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 # Install dependencies needed for native modules
@@ -11,7 +11,7 @@ COPY prisma ./prisma
 RUN npm ci
 
 # Stage 2: Builder
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 # Copy dependencies
@@ -35,7 +35,7 @@ RUN mkdir -p /app/standalone-out && \
     ls -la /app/standalone-out/
 
 # Stage 3: Runner
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 # Install runtime dependencies for FFmpeg, user management, and DB init
@@ -51,13 +51,18 @@ RUN apk add --no-cache \
     ffmpeg \
     && rm -rf /var/cache/apk/*
 
+COPY src/server/ytdlp-release.json /tmp/ytdlp-release.json
+
 # Select the standalone musl binary for the image's architecture.
 RUN case "$(apk --print-arch)" in \
         x86_64) asset=yt-dlp_musllinux ;; \
         aarch64) asset=yt-dlp_musllinux_aarch64 ;; \
         *) echo "Unsupported yt-dlp architecture" >&2; exit 1 ;; \
     esac \
-    && curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${asset}" -o /usr/local/bin/yt-dlp \
+    && version=$(node -p 'require("/tmp/ytdlp-release.json").version') \
+    && checksum=$(node -p 'require("/tmp/ytdlp-release.json").sha256[process.argv[1]]' "$asset") \
+    && curl -fL "https://github.com/yt-dlp/yt-dlp/releases/download/${version}/${asset}" -o /usr/local/bin/yt-dlp \
+    && echo "$checksum  /usr/local/bin/yt-dlp" | sha256sum -c - \
     && chmod +x /usr/local/bin/yt-dlp
 
 ENV NODE_ENV=production

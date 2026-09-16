@@ -1,7 +1,8 @@
 import { BaseProvider } from "./base";
-import { getSetting } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import {
   searchVideos,
+  getLatestVideos,
   getMediaComposition,
   getBestStreamUrl,
   checkApiStatus,
@@ -76,18 +77,18 @@ export class SrfProvider extends BaseProvider {
     const consumerKey = await getSetting("api.srgssr.consumerKey");
     const consumerSecret = await getSetting("api.srgssr.consumerSecret");
 
-    if (!consumerKey || !consumerSecret) {
+    if (!consumerKey?.trim() || !consumerSecret?.trim()) {
       return false;
     }
 
-    return true;
+    return (await getSetting("download.enableHLS")) === "true";
   }
 
   async search(query: ProviderSearchQuery): Promise<ProviderContentItem[]> {
     const limit = query.limit || 50;
     const searchQuery = query.query.trim();
 
-    if (!searchQuery || searchQuery.length < 2) {
+    if (searchQuery && searchQuery.length < 2) {
       return [];
     }
 
@@ -102,7 +103,10 @@ export class SrfProvider extends BaseProvider {
 
     try {
       // Search SRF videos
-      const results = await searchVideos(searchQuery, "SRF", limit * 2);
+      this.minDuration = (await getMinDurationSeconds()) * 1000;
+      const results = searchQuery
+        ? await searchVideos(searchQuery, "SRF", Math.min(limit * 2, 100))
+        : await getLatestVideos("SRF", Math.min(limit, 100));
 
       if (!results || results.length === 0) {
         console.log(`[${this.id}] No results found`);
@@ -161,9 +165,17 @@ export class SrfProvider extends BaseProvider {
             return {
               url: streamUrl,
               isHls: true,
-              filename: this.generateFilename(item, preferredQuality === "high" ? "1080p" : "720p"),
+              filename: this.generateFilename(
+                item,
+                preferredQuality === "high" ? "1080p" : preferredQuality === "low" ? "480p" : "720p"
+              ),
               expectedSize: 0, // Unknown for HLS
-              quality: preferredQuality === "high" ? "1080p" : "720p",
+              quality:
+                preferredQuality === "high"
+                  ? "1080p"
+                  : preferredQuality === "low"
+                    ? "480p"
+                    : "720p",
             };
           }
         }
@@ -172,8 +184,7 @@ export class SrfProvider extends BaseProvider {
       }
     }
 
-    // Fallback to standard video URL
-    return super.getDownloadInfo(item, preferredQuality);
+    throw new Error("SRF stream is unavailable");
   }
 
   /**
@@ -181,13 +192,12 @@ export class SrfProvider extends BaseProvider {
    */
   private filterAndMapResults(
     results: SrgssrMediaItem[],
-    type?: "all" | "movie" | "series"
+    _type?: "all" | "movie" | "series"
   ): ProviderContentItem[] {
     const items: ProviderContentItem[] = [];
 
     // For movie search, require at least 60 minutes
-    const movieMinDuration = 60 * 60 * 1000;
-    const effectiveMinDuration = type === "movie" ? movieMinDuration : this.minDuration;
+    const effectiveMinDuration = this.minDuration;
 
     for (const result of results) {
       // Skip non-video content
@@ -215,11 +225,7 @@ export class SrfProvider extends BaseProvider {
         continue;
       }
 
-      // Skip content not playable abroad (unless proxy is configured)
-      // We'll still include it but the download might fail without proxy
-      // if (!result.playableAbroad) {
-      //   continue;
-      // }
+      // Include regional content; the configured proxy is applied at download time.
 
       items.push(this.mapToContentItem(result));
     }
@@ -248,7 +254,7 @@ export class SrfProvider extends BaseProvider {
 
     // Build a placeholder URL - actual HLS URL will be fetched via getDownloadInfo
     // Store the URN in the ID for later retrieval
-    const videoUrl = `https://www.srf.ch/play/tv/redirect/detail/${result.id}`;
+    const videoUrl = `https://www.srf.ch/play/tv/redirect/detail/${result.urn.split(":").pop()}`;
 
     return this.createContentItem({
       id: result.urn, // Store URN as ID for later media composition lookup
@@ -261,7 +267,6 @@ export class SrfProvider extends BaseProvider {
       size: 0, // Unknown until download
       websiteUrl: `https://www.srf.ch/play/tv/sendung/${result.show?.id || result.id}`,
       videoUrl,
-      videoUrlHigh: videoUrl,
     });
   }
 

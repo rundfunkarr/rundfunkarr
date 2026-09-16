@@ -1,8 +1,8 @@
 import { spawn } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { createWriteStream } from "fs";
-import { pipeline } from "stream/promises";
+import { createHash } from "crypto";
+import release from "./ytdlp-release.json";
 import { getSetting } from "@/lib/settings";
 
 const isWindows = process.platform === "win32";
@@ -10,9 +10,18 @@ const APP_DIR = process.cwd();
 const YTDLP_DIR = path.join(APP_DIR, "ytdlp");
 const YTDLP_PATH = path.join(YTDLP_DIR, isWindows ? "yt-dlp.exe" : "yt-dlp");
 
-// yt-dlp download URLs
-const YTDLP_WINDOWS_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
-const YTDLP_LINUX_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux";
+function releaseAsset(): keyof typeof release.sha256 {
+  if (process.platform === "win32" && process.arch === "x64") return "yt-dlp.exe";
+  if (process.platform === "darwin") return "yt-dlp_macos";
+  if (process.platform === "linux" && ["x64", "arm64"].includes(process.arch)) {
+    const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } };
+    const prefix = report.header?.glibcVersionRuntime ? "yt-dlp_linux" : "yt-dlp_musllinux";
+    return `${prefix}${process.arch === "arm64" ? "_aarch64" : ""}` as keyof typeof release.sha256;
+  }
+  throw new Error("Unsupported yt-dlp platform; configure download.ytdlpPath");
+}
+
+let installing: Promise<boolean> | null = null;
 
 export function getYtdlpPath(): string {
   return YTDLP_PATH;
@@ -34,7 +43,14 @@ async function getConfiguredYtdlpPath(): Promise<string> {
  */
 async function getProxyUrl(): Promise<string | null> {
   const proxyUrl = await getSetting("download.proxyUrl");
-  return proxyUrl && proxyUrl.trim() ? proxyUrl.trim() : null;
+  if (!proxyUrl?.trim()) return null;
+  const parsed = new URL(proxyUrl.trim());
+  if (
+    !["http:", "https:", "socks4:", "socks4a:", "socks5:", "socks5h:"].includes(parsed.protocol)
+  ) {
+    throw new Error("Unsupported proxy protocol");
+  }
+  return proxyUrl.trim();
 }
 
 /**
@@ -57,43 +73,41 @@ export async function ensureYtdlpExists(): Promise<boolean> {
 
     // Default path doesn't exist, try to download
     console.log(`[yt-dlp] Not found at ${ytdlpPath}. Starting download...`);
-    return downloadYtdlp();
+    if (!installing)
+      installing = downloadYtdlp().finally(() => {
+        installing = null;
+      });
+    return installing;
   }
 }
 
 async function downloadYtdlp(): Promise<boolean> {
-  const downloadUrl = isWindows ? YTDLP_WINDOWS_URL : YTDLP_LINUX_URL;
-
+  const temporaryPath = `${YTDLP_PATH}.tmp`;
   try {
+    const asset = releaseAsset();
+    const downloadUrl = `https://github.com/yt-dlp/yt-dlp/releases/download/${release.version}/${asset}`;
     // Create ytdlp directory
     await fs.mkdir(YTDLP_DIR, { recursive: true });
 
     // Download yt-dlp
     console.log(`[yt-dlp] Downloading from ${downloadUrl}`);
-    const response = await fetch(downloadUrl);
+    const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(120000) });
 
     if (!response.ok || !response.body) {
       throw new Error(`Failed to download yt-dlp: ${response.statusText}`);
     }
 
-    // Save to file
-    const fileStream = createWriteStream(YTDLP_PATH);
-    // @ts-expect-error - Node.js stream compatibility
-    await pipeline(response.body, fileStream);
-    console.log(`[yt-dlp] Downloaded to ${YTDLP_PATH}`);
-
-    // Make executable on Linux/Mac
-    if (!isWindows) {
-      await fs.chmod(YTDLP_PATH, 0o755);
-      console.log(`[yt-dlp] Set executable permissions`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (createHash("sha256").update(bytes).digest("hex") !== release.sha256[asset]) {
+      throw new Error("yt-dlp checksum mismatch");
     }
-
-    // Verify it exists
-    await fs.access(YTDLP_PATH);
+    await fs.writeFile(temporaryPath, bytes, { mode: 0o755 });
+    await fs.rename(temporaryPath, YTDLP_PATH);
     console.log(`[yt-dlp] Successfully installed at ${YTDLP_PATH}`);
 
     return true;
   } catch (error) {
+    await fs.unlink(temporaryPath).catch(() => {});
     console.error("[yt-dlp] Error during download:", error);
     return false;
   }
@@ -153,15 +167,14 @@ export interface YtdlpDownloadOptions {
   outputPath: string;
   format?: string; // e.g., "bestvideo+bestaudio/best"
   useProxy?: boolean;
-  onProgress?: (percent: number, speed: string, eta: string) => void;
+  container?: "mkv" | "mp4";
+  onProgress?: (percent: number, speed: string, eta: string) => void | Promise<void>;
 }
 
 /**
  * Check if a URL is an HLS stream
  */
-export function isHlsUrl(url: string): boolean {
-  return url.endsWith(".m3u8") || url.includes(".m3u8?");
-}
+export { isHlsUrl } from "@/lib/stream-url";
 
 /**
  * Get video metadata using yt-dlp
@@ -292,7 +305,12 @@ export async function downloadVideo(
   }
 
   // Merge to MKV container
-  args.push("--merge-output-format", "mkv");
+  args.push(
+    "--merge-output-format",
+    options.container || "mkv",
+    "--remux-video",
+    options.container || "mkv"
+  );
 
   // Add proxy if configured
   if (proxyUrl) {
@@ -306,6 +324,8 @@ export async function downloadVideo(
     const proc = spawn(ytdlpPath, args);
 
     let stderr = "";
+    let progressUpdates = Promise.resolve();
+    let progressError: unknown;
 
     proc.stdout.on("data", (data) => {
       const line = data.toString();
@@ -320,7 +340,12 @@ export async function downloadVideo(
         const percent = parseFloat(progressMatch[1]);
         const speed = progressMatch[2];
         const eta = progressMatch[3];
-        options.onProgress(percent, speed, eta);
+        progressUpdates = progressUpdates
+          .then(() => options.onProgress?.(percent, speed, eta))
+          .catch((error) => {
+            progressError = error;
+            proc.kill();
+          });
       }
     });
 
@@ -329,9 +354,17 @@ export async function downloadVideo(
     });
 
     proc.on("close", async (code) => {
+      await progressUpdates;
+      if (progressError) {
+        resolve({ success: false, error: "Failed to persist download progress" });
+        return;
+      }
       if (code === 0) {
         // Verify output file exists
-        const expectedOutput = options.outputPath.replace(/\.[^.]+$/, ".mkv");
+        const expectedOutput = options.outputPath.replace(
+          /\.[^.]+$/,
+          `.${options.container || "mkv"}`
+        );
         try {
           await fs.access(expectedOutput);
           console.log(`[yt-dlp] Download completed: ${expectedOutput}`);
@@ -371,12 +404,14 @@ export async function downloadHlsStream(
     downloadedBytes: number,
     totalBytes: number,
     speed: number
-  ) => Promise<void>
+  ) => Promise<void>,
+  container: "mkv" | "mp4" = "mkv"
 ): Promise<YtdlpDownloadResult> {
   let lastPercent = 0;
 
   return downloadVideo(hlsUrl, {
     outputPath,
+    container,
     format: "bestvideo+bestaudio/best",
     onProgress: async (percent, speedStr) => {
       if (onProgress && percent > lastPercent) {

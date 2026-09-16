@@ -6,8 +6,12 @@ import {
   convertItemsToRss,
   generateFakeNzb,
   getCapabilitiesXml,
+  generateGenericRssItems,
+  getValidationRss,
+  isMovieCategoryRequest,
+  parseNewznabCategoryIds,
 } from "./newznab";
-import type { NewznabItem } from "@/types";
+import type { NewznabItem, ApiResultItem } from "@/types";
 
 describe("generateAttributes", () => {
   it("should generate category attributes", () => {
@@ -126,6 +130,25 @@ describe("convertItemsToRss", () => {
   });
 });
 
+describe("Newznab validation categories", () => {
+  it("parses unique numeric category IDs", () => {
+    expect(parseNewznabCategoryIds("2040, 2030,2040,invalid")).toEqual(["2040", "2030"]);
+  });
+
+  it("detects movie categories using exact IDs", () => {
+    expect(isMovieCategoryRequest(["2040"])).toBe(true);
+    expect(isMovieCategoryRequest(["12000"])).toBe(false);
+  });
+
+  it("adds the movie parent category to a validation result", () => {
+    const xml = getValidationRss(["2040"], new Date("2026-09-01T00:00:00Z"));
+
+    expect(xml).toContain('name="category" value="2040"');
+    expect(xml).toContain('name="category" value="2000"');
+    expect(xml).not.toContain('name="category" value="5000"');
+  });
+});
+
 describe("generateFakeNzb", () => {
   it("should generate valid NZB XML", () => {
     const nzb = generateFakeNzb("http://example.com/video.mp4", "Test.Show.S01E01");
@@ -196,5 +219,105 @@ describe("getCapabilitiesXml", () => {
 
     expect(xml).toContain("<registration");
     expect(xml).toContain('available="no"');
+  });
+});
+
+describe("generateGenericRssItems", () => {
+  const baseItem: ApiResultItem = {
+    channel: "ARD",
+    topic: "Beispielserie",
+    title: "Folge 5: Der Anfang",
+    description: "An example description",
+    filmlisteTimestamp: 1700000000,
+    duration: 2700,
+    size: 1_000_000_000,
+    url_website: "https://example.com/video",
+    url_video: "https://example.com/video_720.mp4",
+    url_video_low: "https://example.com/video_480.mp4",
+    url_video_hd: "https://example.com/video_1080.mp4",
+  };
+
+  it("emits one item per available quality with preference all", () => {
+    const items = generateGenericRssItems(baseItem, "all");
+
+    expect(items).toHaveLength(3);
+    const guids = items.map((i) => i.guid.value);
+    expect(guids.some((g) => g.endsWith("#1080p"))).toBe(true);
+    expect(guids.some((g) => g.endsWith("#720p"))).toBe(true);
+    expect(guids.some((g) => g.endsWith("#480p"))).toBe(true);
+  });
+
+  it("picks only the highest quality with preference best", () => {
+    const items = generateGenericRssItems(baseItem, "best");
+
+    expect(items).toHaveLength(1);
+    expect(items[0].guid.value).toBe("https://example.com/video#1080p");
+  });
+
+  it("parses Folge N titles into season/episode attributes", () => {
+    const items = generateGenericRssItems(baseItem, "best");
+    const attrs = items[0].attributes;
+
+    expect(attrs.find((a) => a.name === "season")).toEqual({ name: "season", value: "01" });
+    expect(attrs.find((a) => a.name === "episode")).toEqual({ name: "episode", value: "05" });
+  });
+
+  it("parses explicit S<season>/E<episode> titles", () => {
+    const items = generateGenericRssItems({ ...baseItem, title: "Tolle Folge (S02/E03)" }, "best");
+    const attrs = items[0].attributes;
+
+    expect(attrs.find((a) => a.name === "season")).toEqual({ name: "season", value: "02" });
+    expect(attrs.find((a) => a.name === "episode")).toEqual({ name: "episode", value: "03" });
+  });
+
+  it("still emits a generic item when no episode info is present", () => {
+    const items = generateGenericRssItems(
+      { ...baseItem, title: "Reportage without a number" },
+      "best"
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0].attributes.find((a) => a.name === "episode")).toBeUndefined();
+    expect(items[0].attributes.some((a) => a.name === "category")).toBe(true);
+  });
+});
+
+describe("generateGenericRssItems - edge cases", () => {
+  const base: ApiResultItem = {
+    channel: "ARD",
+    topic: "Beispielserie",
+    title: "",
+    description: "An example description",
+    filmlisteTimestamp: 1700000000,
+    duration: 2700,
+    size: 1_000_000_000,
+    url_website: "https://example.com/video",
+    url_video: "https://example.com/video_720.mp4",
+    url_video_low: "https://example.com/video_480.mp4",
+    url_video_hd: "https://example.com/video_1080.mp4",
+  };
+
+  it("keeps episode 0 and does not let later patterns overwrite it", () => {
+    const items = generateGenericRssItems({ ...base, title: "Folge 0 (2/6)" }, "best");
+    const attrs = items[0].attributes;
+
+    expect(attrs.find((a) => a.name === "episode")).toEqual({ name: "episode", value: "00" });
+    expect(attrs.find((a) => a.name === "season")).toEqual({ name: "season", value: "01" });
+  });
+
+  it("parses Staffel N Folge N", () => {
+    const items = generateGenericRssItems({ ...base, title: "Staffel 2 Folge 3" }, "best");
+    const attrs = items[0].attributes;
+
+    expect(attrs.find((a) => a.name === "season")).toEqual({ name: "season", value: "02" });
+    expect(attrs.find((a) => a.name === "episode")).toEqual({ name: "episode", value: "03" });
+  });
+
+  it("emits only the available quality variant", () => {
+    const only720 = { ...base, title: "Some show", url_video_hd: "", url_video_low: "" };
+    const items = generateGenericRssItems(only720, "all");
+
+    expect(items).toHaveLength(1);
+    expect(items[0].guid.value).toBe("https://example.com/video#720p");
   });
 });

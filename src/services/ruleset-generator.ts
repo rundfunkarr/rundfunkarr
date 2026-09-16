@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { queryMediathekView } from "@/lib/mediathek-client";
+import { queryContent } from "./content-search";
 import type { Ruleset, TvdbData, ApiResultItem } from "@/types";
 
 // Common German show name patterns in MediathekView
@@ -29,7 +29,7 @@ const ABSOLUTE_EPISODE_PATTERNS = [
  */
 async function searchMediathekApi(query: string): Promise<ApiResultItem[]> {
   return (
-    (await queryMediathekView([{ fields: ["topic"], query }], 50, {
+    (await queryContent([{ fields: ["topic"], query }], 50, {
       sortBy: "timestamp",
       future: false,
     })) ?? []

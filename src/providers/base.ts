@@ -111,7 +111,10 @@ export abstract class BaseProvider implements ContentProvider {
     const sanitizedTitle = this.sanitizeForFilename(item.title);
     const year = new Date(item.timestamp * 1000).getFullYear();
 
-    return `${sanitizedTopic}.${sanitizedTitle}.${year}.GERMAN.${quality}.WEB.h264-${this.id.toUpperCase()}`;
+    const suffix = `.${year}.GERMAN.${quality}.WEB.h264-${this.id.toUpperCase()}`;
+    const characters = Array.from(`${sanitizedTopic}.${sanitizedTitle}`);
+    while (Buffer.byteLength(characters.join("") + suffix, "utf8") > 200) characters.pop();
+    return characters.join("") + suffix;
   }
 
   /**

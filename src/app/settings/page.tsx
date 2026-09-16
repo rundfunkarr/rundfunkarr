@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSettings } from "@/contexts/settings-context";
+import { buildTvdbLoginPayload } from "@/lib/tvdb-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -122,7 +123,8 @@ export default function SettingsPage() {
     try {
       const key = getFieldValue("api.tvdb.key");
       const pin = getFieldValue("api.tvdb.pin");
-      if (!key || !pin) {
+      const payload = buildTvdbLoginPayload(key, pin);
+      if (!payload) {
         setApiStatus((prev) => ({ ...prev, tvdb: false }));
         return;
       }
@@ -130,7 +132,7 @@ export default function SettingsPage() {
       const res = await fetch("https://api4.thetvdb.com/v4/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apikey: key, pin }),
+        body: JSON.stringify(payload),
       });
       setApiStatus((prev) => ({ ...prev, tvdb: res.ok }));
     } catch {
@@ -275,9 +277,28 @@ export default function SettingsPage() {
                       Welche Qualitäten sollen im Newznab-Feed angezeigt werden?
                     </p>
                   </div>
+                  <label className="flex items-center justify-between gap-4 rounded-md border border-input p-3">
+                    <span>
+                      <span className="block text-sm font-medium">MP4 in MKV konvertieren</span>
+                      <span className="block text-xs text-muted-foreground mt-1">
+                        Deaktivieren, wenn ein externes Tool wie Tdarr die Medienverarbeitung
+                        übernimmt. Heruntergeladene MP4-Dateien bleiben dann unverändert.
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={getFieldValue("download.convertToMkv") !== "false"}
+                      onChange={(e) =>
+                        setFieldValue("download.convertToMkv", String(e.target.checked))
+                      }
+                      className="h-4 w-4 shrink-0 accent-primary"
+                    />
+                  </label>
 
                   <Button
-                    onClick={() => handleSave(["download.path", "download.quality"])}
+                    onClick={() =>
+                      handleSave(["download.path", "download.quality", "download.convertToMkv"])
+                    }
                     disabled={isSaving}
                   >
                     {isSaving ? (
@@ -303,7 +324,7 @@ export default function SettingsPage() {
                     <div>
                       <label className="text-sm font-medium">HLS-Streams aktivieren</label>
                       <p className="text-xs text-muted-foreground">
-                        Ermöglicht das Herunterladen von HLS-Streams (z.B. SRF, ORF)
+                        Ermöglicht das Herunterladen von HLS-Streams (z. B. SRF, ORF)
                       </p>
                     </div>
                     <select
@@ -315,6 +336,17 @@ export default function SettingsPage() {
                       <option value="true">An</option>
                     </select>
                   </div>
+                  <label className="flex items-center justify-between gap-4 text-sm">
+                    ORF-Suche aktivieren (benötigt HLS)
+                    <input
+                      type="checkbox"
+                      checked={getFieldValue("provider.orf.enabled") === "true"}
+                      onChange={(e) =>
+                        setFieldValue("provider.orf.enabled", String(e.target.checked))
+                      }
+                      className="h-4 w-4 accent-primary"
+                    />
+                  </label>
                   <div>
                     <label className="text-sm font-medium">yt-dlp Pfad (optional)</label>
                     <Input
@@ -342,7 +374,12 @@ export default function SettingsPage() {
                   </div>
                   <Button
                     onClick={() =>
-                      handleSave(["download.enableHLS", "download.ytdlpPath", "download.proxyUrl"])
+                      handleSave([
+                        "download.enableHLS",
+                        "download.ytdlpPath",
+                        "download.proxyUrl",
+                        "provider.orf.enabled",
+                      ])
                     }
                     disabled={isSaving}
                   >
@@ -363,7 +400,8 @@ export default function SettingsPage() {
                 <CardHeader>
                   <CardTitle>TVDB API</CardTitle>
                   <CardDescription>
-                    TheTVDB.com API-Zugangsdaten für Show-Metadaten.{" "}
+                    TheTVDB.com API-Zugangsdaten für Show-Metadaten. Project API Keys funktionieren
+                    ohne PIN; Subscriber-Keys können weiterhin eine PIN verwenden.{" "}
                     <a
                       href="https://thetvdb.com/api-information"
                       target="_blank"
@@ -385,11 +423,11 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">PIN</label>
+                    <label className="text-sm font-medium">PIN (optional)</label>
                     <Input
                       value={getFieldValue("api.tvdb.pin")}
                       onChange={(e) => setFieldValue("api.tvdb.pin", e.target.value)}
-                      placeholder="TVDB PIN"
+                      placeholder="TVDB PIN (optional)"
                       className="mt-1"
                     />
                   </div>

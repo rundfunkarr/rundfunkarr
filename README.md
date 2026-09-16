@@ -21,10 +21,27 @@ Rundfunk-Indexer für Sonarr/Radarr - Automatischer Download von ARD, ZDF und an
 
 - **Newznab-kompatibler Indexer** - Funktioniert mit Prowlarr, NZB Hydra, Sonarr und Radarr
 - **SABnzbd-kompatibler Downloader** - Direkter HTTP-Download von den Mediatheken
-- **Automatische MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
+- **Optionale MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
 - **Flexible Metadaten-Quellen** - Lokale Datenbank, TVDB oder TMDB
 - **Community-Rulesets** - Lokale Rulesets via Pull Request erweiterbar
 - **SQLite-Datenbank** - Persistente Speicherung von Cache und Download-Historie
+
+## SRF und ORF über HLS
+
+Aktiviere **HLS-Streams aktivieren** unter Settings → Streaming. Mit
+**ORF-Suche aktivieren** werden ORF-Treffer aus MediathekView einbezogen.
+Für die SRF-API trägst du Consumer Key und Consumer Secret aus dem
+[SRG-SSR-Entwicklerportal](https://developer.srgssr.ch/en/apis/srgssr-video) ein.
+Diese Quellen stehen der Websuche und Newznab einschließlich RSS-Sync zur Verfügung.
+Die vorhandenen Episodenregeln bestimmen weiterhin, welche Releases Sonarr erhält.
+
+SRF-Videoreferenzen werden erst beim Download durch yt-dlp aufgelöst, einschließlich
+der benötigten Stream-Tokens. Ein optionaler Proxy gilt für yt-dlp und Downloads,
+jedoch nicht für die SRG-SSR-Metadaten-API. Regionale Beschränkungen hängen weiterhin
+vom Proxy-Standort und der Verfügbarkeit beim Sender ab.
+Die MKV-Einstellung gilt auch für HLS: aktiviert ergibt MKV, deaktiviert MP4.
+Docker enthält eine feste yt-dlp-Version mit Prüfsummenprüfung. Native Installationen
+können einen eigenen Programmpfad oder den ebenfalls geprüften automatischen Download nutzen.
 
 ## Installation mit Docker
 
@@ -33,7 +50,7 @@ Rundfunk-Indexer für Sonarr/Radarr - Automatischer Download von ARD, ZDF und an
 ```yaml
 services:
   rundfunkarr:
-    image: rundfunkarr/rundfunkarr:latest
+    image: ghcr.io/rundfunkarr/rundfunkarr:latest
     container_name: rundfunkarr
     environment:
       - TZ=Europe/Berlin
@@ -42,13 +59,32 @@ services:
       - DOWNLOAD_FOLDER_PATH=/downloads
     volumes:
       - ./data:/app/prisma/data
-      - ./downloads:/app/downloads
+      - ./downloads:/downloads
     ports:
-      - "127.0.0.1:6767:6767"
+      - 6767:6767
     restart: unless-stopped
 ```
 
 Nach dem Start ist die Web-Oberfläche unter `http://localhost:6767` erreichbar. Beim ersten Start führt der **Setup-Wizard** durch die Konfiguration (API Keys, Pfade, etc.).
+
+Für Tests mit dem aktuellen `main`-Stand werden täglich Nightly-Images für `linux/amd64` und `linux/arm64` gebaut. `nightly` zeigt immer auf den neuesten Daily-Build; datierte Tags wie
+`nightly-20260517` bleiben als konkreter Build erhalten:
+
+```yaml
+image: ghcr.io/rundfunkarr/rundfunkarr:nightly
+```
+
+Für reproduzierbare Deployments kann statt `latest` auch eine feste Version verwendet werden:
+
+```yaml
+image: ghcr.io/rundfunkarr/rundfunkarr:1.2.3
+```
+
+Der Git-Tag-Alias mit `v`-Präfix ist ebenfalls verfügbar:
+
+```bash
+docker pull ghcr.io/rundfunkarr/rundfunkarr:v1.2.3
+```
 
 ### Starten
 
@@ -60,7 +96,7 @@ docker-compose up -d
 
 ### Voraussetzungen
 
-- Node.js >= 20
+- Node.js >= 24
 - npm
 - FFmpeg (für MKV-Konvertierung)
 
@@ -101,7 +137,7 @@ RundfunkArr bietet eine vollständige Web-Oberfläche mit:
 - **Suche** - Direkte Suche in den Mediatheken
 - **Downloads** - Queue und Historie verwalten
 - **Settings** - Alle Einstellungen konfigurieren:
-  - Download-Pfad und Qualitäts-Präferenzen
+  - Download-Pfad, Qualitäts-Präferenzen und optionale MKV-Konvertierung
   - API Keys für TVDB/TMDB
   - Matching-Strategie und Schwellwerte
   - Cache-TTL Einstellungen
@@ -112,7 +148,7 @@ RundfunkArr bietet eine vollständige Web-Oberfläche mit:
 RundfunkArr sucht Show-Informationen in folgender Reihenfolge:
 
 1. **Lokale Datenbank** (`data/shows.json`) - Kein API Key nötig
-2. **TVDB** - Wenn in den Einstellungen konfiguriert (kostenpflichtig)
+2. **TVDB** - Wenn in den Einstellungen konfiguriert (Project API Key ohne PIN oder Subscriber-Key mit optionalem PIN)
 3. **TMDB** - Wenn in den Einstellungen konfiguriert (kostenlos)
 
 Für Shows die nicht in TVDB/TMDB sind, können Einträge in `data/shows.json` hinzugefügt werden.
@@ -152,6 +188,11 @@ Für Shows die nicht in TVDB/TMDB sind, können Einträge in `data/shows.json` h
 2. Host: `rundfunkarr`
 3. Port: `6767`
 4. API Key: beliebig
+
+Prowlarr synchronisiert nur den Indexer zu Sonarr und Radarr. Richte RundfunkArr
+als Download Client zusätzlich direkt in jeder *arr App ein. Ein in Prowlarr
+konfigurierter Download Client wird nur für manuelle Downloads aus Prowlarr
+verwendet.
 
 ## Rulesets & Shows hinzufügen
 

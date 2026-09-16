@@ -16,6 +16,19 @@ const XML_BUILDER = new Builder({
   renderOpts: { pretty: true },
 });
 
+const MOVIE_CATEGORY_IDS = new Set([
+  "2000",
+  "2010",
+  "2020",
+  "2030",
+  "2040",
+  "2045",
+  "2050",
+  "2060",
+]);
+const TV_CATEGORY_IDS = new Set(["5000", "5030", "5040"]);
+const ADVERTISED_CATEGORY_IDS = new Set([...MOVIE_CATEGORY_IDS, ...TV_CATEGORY_IDS]);
+
 export function generateAttributes(
   season: string | null,
   categoryValues: string[],
@@ -117,6 +130,74 @@ export function convertItemsToRss(items: NewznabItem[], limit: number, offset: n
   };
 
   return serializeRss(rss);
+}
+
+export function parseNewznabCategoryIds(categoryParam: string | null): string[] {
+  if (!categoryParam) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      categoryParam
+        .split(",")
+        .map((category) => category.trim())
+        .filter((category) => /^\d+$/.test(category))
+    ),
+  ];
+}
+
+export function isMovieCategoryRequest(categoryIds: string[]): boolean {
+  return categoryIds.some((categoryId) => MOVIE_CATEGORY_IDS.has(categoryId));
+}
+
+export function getValidationRss(requestedCategoryIds: string[], now: Date = new Date()): string {
+  const categoryIds = requestedCategoryIds.filter((categoryId) =>
+    ADVERTISED_CATEGORY_IDS.has(categoryId)
+  );
+  const hasMovieCategory = categoryIds.some((categoryId) => MOVIE_CATEGORY_IDS.has(categoryId));
+  const hasTvCategory = categoryIds.some((categoryId) => TV_CATEGORY_IDS.has(categoryId));
+
+  if (hasMovieCategory && !categoryIds.includes("2000")) {
+    categoryIds.push("2000");
+  }
+  if (hasTvCategory && !categoryIds.includes("5000")) {
+    categoryIds.push("5000");
+  }
+  if (categoryIds.length === 0) {
+    categoryIds.push("2000", "5000");
+  }
+
+  const movieOnly =
+    categoryIds.some((categoryId) => MOVIE_CATEGORY_IDS.has(categoryId)) &&
+    !categoryIds.some((categoryId) => TV_CATEGORY_IDS.has(categoryId));
+  const title = movieOnly
+    ? "RundfunkArr.Validation.2024.GERMAN.1080p.WEB.h264-TEST"
+    : "RundfunkArr.Validation.S01E01.GERMAN.1080p.WEB.h264-TEST";
+
+  const validationItem: NewznabItem = {
+    title,
+    guid: {
+      isPermaLink: false,
+      value: `rundfunkarr-validation-${movieOnly ? "movie" : "tv"}`,
+    },
+    link: "https://example.invalid/rundfunkarr-validation",
+    comments: "https://example.invalid/rundfunkarr-validation",
+    pubDate: now.toUTCString(),
+    category: movieOnly ? "Movies > HD" : "TV > HD",
+    description: "Synthetic result used to validate RundfunkArr category support.",
+    enclosure: {
+      url: "https://example.invalid/rundfunkarr-validation.nzb",
+      length: 1_000_000,
+      type: "application/x-nzb",
+    },
+    attributes: [
+      ...categoryIds.map((categoryId) => ({ name: "category", value: categoryId })),
+      { name: "size", value: "1000000" },
+    ],
+  };
+
+  return convertItemsToRss([validationItem], 1, 0);
 }
 
 // Title formatting utilities
@@ -498,6 +579,236 @@ export function generateMovieRssItems(
   }
 
   return items;
+}
+
+/**
+ * Generate RSS items for API results that don't match any ruleset.
+ * Uses topic + title as the release name so they still appear in search results.
+ */
+export function generateGenericRssItems(
+  item: ApiResultItem,
+  qualityPreference: QualityPreference = "all"
+): NewznabItem[] {
+  const items: NewznabItem[] = [];
+  const baseCategories = ["5000"];
+
+  const has1080p = !!item.url_video_hd;
+  const has720p = !!item.url_video;
+  const has480p = !!item.url_video_low;
+
+  let include1080p = false;
+  let include720p = false;
+  let include480p = false;
+
+  switch (qualityPreference) {
+    case "all":
+      include1080p = has1080p;
+      include720p = has720p;
+      include480p = has480p;
+      break;
+    case "best":
+      if (has1080p) {
+        include1080p = true;
+      } else if (has720p) {
+        include720p = true;
+      } else if (has480p) {
+        include480p = true;
+      }
+      break;
+    case "1080p":
+      include1080p = has1080p;
+      break;
+    case "720p":
+      include720p = has720p;
+      break;
+    case "480p":
+      include480p = has480p;
+      break;
+  }
+
+  if (include1080p) {
+    items.push(
+      createGenericRssItem(
+        item,
+        "1080p",
+        1.6,
+        "TV > HD",
+        [...baseCategories, "5040"],
+        item.url_video_hd
+      )
+    );
+  }
+
+  if (include720p) {
+    items.push(
+      createGenericRssItem(
+        item,
+        "720p",
+        1.0,
+        "TV > HD",
+        [...baseCategories, "5040"],
+        item.url_video
+      )
+    );
+  }
+
+  if (include480p) {
+    items.push(
+      createGenericRssItem(
+        item,
+        "480p",
+        0.4,
+        "TV > SD",
+        [...baseCategories, "5030"],
+        item.url_video_low
+      )
+    );
+  }
+
+  return items;
+}
+
+/**
+ * Parse season and episode numbers from Mediathek titles.
+ * Common patterns:
+ *   (S01/E05), (S2026/E02)  — standard ARD/ZDF format
+ *   (4/6)                    — episode/total format (no season info)
+ *   Folge 5, Folge 5:        — episode-only with optional colon
+ *   Staffel 2 Folge 3        — explicit season + episode
+ */
+function parseEpisodeFromTitle(title: string): {
+  season: number | null;
+  episode: number | null;
+  episodeName: string;
+} {
+  let season: number | null = null;
+  let episode: number | null = null;
+  let episodeName = title;
+
+  // Pattern 1: (S01/E05) or S01/E05
+  const sPattern = title.match(/\(?S(\d+)\/E(\d+)\)?/i);
+  if (sPattern) {
+    season = parseInt(sPattern[1], 10);
+    episode = parseInt(sPattern[2], 10);
+    episodeName = title.replace(sPattern[0], "").trim();
+  }
+
+  // Pattern 2: Staffel N Folge N
+  if (episode === null) {
+    const staffelPattern = title.match(/Staffel\s+(\d+)\s+Folge\s+(\d+)/i);
+    if (staffelPattern) {
+      season = parseInt(staffelPattern[1], 10);
+      episode = parseInt(staffelPattern[2], 10);
+      episodeName = title.replace(staffelPattern[0], "").trim();
+    }
+  }
+
+  // Pattern 3: Folge N (with optional episode name after colon)
+  if (episode === null) {
+    const folgePattern = title.match(/Folge\s+(\d+)(?:\s*:\s*(.+?))?(?:\s*\(|$)/i);
+    if (folgePattern) {
+      episode = parseInt(folgePattern[1], 10);
+      if (folgePattern[2]) {
+        episodeName = folgePattern[2].trim();
+      } else {
+        episodeName = title.replace(folgePattern[0], "").trim();
+      }
+    }
+  }
+
+  // Pattern 4: (N/N) — episode/total, only if no season found yet
+  if (episode === null) {
+    const fracPattern = title.match(/\((\d+)\/(\d+)\)/);
+    if (fracPattern) {
+      episode = parseInt(fracPattern[1], 10);
+      episodeName = title.replace(fracPattern[0], "").trim();
+    }
+  }
+
+  // Clean up episode name: remove trailing "(Audiodeskription)", "(mit Untertitel)", etc.
+  episodeName = episodeName
+    .replace(/\(Audiodeskription\)/gi, "")
+    .replace(/\(mit Untertitel\)/gi, "")
+    .replace(/\(Originalversion\)/gi, "")
+    .replace(/\s*\|\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Remove leading/trailing punctuation artifacts
+  episodeName = episodeName.replace(/^[:\-–\s]+|[:\-–\s]+$/g, "").trim();
+
+  return { season, episode, episodeName };
+}
+
+function createGenericRssItem(
+  item: ApiResultItem,
+  quality: string,
+  sizeMultiplier: number,
+  category: string,
+  categoryValues: string[],
+  url: string
+): NewznabItem {
+  const adjustedSize = Math.floor(item.size * sizeMultiplier);
+
+  const parsed = parseEpisodeFromTitle(item.title);
+  let rawTitle: string;
+
+  if (parsed.episode !== null) {
+    const seasonNum = parsed.season ?? 1;
+    const paddedSeason = seasonNum.toString().padStart(2, "0");
+    const paddedEpisode = parsed.episode.toString().padStart(2, "0");
+    // Omit the episode-name segment when the pattern consumed the whole title
+    // (e.g. "Staffel 2 Folge 3"), otherwise it duplicates the SxxExx info.
+    rawTitle = parsed.episodeName
+      ? `${item.topic}.S${paddedSeason}E${paddedEpisode}.${parsed.episodeName}.GERMAN.${quality}.WEB.h264-MEDiATHEK`
+      : `${item.topic}.S${paddedSeason}E${paddedEpisode}.GERMAN.${quality}.WEB.h264-MEDiATHEK`;
+  } else {
+    rawTitle = `${item.topic}.${item.title}.GERMAN.${quality}.WEB.h264-MEDiATHEK`;
+  }
+
+  const formattedTitle = formatTitle(rawTitle);
+
+  const encodedTitle = Buffer.from(formattedTitle).toString("base64");
+  const encodedUrl = Buffer.from(url).toString("base64");
+
+  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodedUrl}&encodedTitle=${encodedTitle}`;
+
+  const attributes: NewznabAttribute[] = categoryValues.map((v) => ({
+    name: "category",
+    value: v,
+  }));
+
+  // Add season/episode attributes if parsed
+  if (parsed.episode !== null) {
+    const seasonNum = parsed.season ?? 1;
+    attributes.push({
+      name: "season",
+      value: seasonNum.toString().padStart(2, "0"),
+    });
+    attributes.push({
+      name: "episode",
+      value: parsed.episode.toString().padStart(2, "0"),
+    });
+  }
+
+  return {
+    title: formattedTitle,
+    guid: {
+      isPermaLink: true,
+      value: `${item.url_website}#${quality}`,
+    },
+    link: url,
+    comments: item.url_website,
+    pubDate: new Date(item.filmlisteTimestamp * 1000).toUTCString(),
+    category: category,
+    description: item.description,
+    enclosure: {
+      url: fakeDownloadUrl,
+      length: adjustedSize,
+      type: "application/x-nzb",
+    },
+    attributes,
+  };
 }
 
 // Generate fake NZB file content

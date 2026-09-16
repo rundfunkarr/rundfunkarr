@@ -12,7 +12,9 @@ import { getSetting } from "@/lib/settings";
 
 // API Base URLs
 const API_BASE_URL = "https://api.srgssr.ch";
-const IL_API_BASE_URL = "https://il.srgssr.ch"; // Integration Layer API
+// https://developer.srgssr.ch/sites/default/files/swaggers/SRGSSRVideo-OpenApi3.yaml
+const VIDEO_API_BASE_URL = `${API_BASE_URL}/videometadata/v2`;
+const TOKEN_EXPIRY_BUFFER_MS = 60000;
 
 // Business Units
 export type SrgssrBusinessUnit = "SRF" | "RTS" | "RSI" | "RTR" | "SWI";
@@ -27,8 +29,8 @@ async function getApiCredentials(): Promise<{
   consumerKey: string;
   consumerSecret: string;
 } | null> {
-  const consumerKey = await getSetting("api.srgssr.consumerKey");
-  const consumerSecret = await getSetting("api.srgssr.consumerSecret");
+  const consumerKey = (await getSetting("api.srgssr.consumerKey"))?.trim();
+  const consumerSecret = (await getSetting("api.srgssr.consumerSecret"))?.trim();
 
   if (!consumerKey || !consumerSecret) {
     return null;
@@ -43,7 +45,7 @@ async function getApiCredentials(): Promise<{
  */
 async function getAccessToken(): Promise<string | null> {
   // Check cache
-  if (cachedToken && Date.now() < cachedToken.expiresAt - 60000) {
+  if (cachedToken && Date.now() < cachedToken.expiresAt - TOKEN_EXPIRY_BUFFER_MS) {
     return cachedToken.token;
   }
 
@@ -62,6 +64,7 @@ async function getAccessToken(): Promise<string | null> {
       `${API_BASE_URL}/oauth/v1/accesstoken?grant_type=client_credentials`,
       {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           Authorization: `Basic ${authHeader}`,
           "Content-Type": "application/x-www-form-urlencoded",
@@ -104,7 +107,7 @@ async function getAccessToken(): Promise<string | null> {
  */
 async function apiRequest<T>(
   endpoint: string,
-  baseUrl: string = IL_API_BASE_URL
+  baseUrl: string = VIDEO_API_BASE_URL
 ): Promise<T | null> {
   const token = await getAccessToken();
   if (!token) {
@@ -116,6 +119,7 @@ async function apiRequest<T>(
     console.log(`[SRG-SSR] API request: ${url}`);
 
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
@@ -139,10 +143,8 @@ async function apiRequest<T>(
 // ============================================================================
 
 export interface SrgssrSearchResponse {
-  searchResultListMedia?: {
-    resultList?: SrgssrMediaItem[];
-    total?: number;
-  };
+  searchResultListMedia?: SrgssrMediaItem[];
+  SearchResultListMedia?: SrgssrMediaItem[];
 }
 
 export interface SrgssrMediaItem {
@@ -220,30 +222,6 @@ export interface SrgssrSubtitle {
   url: string;
 }
 
-export interface SrgssrShowSearchResponse {
-  searchResultListShow?: {
-    resultList?: SrgssrShow[];
-    total?: number;
-  };
-}
-
-export interface SrgssrShow {
-  id: string;
-  vendor: SrgssrBusinessUnit;
-  transmission: string;
-  urn: string;
-  title: string;
-  description?: string;
-  imageUrl?: string;
-  posterImageUrl?: string;
-  primaryChannelId?: string;
-}
-
-export interface SrgssrEpisodeListResponse {
-  episodeList?: SrgssrMediaItem[];
-  next?: string; // Pagination URL
-}
-
 // ============================================================================
 // API Methods
 // ============================================================================
@@ -258,61 +236,24 @@ export async function searchVideos(
 ): Promise<SrgssrMediaItem[]> {
   const encodedQuery = encodeURIComponent(query);
   const response = await apiRequest<SrgssrSearchResponse>(
-    `/integrationlayer/2.1/${businessUnit}/searchResultListMedia/video?q=${encodedQuery}&pageSize=${pageSize}`
+    `/search?bu=${businessUnit.toLowerCase()}&q=${encodedQuery}&pageSize=${Math.max(1, Math.min(pageSize, 100))}`
   );
 
-  if (!response?.searchResultListMedia?.resultList) {
-    return [];
-  }
-
-  return response.searchResultListMedia.resultList;
-}
-
-/**
- * Search for shows/series
- */
-export async function searchShows(
-  query: string,
-  businessUnit: SrgssrBusinessUnit = "SRF",
-  pageSize: number = 20
-): Promise<SrgssrShow[]> {
-  const encodedQuery = encodeURIComponent(query);
-  const response = await apiRequest<SrgssrShowSearchResponse>(
-    `/integrationlayer/2.1/${businessUnit}/searchResultListShow?q=${encodedQuery}&pageSize=${pageSize}`
-  );
-
-  if (!response?.searchResultListShow?.resultList) {
-    return [];
-  }
-
-  return response.searchResultListShow.resultList;
+  if (!response) throw new Error("SRF search failed");
+  const items = response.searchResultListMedia ?? response.SearchResultListMedia;
+  if (!Array.isArray(items)) throw new Error("Invalid SRF search response");
+  return items;
 }
 
 /**
  * Get video details including stream URLs
  */
 export async function getMediaComposition(urn: string): Promise<SrgssrMediaComposition | null> {
-  // URN format: urn:srf:video:12345678-1234-1234-1234-123456789012
-  const response = await apiRequest<SrgssrMediaComposition>(
-    `/integrationlayer/2.1/mediaComposition/byUrn/${urn}`
+  const match = urn.match(/^urn:(srf|rts|rsi|rtr|swi):video:([a-zA-Z0-9-]+)$/);
+  if (!match) return null;
+  return apiRequest<SrgssrMediaComposition>(
+    `/${encodeURIComponent(match[2])}/mediaComposition?bu=${match[1]}`
   );
-
-  return response;
-}
-
-/**
- * Get latest episodes for a show
- */
-export async function getShowEpisodes(
-  showId: string,
-  businessUnit: SrgssrBusinessUnit = "SRF",
-  pageSize: number = 50
-): Promise<SrgssrMediaItem[]> {
-  const response = await apiRequest<SrgssrEpisodeListResponse>(
-    `/integrationlayer/2.1/${businessUnit}/episodeListByShowId/${showId}?pageSize=${pageSize}`
-  );
-
-  return response?.episodeList || [];
 }
 
 /**
@@ -322,20 +263,17 @@ export async function getLatestVideos(
   businessUnit: SrgssrBusinessUnit = "SRF",
   pageSize: number = 50
 ): Promise<SrgssrMediaItem[]> {
-  const response = await apiRequest<{ mediaList?: SrgssrMediaItem[] }>(
-    `/integrationlayer/2.1/${businessUnit}/mediaList/video/latestEpisodes?pageSize=${pageSize}`
+  const response = await apiRequest<{
+    mediaList?: SrgssrMediaItem[];
+    MediaList?: SrgssrMediaItem[];
+  }>(
+    `/latest_episodes?bu=${businessUnit.toLowerCase()}&pageSize=${Math.max(1, Math.min(pageSize, 100))}`
   );
 
-  return response?.mediaList || [];
-}
-
-/**
- * Get video by URN
- */
-export async function getVideoByUrn(urn: string): Promise<SrgssrMediaItem | null> {
-  const response = await apiRequest<SrgssrMediaItem>(`/integrationlayer/2.1/media/byUrn/${urn}`);
-
-  return response;
+  if (!response) throw new Error("SRF latest episodes failed");
+  const items = response.mediaList ?? response.MediaList;
+  if (!Array.isArray(items)) throw new Error("Invalid SRF latest episodes response");
+  return items;
 }
 
 /**
@@ -347,7 +285,9 @@ export function getBestStreamUrl(composition: SrgssrMediaComposition): string | 
     return null;
   }
 
-  const chapter = composition.chapterList[0];
+  const chapter =
+    composition.chapterList.find((item) => item.urn === composition.chapterUrn) ||
+    composition.chapterList[0];
   if (!chapter.resourceList || chapter.resourceList.length === 0) {
     return null;
   }

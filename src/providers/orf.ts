@@ -1,5 +1,5 @@
 import { BaseProvider } from "./base";
-import { getSetting } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import { getDetailedVideoInfo, ensureYtdlpExists } from "@/server/ytdlp";
 import { queryMediathekView } from "@/lib/mediathek-client";
 import type { ApiResultItem } from "@/types";
@@ -98,6 +98,7 @@ export class OrfProvider extends BaseProvider {
   }
 
   async search(query: ProviderSearchQuery): Promise<ProviderContentItem[]> {
+    this.minDuration = await getMinDurationSeconds();
     const limit = query.limit || 50;
     const searchQuery = query.query.trim();
 
@@ -122,7 +123,8 @@ export class OrfProvider extends BaseProvider {
         limit * 3
       );
 
-      const items = this.filterResults(results ?? [], query.type);
+      if (results === null) throw new Error("MediathekView search failed");
+      const items = this.filterResults(results, query.type);
 
       console.log(`[${this.id}] Found ${items.length} items after filtering`);
 
@@ -199,9 +201,13 @@ export class OrfProvider extends BaseProvider {
           return {
             url: videoUrl, // yt-dlp resolves the actual stream from this manifest URL
             isHls: true,
-            filename: this.generateFilename(item, preferredQuality === "high" ? "1080p" : "720p"),
+            filename: this.generateFilename(
+              item,
+              preferredQuality === "high" ? "1080p" : preferredQuality === "low" ? "480p" : "720p"
+            ),
             expectedSize: videoInfo.filesize || 0,
-            quality: preferredQuality === "high" ? "1080p" : "720p",
+            quality:
+              preferredQuality === "high" ? "1080p" : preferredQuality === "low" ? "480p" : "720p",
           };
         }
       } catch (error) {
@@ -221,13 +227,12 @@ export class OrfProvider extends BaseProvider {
    */
   private filterResults(
     results: ApiResultItem[],
-    type?: "all" | "movie" | "series"
+    _type?: "all" | "movie" | "series"
   ): ProviderContentItem[] {
     const items: ProviderContentItem[] = [];
 
     // For movie search, require at least 60 minutes
-    const movieMinDuration = 60 * 60;
-    const effectiveMinDuration = type === "movie" ? movieMinDuration : this.minDuration;
+    const effectiveMinDuration = this.minDuration;
 
     for (const result of results) {
       if (SKIP_KEYWORDS.some((kw) => result.title.toLowerCase().includes(kw.toLowerCase()))) {
