@@ -4,6 +4,10 @@ import { downloadHlsStream, downloadVideo } from "./ytdlp";
 
 const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock("child_process", () => ({ spawn }));
+vi.mock("./ffmpeg", () => ({
+  ensureFfmpegExists: vi.fn(async () => true),
+  getFfmpegPath: () => "/fixture/ffmpeg",
+}));
 vi.mock("fs/promises", () => ({ access: vi.fn(async () => {}), mkdir: vi.fn(async () => {}) }));
 vi.mock("@/lib/settings", () => ({
   getSetting: vi.fn(async (key: string) =>
@@ -37,6 +41,9 @@ it.each(["mkv", "mp4"] as const)(
     );
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
     expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(["--remux-video", container]));
+    expect(spawn.mock.calls[0][1]).toEqual(
+      expect.arrayContaining(["--ffmpeg-location", "/fixture/ffmpeg"])
+    );
     child.emit("close", 0);
     expect(await done).toEqual({ success: true, outputPath: `/tmp/result.${container}` });
   }

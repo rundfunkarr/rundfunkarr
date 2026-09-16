@@ -280,6 +280,13 @@ export async function downloadVideo(
     return { success: false, error: "yt-dlp not available" };
   }
 
+  // Native installations keep FFmpeg outside PATH. Initialize it lazily so
+  // ordinary direct downloads still work without loading the conversion module.
+  const { ensureFfmpegExists, getFfmpegPath } = await import("./ffmpeg");
+  if (!(await ensureFfmpegExists())) {
+    return { success: false, error: "FFmpeg not available for stream remuxing" };
+  }
+
   const ytdlpPath = await getConfiguredYtdlpPath();
   const proxyUrl = options.useProxy !== false ? await getProxyUrl() : null;
 
@@ -288,6 +295,8 @@ export async function downloadVideo(
   await fs.mkdir(outputDir, { recursive: true });
 
   const args = [
+    "--ffmpeg-location",
+    getFfmpegPath(),
     "-o",
     options.outputPath,
     "--no-playlist",
