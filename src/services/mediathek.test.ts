@@ -30,7 +30,7 @@ import {
 } from "./mediathek";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { mediathekCache } from "@/lib/cache";
-import { getMinDurationSeconds } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 
 const mockedFetch = vi.mocked(fetchWithRetry);
 const mockedGetMinDuration = vi.mocked(getMinDurationSeconds);
@@ -174,4 +174,45 @@ it.each(["standard", "high"])("keeps direct movie variants when %s is HLS", asyn
   expect(xml).toContain("480p");
   expect(xml).toContain(streaming === "standard" ? "1080p" : "720p");
   expect(xml).not.toContain(streaming === "standard" ? "720p" : "1080p");
+});
+
+it.each(["standard", "high"])(
+  "keeps direct movie text-search variants when %s is HLS",
+  async (streaming) => {
+    mockApi([
+      makeItem({
+        topic: "Mixed Movie",
+        title: "Mixed Movie",
+        url_video:
+          streaming === "standard" ? "https://example.org/720.m3u8" : "https://example.org/720.mp4",
+        url_video_hd:
+          streaming === "high" ? "https://example.org/1080.m3u8" : "https://example.org/1080.mp4",
+        url_video_low: "https://example.org/480.mp4",
+      }),
+    ]);
+    const xml = await fetchMovieSearchByQuery("Mixed Movie", 100, 0);
+    expect(xml).toContain("480p");
+    expect(xml).toContain(streaming === "standard" ? "1080p" : "720p");
+    expect(xml).not.toContain(streaming === "standard" ? "720p" : "1080p");
+  }
+);
+
+it("uses a direct low-quality variant for best when higher qualities are HLS", async () => {
+  vi.mocked(getSetting).mockImplementation(async (key) =>
+    key === "download.quality" ? "best" : null
+  );
+  try {
+    mockApi([
+      makeItem({
+        url_video: "https://example.org/720.m3u8",
+        url_video_hd: "https://example.org/1080.m3u8",
+      }),
+    ]);
+    const xml = await fetchMovieSearchByQuery("Movie", 100, 0);
+    expect(xml).toContain("480p");
+    expect(xml).not.toContain("720p");
+    expect(xml).not.toContain("1080p");
+  } finally {
+    vi.mocked(getSetting).mockResolvedValue(null);
+  }
 });

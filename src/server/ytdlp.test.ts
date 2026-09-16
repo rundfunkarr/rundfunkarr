@@ -113,3 +113,58 @@ it.each([480, 720, 1080] as const)(
     expect((await done).success).toBe(true);
   }
 );
+
+it("times out a silent downloader without waiting for a close event", async () => {
+  vi.useFakeTimers();
+  try {
+    const done = downloadVideo("https://example.org/master.m3u8", {
+      outputPath: "/tmp/result.mkv",
+    });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+    expect(await done).toEqual({ success: false, error: expect.stringContaining("timed out") });
+    child.emit("close", 0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("allows long active downloads and clears the timeout on completion", async () => {
+  vi.useFakeTimers();
+  try {
+    const done = downloadVideo("https://example.org/master.m3u8", {
+      outputPath: "/tmp/result.mkv",
+    });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(9 * 60_000);
+    child.stdout.emit("data", Buffer.from("[download] 50%\n"));
+    await vi.advanceTimersByTimeAsync(9 * 60_000);
+    child.stderr.emit("data", Buffer.from("[Merger] Merging formats\n"));
+    await vi.advanceTimersByTimeAsync(9 * 60_000);
+    expect(child.kill).not.toHaveBeenCalled();
+    child.emit("close", 0);
+    expect((await done).success).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("clears the download timeout after a process error", async () => {
+  vi.useFakeTimers();
+  try {
+    const done = downloadVideo("https://example.org/master.m3u8", {
+      outputPath: "/tmp/result.mkv",
+    });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    child.emit("error", new Error("spawn failed"));
+    expect(await done).toEqual({ success: false, error: "spawn failed" });
+    await vi.advanceTimersByTimeAsync(11 * 60_000);
+    expect(child.kill).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});

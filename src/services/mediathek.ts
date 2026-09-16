@@ -1015,10 +1015,10 @@ export async function fetchMovieSearchByQuery(
     return response;
   }
 
-  // Filter: skip trailers, m3u8 (unless HLS enabled), and apply movie minimum duration (60 min)
+  // Filter trailers and apply the configured minimum duration. Each URL variant
+  // is checked for HLS below so direct alternatives remain available.
   const hlsEnabled = await isHlsEnabled();
   const filteredResults = results.filter((item) => {
-    if (!hlsEnabled && isStreamingUrl(item.url_video)) return false;
     if (SKIP_KEYWORDS.some((kw) => item.title.includes(kw))) return false;
     if (minDuration > 0 && item.duration < minDuration) return false;
     return true;
@@ -1054,7 +1054,12 @@ export async function fetchMovieSearchByQuery(
       sizeMultiplier: number;
     }> = [];
 
-    if (item.url_video_hd && (quality === "all" || quality === "best" || quality === "1080p")) {
+    const allowed = (url: string) => !!url && (hlsEnabled || !isStreamingUrl(url));
+    const has1080p = allowed(item.url_video_hd);
+    const has720p = allowed(item.url_video);
+    const has480p = allowed(item.url_video_low);
+
+    if (has1080p && (quality === "all" || quality === "best" || quality === "1080p")) {
       qualities.push({
         url: item.url_video_hd,
         qualityName: "1080p",
@@ -1062,10 +1067,7 @@ export async function fetchMovieSearchByQuery(
         sizeMultiplier: 1.6,
       });
     }
-    if (
-      item.url_video &&
-      (quality === "all" || quality === "720p" || (quality === "best" && !item.url_video_hd))
-    ) {
+    if (has720p && (quality === "all" || quality === "720p" || (quality === "best" && !has1080p))) {
       qualities.push({
         url: item.url_video,
         qualityName: "720p",
@@ -1073,7 +1075,10 @@ export async function fetchMovieSearchByQuery(
         sizeMultiplier: 1.0,
       });
     }
-    if (item.url_video_low && (quality === "all" || quality === "480p")) {
+    if (
+      has480p &&
+      (quality === "all" || quality === "480p" || (quality === "best" && !has1080p && !has720p))
+    ) {
       qualities.push({
         url: item.url_video_low,
         qualityName: "480p",

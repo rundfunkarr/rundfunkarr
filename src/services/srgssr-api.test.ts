@@ -97,3 +97,16 @@ it.each([
   } as SrgssrMediaComposition;
   expect(getBestStreamUrl(composition, quality)).toBe(`https://example.org/${expected}.m3u8`);
 });
+
+it("rejects non-HLS SRF resources instead of bypassing the streaming downloader", () => {
+  const composition = {
+    chapterUrn: "urn:srf:video:sample",
+    chapterList: [
+      {
+        urn: "urn:srf:video:sample",
+        resourceList: [{ protocol: "HTTPS", quality: "HD", url: "https://example.org/video.mp4" }],
+      },
+    ],
+  } as SrgssrMediaComposition;
+  expect(getBestStreamUrl(composition)).toBeNull();
+});

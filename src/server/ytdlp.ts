@@ -9,6 +9,9 @@ const isWindows = process.platform === "win32";
 const APP_DIR = process.cwd();
 const YTDLP_DIR = path.join(APP_DIR, "ytdlp");
 const YTDLP_PATH = path.join(YTDLP_DIR, isWindows ? "yt-dlp.exe" : "yt-dlp");
+// Activity resets this deadline, so long downloads can continue. Allow enough
+// silence for retries and FFmpeg remuxing without blocking the queue forever.
+const DOWNLOAD_STALL_TIMEOUT_MS = 10 * 60_000;
 
 function releaseAsset(): keyof typeof release.sha256 {
   if (process.platform === "win32" && process.arch === "x64") return "yt-dlp.exe";
@@ -335,8 +338,21 @@ export async function downloadVideo(
     let stderr = "";
     let progressUpdates = Promise.resolve();
     let progressError: unknown;
+    let ended = false;
+    let stallTimer: ReturnType<typeof setTimeout>;
+    const resetStallTimer = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        ended = true;
+        proc.kill("SIGKILL");
+        resolve({ success: false, error: "yt-dlp timed out after 10 minutes without output" });
+      }, DOWNLOAD_STALL_TIMEOUT_MS);
+    };
+    resetStallTimer();
 
     proc.stdout.on("data", (data) => {
+      if (ended) return;
+      resetStallTimer();
       const line = data.toString();
 
       // Parse progress from yt-dlp output
@@ -359,10 +375,15 @@ export async function downloadVideo(
     });
 
     proc.stderr.on("data", (data) => {
+      if (ended) return;
+      resetStallTimer();
       stderr += data.toString();
     });
 
     proc.on("close", async (code) => {
+      clearTimeout(stallTimer);
+      if (ended) return;
+      ended = true;
       await progressUpdates;
       if (progressError) {
         resolve({ success: false, error: "Failed to persist download progress" });
@@ -395,6 +416,9 @@ export async function downloadVideo(
     });
 
     proc.on("error", (err) => {
+      clearTimeout(stallTimer);
+      if (ended) return;
+      ended = true;
       console.error("[yt-dlp] Process error:", err);
       resolve({ success: false, error: err.message });
     });

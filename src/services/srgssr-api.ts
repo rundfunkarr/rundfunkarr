@@ -319,7 +319,8 @@ export function getBestStreamUrl(
   // Prefer HLS and choose the closest advertised quality. The downloader also
   // limits manifest rendition height to the requested resolution.
   const hlsResources = chapter.resourceList.filter((r) => r.protocol === "HLS");
-  const resources = hlsResources.length ? hlsResources : chapter.resourceList;
+  if (hlsResources.length === 0) return null;
+  const resources = hlsResources;
   const qualities =
     preferredQuality === "low"
       ? ["SD", "HQ", "HD"]
