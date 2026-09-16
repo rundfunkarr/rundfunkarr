@@ -5,6 +5,7 @@ import { clearSettingsCache } from "@/lib/settings";
 import { clearTTLCache, mediathekCache } from "@/lib/cache";
 import { isTvdbCredentialSettingKey } from "@/lib/tvdb-auth";
 import { clearTvdbTokenCache } from "@/services/tvdb";
+import { isMaskedSetting, maskSetting } from "@/lib/settings-redaction";
 
 // Default settings
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -42,9 +43,10 @@ export async function GET(request: NextRequest) {
       const config = await prisma.config.findUnique({
         where: { key },
       });
+      const value = config?.value ?? DEFAULT_SETTINGS[key] ?? null;
       return NextResponse.json({
         key,
-        value: config?.value ?? DEFAULT_SETTINGS[key] ?? null,
+        value: value === null ? null : maskSetting(key, value),
       });
     }
 
@@ -53,7 +55,7 @@ export async function GET(request: NextRequest) {
     const settings: Record<string, string> = { ...DEFAULT_SETTINGS };
 
     for (const config of configs) {
-      settings[config.key] = config.value;
+      settings[config.key] = maskSetting(config.key, config.value);
     }
 
     return NextResponse.json(settings);
@@ -71,6 +73,9 @@ export async function POST(request: NextRequest) {
     // Handle single key-value pair
     if (body.key && body.value !== undefined) {
       const key = String(body.key);
+      if (isMaskedSetting(key, body.value)) {
+        return NextResponse.json({ success: true, key });
+      }
       await prisma.config.upsert({
         where: { key },
         update: { value: String(body.value) },
@@ -91,8 +96,9 @@ export async function POST(request: NextRequest) {
 
     // Handle multiple settings
     if (typeof body === "object" && !body.key) {
-      const changedKeys = Object.keys(body);
-      const updates = Object.entries(body).map(([key, value]) =>
+      const entries = Object.entries(body).filter(([key, value]) => !isMaskedSetting(key, value));
+      const changedKeys = entries.map(([key]) => key);
+      const updates = entries.map(([key, value]) =>
         prisma.config.upsert({
           where: { key },
           update: { value: String(value) },
@@ -135,6 +141,7 @@ export async function DELETE(request: NextRequest) {
     });
     clearSettingsCache();
     mediathekCache.clear();
+    clearSrfTokenCache();
     if (isTvdbCredentialSettingKey(key)) {
       await clearTvdbTokenCache();
     }
@@ -146,6 +153,7 @@ export async function DELETE(request: NextRequest) {
     // Key might not exist, which is fine
     clearSettingsCache();
     mediathekCache.clear();
+    clearSrfTokenCache();
     if (isTvdbCredentialSettingKey(key)) {
       await clearTvdbTokenCache();
     }

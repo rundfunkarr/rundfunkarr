@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { maskSetting } from "@/lib/settings-redaction";
 
 interface Settings {
   // General
@@ -72,7 +73,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       });
       if (!res.ok) throw new Error("Failed to update setting");
 
-      setSettings((prev) => (prev ? { ...prev, [key]: value } : null));
+      setSettings((prev) => (prev ? { ...prev, [key]: maskSetting(key, value) } : null));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       throw err;
@@ -93,7 +94,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const updated = { ...prev };
         for (const [key, value] of Object.entries(updates)) {
           if (value !== undefined) {
-            updated[key] = value;
+            updated[key] = maskSetting(key, value);
           }
         }
         return updated;
