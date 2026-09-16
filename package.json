@@ -1,6 +1,6 @@
 {
   "name": "rundfunkarr",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "private": true,
   "description": "Rundfunk indexer for Sonarr/Radarr",
   "scripts": {
