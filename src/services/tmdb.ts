@@ -165,7 +165,14 @@ async function processShowData(
 
   const details: TmdbTvDetails = await detailsResponse.json();
 
-  let germanName = details.name;
+  // Prefer a real TMDB "de" translation; but when none is populated (common -
+  // translations aren't always filled in), fall back to original_name rather
+  // than the English-localized `name`. For German/Austrian-origin shows
+  // original_name already IS the German title, and it's what actually shows
+  // up in MediathekView's search index - `name` here can be a wholly
+  // different English title (e.g. SOKO Kitzbühel -> "Murder in the
+  // Mountains"), which then fails every downstream Mediathek/provider search.
+  let germanName = details.original_name || details.name;
   if (details.translations?.translations) {
     const germanTranslation = details.translations.translations.find((t) => t.iso_639_1 === "de");
     if (germanTranslation?.data?.name) {

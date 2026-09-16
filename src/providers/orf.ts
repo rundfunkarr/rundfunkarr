@@ -1,11 +1,8 @@
 import { BaseProvider } from "./base";
 import { getSetting } from "@/lib/settings";
-import {
-  extractPlaylistEntries,
-  getDetailedVideoInfo,
-  ensureYtdlpExists,
-  type YtdlpPlaylistEntry,
-} from "@/server/ytdlp";
+import { getDetailedVideoInfo, ensureYtdlpExists } from "@/server/ytdlp";
+import { queryMediathekView } from "@/lib/mediathek-client";
+import type { ApiResultItem } from "@/types";
 import type {
   ProviderCapabilities,
   ProviderContentItem,
@@ -14,13 +11,8 @@ import type {
   ProviderStatus,
 } from "@/types/provider";
 
-// ORF ON search URL template
-const ORF_SEARCH_URL = "https://on.orf.at/suche?q=";
-
-// Minimum duration for content (5 minutes by default)
-// Note: yt-dlp returns duration in SECONDS, so we use seconds here
-// (unlike SRF which uses milliseconds because SRG-SSR API returns ms)
-const DEFAULT_MIN_DURATION = 5 * 60; // seconds
+// Minimum duration for content (5 minutes by default), in seconds.
+const DEFAULT_MIN_DURATION = 5 * 60;
 
 // Skip keywords (trailers, clips, etc.)
 const SKIP_KEYWORDS = ["Trailer", "Teaser", "Preview", "Clip", "Ausschnitt"];
@@ -29,13 +21,25 @@ const SKIP_KEYWORDS = ["Trailer", "Teaser", "Preview", "Clip", "Ausschnitt"];
  * ORF Provider
  *
  * Provides access to Austrian television content from ORF ON.
- * Uses yt-dlp for both search and download since ORF has no official public API.
  *
- * Content is geo-blocked outside Austria - use proxy settings if needed.
+ * Search: ORF's own on.orf.at/suche page is a client-rendered Nuxt/Vue SPA
+ * with no results in the initial HTML, so it can't be scraped by yt-dlp's
+ * generic extractor (confirmed: yt-dlp returns "Unsupported URL" against
+ * it). ORF's content is already indexed by MediathekViewWeb though (the
+ * same community index MediathekViewProvider uses) - ORF entries there are
+ * plain HLS (.m3u8) streams, which is exactly why this provider exists
+ * (MediathekViewProvider filters .m3u8 out unless HLS is enabled). So
+ * search here reuses the same shared MediathekView client, filtered to
+ * channel=ORF, rather than duplicating a second scraping approach.
+ * (ORF does have its own api-tvthek.orf.at backend the official site uses,
+ * confirmed reachable with the client credentials embedded in the site's
+ * own page source - but shipping a reverse-engineered, embedded-credential
+ * call to a private, unversioned, undocumented API in an upstream PR isn't
+ * something to do without ORF's blessing; MediathekViewWeb's coverage is
+ * good enough and doesn't have that problem.)
  *
- * Note: This provider is less stable than providers with official APIs (like SRF)
- * as it relies on yt-dlp's web scraping capabilities. If ORF changes their website,
- * this may break until yt-dlp is updated.
+ * Download: still uses yt-dlp, which works fine against a known individual
+ * ORF video page (unlike the search page, those aren't client-rendered).
  */
 export class OrfProvider extends BaseProvider {
   readonly id = "orf";
@@ -46,7 +50,7 @@ export class OrfProvider extends BaseProvider {
     supportsHls: true,
     supportsDirectDownload: false, // ORF only provides HLS streams
     requiresProxy: true, // Geo-blocked outside Austria
-    hasOfficialApi: false, // No official API - uses yt-dlp scraping
+    hasOfficialApi: false, // Search goes through the community MediathekView index, not an ORF API
   };
 
   private minDuration = DEFAULT_MIN_DURATION;
@@ -67,8 +71,8 @@ export class OrfProvider extends BaseProvider {
   }
 
   /**
-   * Check if provider is enabled
-   * Requires yt-dlp to be available and HLS to be enabled
+   * Check if provider is enabled. Requires HLS to be enabled (ORF's
+   * MediathekView entries are .m3u8 streams, filtered out otherwise).
    */
   async isEnabled(): Promise<boolean> {
     // Check if explicitly disabled
@@ -101,38 +105,24 @@ export class OrfProvider extends BaseProvider {
       return [];
     }
 
-    // Check if enabled
     const enabled = await this.isEnabled();
     if (!enabled) {
       console.log(`[${this.id}] Provider not enabled`);
       return [];
     }
 
-    // Ensure yt-dlp is available
-    const ytdlpAvailable = await ensureYtdlpExists();
-    if (!ytdlpAvailable) {
-      console.error(`[${this.id}] yt-dlp not available`);
-      return [];
-    }
-
     console.log(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
 
     try {
-      // Build search URL
-      const searchUrl = `${ORF_SEARCH_URL}${encodeURIComponent(searchQuery)}`;
+      const results = await queryMediathekView(
+        [
+          { fields: ["topic", "title"], query: searchQuery },
+          { fields: ["channel"], query: "ORF" },
+        ],
+        limit * 3
+      );
 
-      // Use yt-dlp to extract playlist entries from search page
-      const entries = await extractPlaylistEntries(searchUrl, limit * 2);
-
-      if (!entries || entries.length === 0) {
-        console.log(`[${this.id}] No results found`);
-        return [];
-      }
-
-      console.log(`[${this.id}] yt-dlp returned ${entries.length} entries`);
-
-      // Filter and map results
-      const items = this.filterAndMapResults(entries, query.type);
+      const items = this.filterResults(results ?? [], query.type);
 
       console.log(`[${this.id}] Found ${items.length} items after filtering`);
 
@@ -144,17 +134,16 @@ export class OrfProvider extends BaseProvider {
   }
 
   async checkStatus(): Promise<ProviderStatus> {
-    // Check if yt-dlp is available
+    // Download still needs yt-dlp even though search doesn't.
     const ytdlpAvailable = await ensureYtdlpExists();
     if (!ytdlpAvailable) {
       return {
         available: false,
         lastCheck: Date.now(),
-        error: "yt-dlp not available",
+        error: "yt-dlp not available (needed for downloads)",
       };
     }
 
-    // Check if HLS is enabled
     const hlsEnabled = await getSetting("download.enableHLS");
     if (hlsEnabled !== "true") {
       return {
@@ -164,19 +153,29 @@ export class OrfProvider extends BaseProvider {
       };
     }
 
-    // Try a simple extraction to verify ORF is accessible
     try {
-      await extractPlaylistEntries(`${ORF_SEARCH_URL}test`, 1);
-      // Even empty results are OK - it means yt-dlp can access ORF
+      const results = await queryMediathekView(
+        [
+          { fields: ["topic", "title"], query: "ZIB" },
+          { fields: ["channel"], query: "ORF" },
+        ],
+        1
+      );
       return {
-        available: true,
+        available: results !== null && results.length > 0,
         lastCheck: Date.now(),
+        error:
+          results === null
+            ? "Failed to query MediathekView"
+            : results.length > 0
+              ? undefined
+              : "MediathekView returned no ORF results",
       };
     } catch (error) {
       return {
         available: false,
         lastCheck: Date.now(),
-        error: error instanceof Error ? error.message : "Failed to access ORF",
+        error: error instanceof Error ? error.message : "Failed to reach MediathekView",
       };
     }
   }
@@ -188,8 +187,9 @@ export class OrfProvider extends BaseProvider {
     item: ProviderContentItem,
     preferredQuality: "low" | "standard" | "high" = "high"
   ): Promise<ProviderDownloadInfo> {
-    // For ORF, the item URL is the webpage URL
-    // We need to use yt-dlp to extract the actual stream URL
+    // item.videoUrls.standard is MediathekView's own url_video for this
+    // entry - already a real HLS manifest URL, not a webpage - yt-dlp
+    // extracts the actual stream/formats from it directly.
     const videoUrl = item.videoUrls.standard || item.websiteUrl;
 
     if (videoUrl) {
@@ -197,7 +197,7 @@ export class OrfProvider extends BaseProvider {
         const videoInfo = await getDetailedVideoInfo(videoUrl);
         if (videoInfo && videoInfo.url) {
           return {
-            url: videoUrl, // Use the webpage URL - yt-dlp will handle extraction
+            url: videoUrl, // yt-dlp resolves the actual stream from this manifest URL
             isHls: true,
             filename: this.generateFilename(item, preferredQuality === "high" ? "1080p" : "720p"),
             expectedSize: videoInfo.filesize || 0,
@@ -214,10 +214,13 @@ export class OrfProvider extends BaseProvider {
   }
 
   /**
-   * Filter and map yt-dlp results to ProviderContentItem format
+   * Filter raw MediathekView results (already channel=ORF via the server-
+   * side query filter) and map to ProviderContentItem. MediathekView
+   * already gives clean topic/title fields, so unlike the old yt-dlp-entry
+   * version, no title-splitting heuristics are needed here.
    */
-  private filterAndMapResults(
-    entries: YtdlpPlaylistEntry[],
+  private filterResults(
+    results: ApiResultItem[],
     type?: "all" | "movie" | "series"
   ): ProviderContentItem[] {
     const items: ProviderContentItem[] = [];
@@ -226,118 +229,39 @@ export class OrfProvider extends BaseProvider {
     const movieMinDuration = 60 * 60;
     const effectiveMinDuration = type === "movie" ? movieMinDuration : this.minDuration;
 
-    for (const entry of entries) {
-      // Skip entries without title or URL
-      if (!entry.title || !entry.url) {
+    for (const result of results) {
+      if (SKIP_KEYWORDS.some((kw) => result.title.toLowerCase().includes(kw.toLowerCase()))) {
         continue;
       }
 
-      // Skip items with unwanted keywords in title
-      if (SKIP_KEYWORDS.some((kw) => entry.title.toLowerCase().includes(kw.toLowerCase()))) {
+      if (result.duration < effectiveMinDuration) {
         continue;
       }
 
-      // Skip items shorter than minimum duration (if duration is known)
-      if (entry.duration && entry.duration < effectiveMinDuration) {
-        continue;
-      }
-
-      items.push(this.mapToContentItem(entry));
+      items.push(this.mapToContentItem(result));
     }
 
     return items;
   }
 
   /**
-   * Map yt-dlp entry to ProviderContentItem
+   * Map a MediathekView API result to ProviderContentItem
    */
-  private mapToContentItem(entry: YtdlpPlaylistEntry): ProviderContentItem {
-    // Parse date from upload_date (YYYYMMDD format)
-    let timestamp = Date.now() / 1000;
-    if (entry.upload_date && entry.upload_date.length === 8) {
-      const year = entry.upload_date.substring(0, 4);
-      const month = entry.upload_date.substring(4, 6);
-      const day = entry.upload_date.substring(6, 8);
-      const date = new Date(`${year}-${month}-${day}`);
-      if (!isNaN(date.getTime())) {
-        timestamp = date.getTime() / 1000;
-      }
-    }
-
-    // Build channel name
-    const channel = entry.channel || entry.uploader || "ORF";
-
-    // Build topic from series or use title
-    const topic = entry.series || this.extractTopic(entry.title);
-
-    // Build title (episode title or main title)
-    const title = this.extractEpisodeTitle(entry.title, entry.series);
-
-    // Duration in seconds
-    const duration = entry.duration || 0;
-
+  private mapToContentItem(result: ApiResultItem): ProviderContentItem {
     return this.createContentItem({
-      id: entry.id || entry.url,
-      channel,
-      topic,
-      title,
-      description: entry.description || "",
-      timestamp,
-      duration,
-      size: 0, // Unknown until download
-      websiteUrl: entry.url,
-      videoUrl: entry.url, // yt-dlp will handle extraction
-      videoUrlHigh: entry.url,
+      id: `${result.channel}-${result.topic}-${result.title}-${result.filmlisteTimestamp}`,
+      channel: result.channel,
+      topic: result.topic,
+      title: result.title,
+      description: result.description,
+      timestamp: result.filmlisteTimestamp,
+      duration: result.duration,
+      size: result.size,
+      websiteUrl: result.url_website,
+      videoUrl: result.url_video,
+      videoUrlLow: result.url_video_low || undefined,
+      videoUrlHigh: result.url_video_hd || undefined,
     });
-  }
-
-  /**
-   * Extract topic from title (e.g., "ZIB 2: Interview with..." -> "ZIB 2")
-   */
-  private extractTopic(title: string): string {
-    // Try to extract show name from common patterns
-    // Pattern: "Show Name: Episode Title" or "Show Name - Episode Title"
-    const colonIndex = title.indexOf(":");
-    const dashIndex = title.indexOf(" - ");
-
-    if (colonIndex > 0 && colonIndex < 50) {
-      return title.substring(0, colonIndex).trim();
-    }
-    if (dashIndex > 0 && dashIndex < 50) {
-      return title.substring(0, dashIndex).trim();
-    }
-
-    return title;
-  }
-
-  /**
-   * Extract episode title from full title
-   */
-  private extractEpisodeTitle(title: string, series?: string): string {
-    // If we have a series name, try to remove it from the title
-    if (series && title.startsWith(series)) {
-      let remainder = title.substring(series.length);
-      // Remove leading separators
-      if (remainder.startsWith(":") || remainder.startsWith(" -")) {
-        remainder = remainder.substring(remainder.startsWith(":") ? 1 : 2).trim();
-      }
-      if (remainder) {
-        return remainder;
-      }
-    }
-
-    // Otherwise, try to extract episode title from patterns
-    const colonIndex = title.indexOf(":");
-    if (colonIndex > 0 && colonIndex < 50) {
-      return title.substring(colonIndex + 1).trim();
-    }
-
-    const dashIndex = title.indexOf(" - ");
-    if (dashIndex > 0 && dashIndex < 50) {
-      return title.substring(dashIndex + 3).trim();
-    }
-
-    return title;
   }
 }
 

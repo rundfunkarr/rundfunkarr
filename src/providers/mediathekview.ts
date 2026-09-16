@@ -1,6 +1,8 @@
 import { BaseProvider } from "./base";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { getSetting } from "@/lib/settings";
+import { queryMediathekView } from "@/lib/mediathek-client";
+import type { ApiResultItem } from "@/types";
 import type {
   ProviderCapabilities,
   ProviderContentItem,
@@ -65,13 +67,12 @@ export class MediathekViewProvider extends BaseProvider {
     console.log(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
 
     try {
-      const response = await this.fetchFromApi(searchQuery, limit * 3); // Fetch more to account for filtering
+      const results = await queryMediathekView(
+        [{ fields: ["topic", "title"], query: searchQuery }],
+        limit * 3 // Fetch more to account for filtering
+      );
 
-      if (!response) {
-        return [];
-      }
-
-      const items = this.parseAndFilterResults(response, query.type);
+      const items = this.filterResults(results ?? [], query.type);
 
       console.log(`[${this.id}] Found ${items.length} items after filtering`);
 
@@ -113,45 +114,12 @@ export class MediathekViewProvider extends BaseProvider {
   }
 
   /**
-   * Fetch results from MediathekView API
+   * Filter raw MediathekView results and map to ProviderContentItem
    */
-  private async fetchFromApi(query: string, size: number): Promise<ApiResponse | null> {
-    const requestBody = {
-      queries: [{ fields: ["topic", "title"], query }],
-      sortBy: "filmlisteTimestamp",
-      sortOrder: "desc",
-      future: true,
-      offset: 0,
-      size,
-    };
-
-    try {
-      const response = await fetchWithRetry(MEDIATHEK_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        console.error(`[${this.id}] API request failed with status ${response.status}`);
-        return null;
-      }
-
-      return (await response.json()) as ApiResponse;
-    } catch (error) {
-      console.error(`[${this.id}] Error fetching from API:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Parse API response and filter results
-   */
-  private parseAndFilterResults(
-    response: ApiResponse,
+  private filterResults(
+    results: ApiResultItem[],
     type?: "all" | "movie" | "series"
   ): ProviderContentItem[] {
-    const results = response.result?.results || [];
     const items: ProviderContentItem[] = [];
 
     // For movie search, require at least 60 minutes
@@ -199,34 +167,6 @@ export class MediathekViewProvider extends BaseProvider {
       videoUrlHigh: result.url_video_hd || undefined,
     });
   }
-}
-
-// Type definitions for MediathekView API responses
-interface ApiResponse {
-  result: {
-    results: ApiResultItem[];
-    queryInfo: {
-      filmlisteTimestamp: number;
-      searchEngineTime: number;
-      resultCount: number;
-      totalResults: number;
-    };
-  };
-  err: unknown | null;
-}
-
-interface ApiResultItem {
-  channel: string;
-  topic: string;
-  title: string;
-  description: string;
-  filmlisteTimestamp: number;
-  duration: number;
-  size: number;
-  url_website: string;
-  url_video: string;
-  url_video_low: string;
-  url_video_hd: string;
 }
 
 // Create and export the provider instance

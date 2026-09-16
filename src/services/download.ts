@@ -2,6 +2,21 @@ import { prisma } from "@/lib/db";
 import { randomUUID } from "crypto";
 import * as path from "path";
 
+/**
+ * Format seconds remaining as SABnzbd's strict "H:MM:SS" timeleft format.
+ * Radarr/Sonarr's SABnzbd client parser rejects anything else (including
+ * "M:SS" for under an hour, or a free-text placeholder) with
+ * "Expected either 0:0:0:0 or 0:0:0 format, but received: ..." - which
+ * makes every queue poll fail, so they never see an in-progress download
+ * even while it's genuinely downloading. Always emit the full form.
+ */
+export function formatSabnzbdTimeleft(secondsLeft: number): string {
+  const hours = Math.floor(secondsLeft / 3600);
+  const minutes = Math.floor((secondsLeft % 3600) / 60);
+  const seconds = secondsLeft % 60;
+  return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+}
+
 export interface QueueItem {
   nzo_id: string;
   filename: string;
@@ -35,19 +50,45 @@ export interface SabnzbdHistory {
 
 // Extract filename and URL from NZB content
 const FILE_NAME_REGEX = /filename="([^"]+)\.nzb"/;
-const URL_REGEX = /<!--\s*(https?:\/\/[^\s]+)\s*-->/;
+// New NZBs use Base64 comments so URLs containing "--" remain valid XML.
+// Accept raw URL comments too, for NZBs saved before the format changed.
+const COMMENT_REGEX = /<!--([\s\S]*?)-->/g;
 
 export function parseNzbContent(nzbContent: string): { fileName: string; url: string } | null {
   const filenameMatch = nzbContent.match(FILE_NAME_REGEX);
-  const urlMatch = nzbContent.match(URL_REGEX);
+  if (!filenameMatch) {
+    return null;
+  }
 
-  if (!filenameMatch || !urlMatch) {
+  let url: string | null = null;
+  for (const match of nzbContent.matchAll(COMMENT_REGEX)) {
+    const comment = match[1].trim();
+    if (/^https?:\/\/\S+$/.test(comment)) {
+      url = comment;
+      break;
+    }
+    if (!/^[A-Za-z0-9+/=]+$/.test(comment)) {
+      continue;
+    }
+    let decoded: string;
+    try {
+      decoded = Buffer.from(comment, "base64").toString("utf-8");
+    } catch {
+      continue;
+    }
+    if (/^https?:\/\//.test(decoded)) {
+      url = decoded;
+      break;
+    }
+  }
+
+  if (!url) {
     return null;
   }
 
   return {
     fileName: filenameMatch[1],
-    url: urlMatch[1],
+    url,
   };
 }
 
@@ -108,21 +149,10 @@ export async function getQueue(): Promise<SabnzbdQueue> {
     const remainingBytes = totalSizeNum - downloadedBytesNum;
     const speedMbps = (speedNum / 1024 / 1024).toFixed(1);
 
-    // Calculate time left
-    let timeleft = "";
-    if (d.status === "downloading" && speedNum > 0) {
-      const secondsLeft = Math.round(remainingBytes / speedNum);
-      const hours = Math.floor(secondsLeft / 3600);
-      const minutes = Math.floor((secondsLeft % 3600) / 60);
-      const seconds = secondsLeft % 60;
-      if (hours > 0) {
-        timeleft = `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-      } else {
-        timeleft = `${minutes}:${seconds.toString().padStart(2, "0")}`;
-      }
-    } else if (d.status === "converting") {
-      timeleft = "Konvertiere...";
-    }
+    const timeleft =
+      d.status === "downloading" && speedNum > 0
+        ? formatSabnzbdTimeleft(Math.round(remainingBytes / speedNum))
+        : "0:00:00";
 
     return {
       nzo_id: d.id,

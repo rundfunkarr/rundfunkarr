@@ -325,6 +325,16 @@ async function markAsFailed(downloadId: string, error: string): Promise<void> {
   });
 }
 
+// CDN streams (confirmed live: a 3sat direct-download URL) can stop sending
+// data mid-transfer without closing the connection or erroring - fetch()'s
+// reader.read() then just hangs forever, since fetch has no built-in
+// stall/read timeout. That leaves a download stuck at whatever percent it
+// reached, with no error, no retry, and nothing for Radarr/Sonarr to act on
+// even once they can see the queue (see formatSabnzbdTimeleft's doc comment
+// for the separate bug that hid this from them entirely). Abort if no data
+// arrives for this long.
+const STALL_TIMEOUT_MS = 60_000;
+
 async function downloadFile(
   url: string,
   destPath: string,
@@ -335,8 +345,19 @@ async function downloadFile(
     speed: number
   ) => Promise<void>
 ): Promise<boolean> {
+  const abortController = new AbortController();
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const resetStallTimer = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      console.error(`[Download] No data received for ${STALL_TIMEOUT_MS / 1000}s, aborting`);
+      abortController.abort();
+    }, STALL_TIMEOUT_MS);
+  };
+
   try {
-    const response = await fetch(url);
+    resetStallTimer();
+    const response = await fetch(url, { signal: abortController.signal });
 
     if (!response.ok || !response.body) {
       console.error(`[Download] HTTP error: ${response.status} ${response.statusText}`);
@@ -355,6 +376,7 @@ async function downloadFile(
 
     while (true) {
       const { done, value } = await reader.read();
+      resetStallTimer();
 
       if (done) {
         break;
@@ -395,6 +417,8 @@ async function downloadFile(
   } catch (error) {
     console.error(`[Download] Error downloading file:`, error);
     return false;
+  } finally {
+    clearTimeout(stallTimer);
   }
 }
 

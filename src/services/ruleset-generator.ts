@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { queryMediathekView } from "@/lib/mediathek-client";
 import type { Ruleset, TvdbData, ApiResultItem } from "@/types";
 
 // Common German show name patterns in MediathekView
@@ -22,46 +23,17 @@ const ABSOLUTE_EPISODE_PATTERNS = [
   /Teil\s*(\d+)/i, // Teil 123
 ];
 
-interface MediathekSearchResult {
-  results: ApiResultItem[];
-}
-
 /**
- * Search MediathekView API directly
+ * Search MediathekView API directly (shared client - see its own doc
+ * comment for why this used to be a separate, buggy reimplementation).
  */
 async function searchMediathekApi(query: string): Promise<ApiResultItem[]> {
-  try {
-    const response = await fetch("https://mediathekviewweb.de/api/query", {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain",
-      },
-      body: JSON.stringify({
-        queries: [
-          {
-            fields: ["topic"],
-            query: query,
-          },
-        ],
-        sortBy: "timestamp",
-        sortOrder: "desc",
-        future: false,
-        offset: 0,
-        size: 50,
-      }),
-    });
-
-    if (!response.ok) {
-      console.warn(`[RulesetGenerator] MediathekView API error: ${response.status}`);
-      return [];
-    }
-
-    const data: MediathekSearchResult = await response.json();
-    return data.results || [];
-  } catch (error) {
-    console.error("[RulesetGenerator] Error searching MediathekView:", error);
-    return [];
-  }
+  return (
+    (await queryMediathekView([{ fields: ["topic"], query }], 50, {
+      sortBy: "timestamp",
+      future: false,
+    })) ?? []
+  );
 }
 
 /**
@@ -238,7 +210,7 @@ function escapeRegex(str: string): string {
 /**
  * Generate regex patterns based on detected format
  */
-function generateRegexPatterns(
+export function generateRegexPatterns(
   results: ApiResultItem[],
   strategy: string,
   topic: string
@@ -386,12 +358,47 @@ function generateRegexPatterns(
     }
   }
 
-  // ItemTitleIncludes - no special patterns needed, just use empty regex
-  // The matching will be done by checking if episode title is contained in MediathekView title
+  // ItemTitleIncludes fallback. An empty titleRegexRules here makes
+  // buildTitleFromRegexRules() always return "" (join of zero parts), which
+  // matchesItemTitleIncludes() then treats as "no title, no match" for every
+  // single item - so this strategy needs *some* extraction rule to ever
+  // match anything. The ItemTitleExact branch above only generates one when
+  // the title starts with the literal topic string, which real MediathekView
+  // topics often don't (e.g. topic "Soko Kitzbühel Staffel 17" vs. title
+  // "Soko Kitzbühel (8/15): Schöpfung" - the season suffix and episode
+  // numbering break a literal prefix match even though the colon-separated
+  // episode title is right there). Extract "everything after the last colon
+  // or dash" instead, without anchoring on the topic text at all - simpler
+  // and doesn't depend on the topic string appearing verbatim in the title.
+  for (const result of results.slice(0, 5)) {
+    if (result.title.includes(":")) {
+      return {
+        episodeRegex: "",
+        seasonRegex: "",
+        titleRegexRules: JSON.stringify([
+          { type: "regex", field: "title", pattern: `:\\s*([^:]+)$`, value: "" },
+        ]),
+      };
+    }
+    if (result.title.includes(" - ")) {
+      return {
+        episodeRegex: "",
+        seasonRegex: "",
+        titleRegexRules: JSON.stringify([
+          { type: "regex", field: "title", pattern: `-\\s*([^-]+)$`, value: "" },
+        ]),
+      };
+    }
+  }
+
+  // No separator found either - fall back to matching the whole title
+  // verbatim against each TMDB/TVDB episode name.
   return {
     episodeRegex: "",
     seasonRegex: "",
-    titleRegexRules: "[]",
+    titleRegexRules: JSON.stringify([
+      { type: "regex", field: "title", pattern: `(.+)`, value: "" },
+    ]),
   };
 }
 
