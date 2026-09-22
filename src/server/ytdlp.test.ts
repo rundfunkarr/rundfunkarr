@@ -2,12 +2,19 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { downloadHlsStream, downloadVideo } from "./ytdlp";
 
-const { spawn, mergeVideoAudio } = vi.hoisted(() => ({
+const { spawn, mergeVideoAudio, unlink } = vi.hoisted(() => ({
   spawn: vi.fn(),
-  mergeVideoAudio: vi.fn(async (_video: string, _audio: string, outputPath: string) => ({
-    success: true,
-    outputPath,
-  })),
+  mergeVideoAudio: vi.fn(
+    async (
+      _video: string,
+      _audio: string,
+      outputPath: string
+    ): Promise<{ success: boolean; outputPath?: string; error?: string }> => ({
+      success: true,
+      outputPath,
+    })
+  ),
+  unlink: vi.fn(async () => {}),
 }));
 vi.mock("child_process", () => ({ spawn }));
 vi.mock("./ffmpeg", () => ({
@@ -18,7 +25,7 @@ vi.mock("./ffmpeg", () => ({
 vi.mock("fs/promises", () => ({
   access: vi.fn(async () => {}),
   mkdir: vi.fn(async () => {}),
-  unlink: vi.fn(async () => {}),
+  unlink,
 }));
 vi.mock("@/lib/settings", () => ({
   getSetting: vi.fn(async (key: string) =>
@@ -40,6 +47,7 @@ beforeEach(() => {
   spawn.mockReset();
   spawn.mockReturnValue(child);
   mergeVideoAudio.mockClear();
+  unlink.mockClear();
 });
 
 it.each(["mkv", "mp4"] as const)(
@@ -62,10 +70,11 @@ it.each(["mkv", "mp4"] as const)(
     expect(args[args.indexOf("-f") + 1]).toBe("bestvideo/best");
     child.emit("close", 0);
 
-    // Second yt-dlp call: audio-only.
+    // Second yt-dlp call: audio-only, with a "/best" fallback for HLS
+    // masters that only expose combined video+audio variants.
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
     args = spawn.mock.calls[1][1];
-    expect(args[args.indexOf("-f") + 1]).toBe("bestaudio");
+    expect(args[args.indexOf("-f") + 1]).toBe("bestaudio/best");
     child.emit("close", 0);
 
     expect(await done).toEqual({ success: true, outputPath });
@@ -73,6 +82,33 @@ it.each(["mkv", "mp4"] as const)(
     expect(mergeVideoAudio.mock.calls[0][2]).toBe(outputPath);
   }
 );
+
+it("removes the partial video temp file when the video download fails", async () => {
+  const done = downloadHlsStream("https://example.org/master.m3u8", "/tmp/result.mkv");
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  const videoArgs = spawn.mock.calls[0][1];
+  const videoTempPath = videoArgs[videoArgs.indexOf("-o") + 1];
+  child.stderr.emit("data", Buffer.from("some yt-dlp error\n"));
+  child.emit("close", 1);
+
+  expect(await done).toEqual({ success: false, error: "some yt-dlp error\n" });
+  expect(unlink).toHaveBeenCalledWith(videoTempPath);
+  // Audio is never attempted once video already failed.
+  expect(spawn).toHaveBeenCalledTimes(1);
+});
+
+it("removes the partial output file when the final mux fails", async () => {
+  mergeVideoAudio.mockResolvedValueOnce({ success: false, error: "ffmpeg exited with code 1" });
+  const done = downloadHlsStream("https://example.org/master.m3u8", "/tmp/result.mkv");
+
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  child.emit("close", 0);
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
+  child.emit("close", 0);
+
+  expect(await done).toEqual({ success: false, error: "ffmpeg exited with code 1" });
+  expect(unlink).toHaveBeenCalledWith("/tmp/result.mkv");
+});
 
 it("awaits pending progress updates before marking a download complete", async () => {
   let release!: () => void;
@@ -138,7 +174,7 @@ it.each([480, 720, 1080] as const)(
 
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
     const audioArgs = spawn.mock.calls[1][1];
-    expect(audioArgs[audioArgs.indexOf("-f") + 1]).toBe("bestaudio");
+    expect(audioArgs[audioArgs.indexOf("-f") + 1]).toBe(`bestaudio/best[height<=${height}]`);
     child.emit("close", 0);
 
     expect((await done).success).toBe(true);

@@ -495,13 +495,19 @@ export async function downloadHlsStream(
     onProgress: forwardProgress(0, 85),
   });
   if (!videoResult.success) {
+    await fs.unlink(videoResult.outputPath ?? videoTempPath).catch(() => {});
     return videoResult;
   }
 
   const audioResult = await downloadVideo(hlsUrl, {
     outputPath: audioTempPath,
     container: "mp4",
-    format: "bestaudio",
+    // "/best" fallback: some HLS masters only expose combined
+    // #EXT-X-STREAM-INF variants with no separate audio-only format, so
+    // bare "bestaudio" would have no match there and error out.
+    // mergeVideoAudio only ever maps this input's audio stream, so it's
+    // safe to hand it a combined video+audio file here too.
+    format: maxHeight ? `bestaudio/best[height<=${maxHeight}]` : "bestaudio/best",
     onProgress: forwardProgress(85, 10),
   });
   if (!audioResult.success) {
@@ -520,6 +526,7 @@ export async function downloadHlsStream(
   await fs.unlink(audioResult.outputPath ?? audioTempPath).catch(() => {});
 
   if (!mergeResult.success) {
+    await fs.unlink(outputPath).catch(() => {});
     return { success: false, error: mergeResult.error };
   }
 
