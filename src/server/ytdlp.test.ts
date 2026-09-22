@@ -97,6 +97,24 @@ it("removes the partial video temp file when the video download fails", async ()
   expect(spawn).toHaveBeenCalledTimes(1);
 });
 
+it("removes both temp files when the audio download fails", async () => {
+  const done = downloadHlsStream("https://example.org/master.m3u8", "/tmp/result.mkv");
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  const videoArgs = spawn.mock.calls[0][1];
+  const videoTempPath = videoArgs[videoArgs.indexOf("-o") + 1];
+  child.emit("close", 0);
+
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
+  const audioArgs = spawn.mock.calls[1][1];
+  const audioTempPath = audioArgs[audioArgs.indexOf("-o") + 1];
+  child.stderr.emit("data", Buffer.from("audio fetch failed\n"));
+  child.emit("close", 1);
+
+  expect(await done).toEqual({ success: false, error: "audio fetch failed\n" });
+  expect(unlink).toHaveBeenCalledWith(videoTempPath);
+  expect(unlink).toHaveBeenCalledWith(audioTempPath);
+});
+
 it("removes the partial output file when the final mux fails", async () => {
   mergeVideoAudio.mockResolvedValueOnce({ success: false, error: "ffmpeg exited with code 1" });
   const done = downloadHlsStream("https://example.org/master.m3u8", "/tmp/result.mkv");

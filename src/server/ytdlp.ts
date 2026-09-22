@@ -512,6 +512,7 @@ export async function downloadHlsStream(
   });
   if (!audioResult.success) {
     await fs.unlink(videoResult.outputPath ?? videoTempPath).catch(() => {});
+    await fs.unlink(audioResult.outputPath ?? audioTempPath).catch(() => {});
     return audioResult;
   }
 
