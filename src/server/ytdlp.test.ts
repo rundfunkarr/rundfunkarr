@@ -2,13 +2,24 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { downloadHlsStream, downloadVideo } from "./ytdlp";
 
-const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
+const { spawn, mergeVideoAudio } = vi.hoisted(() => ({
+  spawn: vi.fn(),
+  mergeVideoAudio: vi.fn(async (_video: string, _audio: string, outputPath: string) => ({
+    success: true,
+    outputPath,
+  })),
+}));
 vi.mock("child_process", () => ({ spawn }));
 vi.mock("./ffmpeg", () => ({
   ensureFfmpegExists: vi.fn(async () => true),
   getFfmpegPath: () => "/fixture/ffmpeg",
+  mergeVideoAudio,
 }));
-vi.mock("fs/promises", () => ({ access: vi.fn(async () => {}), mkdir: vi.fn(async () => {}) }));
+vi.mock("fs/promises", () => ({
+  access: vi.fn(async () => {}),
+  mkdir: vi.fn(async () => {}),
+  unlink: vi.fn(async () => {}),
+}));
 vi.mock("@/lib/settings", () => ({
   getSetting: vi.fn(async (key: string) =>
     key === "download.ytdlpPath" ? "/fixture/yt-dlp" : null
@@ -28,24 +39,38 @@ beforeEach(() => {
   });
   spawn.mockReset();
   spawn.mockReturnValue(child);
+  mergeVideoAudio.mockClear();
 });
 
 it.each(["mkv", "mp4"] as const)(
-  "explicitly remuxes combined HLS streams to %s",
+  "downloads video and audio separately and muxes them to %s",
   async (container) => {
+    const outputPath = `/tmp/result.${container}`;
     const done = downloadHlsStream(
       "https://example.org/master.m3u8",
-      `/tmp/result.${container}`,
+      outputPath,
       undefined,
       container
     );
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
-    expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(["--remux-video", container]));
-    expect(spawn.mock.calls[0][1]).toEqual(
-      expect.arrayContaining(["--ffmpeg-location", "/fixture/ffmpeg"])
-    );
+
+    // First yt-dlp call: video-only. Some HLS masters (ORF's APA CDN) put
+    // audio in a separate #EXT-X-MEDIA group yt-dlp's own "+" merge can't
+    // see, so video and audio are downloaded as two independent calls
+    // instead of trusting a single "bestvideo+bestaudio" selector.
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+    let args = spawn.mock.calls[0][1];
+    expect(args[args.indexOf("-f") + 1]).toBe("bestvideo/best");
     child.emit("close", 0);
-    expect(await done).toEqual({ success: true, outputPath: `/tmp/result.${container}` });
+
+    // Second yt-dlp call: audio-only.
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
+    args = spawn.mock.calls[1][1];
+    expect(args[args.indexOf("-f") + 1]).toBe("bestaudio");
+    child.emit("close", 0);
+
+    expect(await done).toEqual({ success: true, outputPath });
+    expect(mergeVideoAudio).toHaveBeenCalledTimes(1);
+    expect(mergeVideoAudio.mock.calls[0][2]).toBe(outputPath);
   }
 );
 
@@ -95,7 +120,7 @@ it("reports rejected progress writes without an unhandled rejection", async () =
 });
 
 it.each([480, 720, 1080] as const)(
-  "limits HLS renditions to the requested %ip height",
+  "limits the video download to the requested %ip height",
   async (height) => {
     const done = downloadHlsStream(
       "https://example.org/master.m3u8",
@@ -104,12 +129,18 @@ it.each([480, 720, 1080] as const)(
       "mkv",
       height
     );
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
-    const args = spawn.mock.calls[0][1];
-    expect(args[args.indexOf("-f") + 1]).toBe(
-      `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+    const videoArgs = spawn.mock.calls[0][1];
+    expect(videoArgs[videoArgs.indexOf("-f") + 1]).toBe(
+      `bestvideo[height<=${height}]/best[height<=${height}]`
     );
     child.emit("close", 0);
+
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
+    const audioArgs = spawn.mock.calls[1][1];
+    expect(audioArgs[audioArgs.indexOf("-f") + 1]).toBe("bestaudio");
+    child.emit("close", 0);
+
     expect((await done).success).toBe(true);
   }
 );

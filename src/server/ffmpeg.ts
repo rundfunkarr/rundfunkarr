@@ -271,3 +271,62 @@ export async function convertMp4ToMkv(
     });
   });
 }
+
+/**
+ * Mux a separately-downloaded video-only file and audio-only file into one
+ * output. Used for HLS sources where video and audio had to be downloaded
+ * as two independent streams (see downloadHlsStream in ytdlp.ts for why).
+ * The output container is determined by outputPath's extension.
+ */
+export async function mergeVideoAudio(
+  videoPath: string,
+  audioPath: string,
+  outputPath: string
+): Promise<ConversionResult> {
+  const ffmpegExists = await ensureFfmpegExists();
+  if (!ffmpegExists) {
+    return { success: false, error: "FFmpeg not available" };
+  }
+
+  return new Promise((resolve) => {
+    const args = [
+      "-i",
+      videoPath,
+      "-i",
+      audioPath,
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c",
+      "copy",
+      "-y",
+      outputPath,
+    ];
+
+    console.log(`[FFmpeg] Muxing video+audio: ${videoPath} + ${audioPath} -> ${outputPath}`);
+    const proc = spawn(FFMPEG_PATH, args);
+
+    let stderr = "";
+
+    proc.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0) {
+        console.log(`[FFmpeg] Mux completed: ${outputPath}`);
+        resolve({ success: true, outputPath });
+      } else {
+        console.error(`[FFmpeg] Mux failed with code ${code}`);
+        console.error(`[FFmpeg] Error output: ${stderr}`);
+        resolve({ success: false, error: `FFmpeg exited with code ${code}: ${stderr}` });
+      }
+    });
+
+    proc.on("error", (err) => {
+      console.error(`[FFmpeg] Process error: ${err}`);
+      resolve({ success: false, error: err.message });
+    });
+  });
+}
