@@ -550,10 +550,19 @@ export async function downloadHlsStream(
     console.error("[downloadHlsStream] Failed:", error);
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   } finally {
-    await Promise.all([
-      fs.unlink(videoOutputPath).catch(() => {}),
-      fs.unlink(audioOutputPath).catch(() => {}),
+    // Failed yt-dlp downloads can leave .part, .ytdl and fragment files.
+    // Match this attempt's UID plus the extension separator so concurrent
+    // downloads and their sidecars remain untouched.
+    const prefixes = [`.hls-video-${uid}.`, `.hls-audio-${uid}.`];
+    const entries = await fs.readdir(tempDir).catch(() => [] as string[]);
+    const cleanupPaths = new Set([
+      videoOutputPath,
+      audioOutputPath,
+      ...entries
+        .filter((name) => prefixes.some((prefix) => name.startsWith(prefix)))
+        .map((name) => path.join(tempDir, name)),
     ]);
+    await Promise.all([...cleanupPaths].map((file) => fs.unlink(file).catch(() => {})));
   }
 }
 
