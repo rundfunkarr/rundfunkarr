@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { downloadHlsStream, downloadVideo } from "./ytdlp";
 
-const { spawn, mergeVideoAudio, unlink } = vi.hoisted(() => ({
+const { spawn, mergeVideoAudio, unlink, getSetting } = vi.hoisted(() => ({
   spawn: vi.fn(),
   mergeVideoAudio: vi.fn(
     async (
@@ -15,6 +15,9 @@ const { spawn, mergeVideoAudio, unlink } = vi.hoisted(() => ({
     })
   ),
   unlink: vi.fn(async () => {}),
+  getSetting: vi.fn(async (key: string) =>
+    key === "download.ytdlpPath" ? "/fixture/yt-dlp" : null
+  ),
 }));
 vi.mock("child_process", () => ({ spawn }));
 vi.mock("./ffmpeg", () => ({
@@ -27,11 +30,7 @@ vi.mock("fs/promises", () => ({
   mkdir: vi.fn(async () => {}),
   unlink,
 }));
-vi.mock("@/lib/settings", () => ({
-  getSetting: vi.fn(async (key: string) =>
-    key === "download.ytdlpPath" ? "/fixture/yt-dlp" : null
-  ),
-}));
+vi.mock("@/lib/settings", () => ({ getSetting }));
 
 let child: EventEmitter & {
   stdout: EventEmitter;
@@ -48,6 +47,7 @@ beforeEach(() => {
   spawn.mockReturnValue(child);
   mergeVideoAudio.mockClear();
   unlink.mockClear();
+  getSetting.mockClear();
 });
 
 it.each(["mkv", "mp4"] as const)(
@@ -126,6 +126,45 @@ it("removes the partial output file when the final mux fails", async () => {
 
   expect(await done).toEqual({ success: false, error: "ffmpeg exited with code 1" });
   expect(unlink).toHaveBeenCalledWith("/tmp/result.mkv");
+});
+
+it("cleans up the finished video temp file when preparing the audio download rejects before spawning", async () => {
+  const done = downloadHlsStream("https://example.org/master.m3u8", "/tmp/result.mkv");
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  const videoArgs = spawn.mock.calls[0][1];
+  const videoTempPath = videoArgs[videoArgs.indexOf("-o") + 1];
+  child.emit("close", 0);
+
+  // downloadVideo has several awaits before it ever spawns a process
+  // (ensureYtdlpExists, getConfiguredYtdlpPath, getProxyUrl, fs.mkdir);
+  // any of those can reject - e.g. a settings read hitting a DB error -
+  // which downloadVideo doesn't catch itself. That must not skip cleanup
+  // of the video file that already finished downloading, and must not
+  // turn into an unhandled rejection out of downloadHlsStream.
+  getSetting.mockRejectedValueOnce(new Error("db unavailable"));
+
+  expect(await done).toEqual({ success: false, error: "db unavailable" });
+  expect(unlink).toHaveBeenCalledWith(videoTempPath);
+  // The audio process never even got to spawn.
+  expect(spawn).toHaveBeenCalledTimes(1);
+});
+
+it("still reports success if only the final progress callback fails", async () => {
+  const onProgress = vi.fn(async (percent: number) => {
+    if (percent === 100) throw new Error("db unavailable");
+  });
+  const done = downloadHlsStream("https://example.org/master.m3u8", "/tmp/result.mkv", onProgress);
+
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  child.emit("close", 0);
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
+  child.emit("close", 0);
+
+  // The mux already succeeded and the file is in place - a failed final
+  // progress report must not turn that into a reported failure (the
+  // caller would otherwise skip moving the finished file and mark a
+  // successful download as failed).
+  expect(await done).toEqual({ success: true, outputPath: "/tmp/result.mkv" });
 });
 
 it("awaits pending progress updates before marking a download complete", async () => {

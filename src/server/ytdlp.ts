@@ -475,6 +475,12 @@ export async function downloadHlsStream(
   const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const videoTempPath = path.join(tempDir, `.hls-video-${uid}.mp4`);
   const audioTempPath = path.join(tempDir, `.hls-audio-${uid}.mp4`);
+  // Tracks whatever the video/audio download actually produced, so the
+  // finally block below always cleans up the right path - including when
+  // downloadVideo/mergeVideoAudio reject before ever reporting a result
+  // (see the catch block).
+  let videoOutputPath = videoTempPath;
+  let audioOutputPath = audioTempPath;
 
   let lastOverallPercent = 0;
   const forwardProgress =
@@ -486,54 +492,69 @@ export async function downloadHlsStream(
       await onProgress(overall, 0, 0, parseYtdlpSpeed(speedStr));
     };
 
-  const videoResult = await downloadVideo(hlsUrl, {
-    outputPath: videoTempPath,
-    container: "mp4",
-    format: maxHeight
-      ? `bestvideo[height<=${maxHeight}]/best[height<=${maxHeight}]`
-      : "bestvideo/best",
-    onProgress: forwardProgress(0, 85),
-  });
-  if (!videoResult.success) {
-    await fs.unlink(videoResult.outputPath ?? videoTempPath).catch(() => {});
-    return videoResult;
+  try {
+    const videoResult = await downloadVideo(hlsUrl, {
+      outputPath: videoTempPath,
+      container: "mp4",
+      format: maxHeight
+        ? `bestvideo[height<=${maxHeight}]/best[height<=${maxHeight}]`
+        : "bestvideo/best",
+      onProgress: forwardProgress(0, 85),
+    });
+    videoOutputPath = videoResult.outputPath ?? videoTempPath;
+    if (!videoResult.success) {
+      return videoResult;
+    }
+
+    const audioResult = await downloadVideo(hlsUrl, {
+      outputPath: audioTempPath,
+      container: "mp4",
+      // "/best" fallback: some HLS masters only expose combined
+      // #EXT-X-STREAM-INF variants with no separate audio-only format, so
+      // bare "bestaudio" would have no match there and error out.
+      // mergeVideoAudio only ever maps this input's audio stream, so it's
+      // safe to hand it a combined video+audio file here too.
+      format: maxHeight ? `bestaudio/best[height<=${maxHeight}]` : "bestaudio/best",
+      onProgress: forwardProgress(85, 10),
+    });
+    audioOutputPath = audioResult.outputPath ?? audioTempPath;
+    if (!audioResult.success) {
+      return audioResult;
+    }
+
+    const { mergeVideoAudio } = await import("./ffmpeg");
+    const mergeResult = await mergeVideoAudio(videoOutputPath, audioOutputPath, outputPath);
+    if (!mergeResult.success) {
+      await fs.unlink(outputPath).catch(() => {});
+      return { success: false, error: mergeResult.error };
+    }
+
+    if (onProgress) {
+      // The mux already succeeded and the final file is in place - a
+      // failure to report the closing 100% shouldn't turn an otherwise-
+      // complete download into a reported failure (the caller would then
+      // skip moving the finished file and mark a successful download as
+      // failed instead).
+      await onProgress(100, 0, 0, 0).catch((error) => {
+        console.error("[downloadHlsStream] Failed to report final progress:", error);
+      });
+    }
+
+    return { success: true, outputPath: mergeResult.outputPath };
+  } catch (error) {
+    // downloadVideo/mergeVideoAudio can reject before their own process
+    // handlers ever run (a bad proxy URL, a DB read failure fetching
+    // settings, fs.mkdir failing, ...) - catch that here so this function
+    // keeps its documented contract of always resolving, and so the
+    // finally block below still runs to clean up temp files either way.
+    console.error("[downloadHlsStream] Failed:", error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    await Promise.all([
+      fs.unlink(videoOutputPath).catch(() => {}),
+      fs.unlink(audioOutputPath).catch(() => {}),
+    ]);
   }
-
-  const audioResult = await downloadVideo(hlsUrl, {
-    outputPath: audioTempPath,
-    container: "mp4",
-    // "/best" fallback: some HLS masters only expose combined
-    // #EXT-X-STREAM-INF variants with no separate audio-only format, so
-    // bare "bestaudio" would have no match there and error out.
-    // mergeVideoAudio only ever maps this input's audio stream, so it's
-    // safe to hand it a combined video+audio file here too.
-    format: maxHeight ? `bestaudio/best[height<=${maxHeight}]` : "bestaudio/best",
-    onProgress: forwardProgress(85, 10),
-  });
-  if (!audioResult.success) {
-    await fs.unlink(videoResult.outputPath ?? videoTempPath).catch(() => {});
-    await fs.unlink(audioResult.outputPath ?? audioTempPath).catch(() => {});
-    return audioResult;
-  }
-
-  const { mergeVideoAudio } = await import("./ffmpeg");
-  const mergeResult = await mergeVideoAudio(
-    videoResult.outputPath ?? videoTempPath,
-    audioResult.outputPath ?? audioTempPath,
-    outputPath
-  );
-
-  await fs.unlink(videoResult.outputPath ?? videoTempPath).catch(() => {});
-  await fs.unlink(audioResult.outputPath ?? audioTempPath).catch(() => {});
-
-  if (!mergeResult.success) {
-    await fs.unlink(outputPath).catch(() => {});
-    return { success: false, error: mergeResult.error };
-  }
-
-  if (onProgress) await onProgress(100, 0, 0, 0);
-
-  return { success: true, outputPath: mergeResult.outputPath };
 }
 
 /**
