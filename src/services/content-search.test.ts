@@ -128,3 +128,29 @@ it("restricts ORF-only upstream searches before applying the requested limit", a
   );
   expect(queries).toHaveLength(1);
 });
+
+it("preserves appended SRF candidates when a full upstream page contains duplicate metadata", async () => {
+  const indexed = {
+    channel: "ARD",
+    topic: "Rundschau",
+    title: "Rundschau",
+    description: "",
+    duration: 1800,
+    size: 0,
+    filmlisteTimestamp: 2_000_000_000,
+    url_video: "https://example.org/video.mp4",
+    url_video_hd: "",
+    url_video_low: "",
+    url_website: "",
+  };
+  vi.mocked(queryMediathekView).mockResolvedValue([
+    indexed,
+    { ...indexed, title: "Other metadata" },
+  ]);
+  const queries = [{ fields: ["topic"], query: "Rundschau" }];
+  const candidates = await queryContent(queries, 2, { deduplicate: false });
+  expect(candidates).toHaveLength(3);
+  expect(candidates?.at(-1)?.channel).toBe("SRF");
+  expect(await queryContent(queries, 2)).toHaveLength(2);
+  expect(await queryContent(queries, 1)).toHaveLength(1);
+});

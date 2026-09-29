@@ -73,7 +73,10 @@ export async function queryContent(
       options.deduplicate === false
         ? items
         : [...new Map(items.map((item) => [item.url_video, item])).values()];
-    return results.sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp).slice(0, size);
+    const sortedResults = results.sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp);
+    // Each provider is already bounded. Preserve appended provider candidates
+    // until callers finish matching and deduplicating their metadata records.
+    return options.deduplicate === false ? sortedResults : sortedResults.slice(0, size);
   } catch (error) {
     console.error("[ContentSearch] Provider failed:", error);
     return null;
