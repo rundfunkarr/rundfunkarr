@@ -77,13 +77,13 @@ image: ghcr.io/rundfunkarr/rundfunkarr:nightly
 Für reproduzierbare Deployments kann statt `latest` auch eine feste Version verwendet werden:
 
 ```yaml
-image: ghcr.io/rundfunkarr/rundfunkarr:1.3.0
+image: ghcr.io/rundfunkarr/rundfunkarr:1.3.1
 ```
 
 Der Git-Tag-Alias mit `v`-Präfix ist ebenfalls verfügbar:
 
 ```bash
-docker pull ghcr.io/rundfunkarr/rundfunkarr:v1.3.0
+docker pull ghcr.io/rundfunkarr/rundfunkarr:v1.3.1
 ```
 
 ### Starten
@@ -128,6 +128,16 @@ npm start
 | `DOWNLOAD_FOLDER_PATH` | Pfad für fertige Downloads im Container | `/downloads` |
 | `DOWNLOAD_TEMP_PATH` | Pfad für laufende Downloads (incomplete) | `$DOWNLOAD_FOLDER_PATH/incomplete` |
 | `DATABASE_URL` | SQLite Datenbank-Pfad | `file:./prisma/data/rundfunkarr.db` |
+| `TVDB_API_KEY` | TVDB-API-Key zum Initialisieren der Einstellungen | leer |
+| `TVDB_PIN` | Optionaler TVDB-PIN für Subscriber-Keys | leer |
+| `TMDB_API_KEY` | TMDB-API-Key zum Initialisieren der Einstellungen | leer |
+
+Beim Serverstart werden nichtleere Werte aus `TVDB_API_KEY`, `TVDB_PIN`,
+`TMDB_API_KEY` und `DOWNLOAD_FOLDER_PATH` in fehlende oder leere
+Datenbank-Einstellungen übernommen. Bereits gespeicherte Werte haben Vorrang.
+Bei lokalen Installationen können die Variablen in `.env` stehen; Docker benötigt
+sie unter `environment` oder über `env_file`. Nach Änderungen ist ein Neustart
+nötig. Im Build werden keine Werte übernommen.
 
 ### Web-Oberfläche
 
