@@ -65,3 +65,19 @@ it("bounds a stalled refresh and falls back to local rulesets", async () => {
   await refresh;
   expect(getAllTopics()).toContain("Checker Reportagen");
 });
+
+it("treats a successfully loaded empty collection as initialized until refresh is due", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-29T10:00:00Z"));
+  const fetchRules = vi.fn().mockImplementation(async () => Response.json([]));
+  vi.stubGlobal("fetch", fetchRules);
+  const { ensureRulesetsLoaded, isRulesetsLoaded, getAllTopics } = await import("./rulesets");
+  await ensureRulesetsLoaded();
+  await ensureRulesetsLoaded();
+  expect(isRulesetsLoaded()).toBe(true);
+  expect(getAllTopics()).toEqual([]);
+  expect(fetchRules).toHaveBeenCalledTimes(1);
+  vi.advanceTimersByTime(3600001);
+  await ensureRulesetsLoaded();
+  expect(fetchRules).toHaveBeenCalledTimes(2);
+});

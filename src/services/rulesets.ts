@@ -11,6 +11,7 @@ import {
 let rulesetsByTopic: Map<string, Ruleset[]> = new Map();
 let generatedRulesetsByTopic: Map<string, Ruleset[]> = new Map();
 let lastFetchTime: number = 0;
+let initialized = false;
 const REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 // GitHub raw URLs for auto-update
@@ -88,6 +89,7 @@ export async function loadRulesets(): Promise<void> {
     await loadGeneratedRulesets();
 
     lastFetchTime = Date.now();
+    initialized = true;
   } catch (error) {
     console.error("[Rulesets] Error loading rulesets:", error);
   }
@@ -218,7 +220,7 @@ export async function getOrGenerateRulesetForShow(
 }
 
 export function isRulesetsLoaded(): boolean {
-  return rulesetsByTopic.size > 0;
+  return initialized;
 }
 
 // Initialize rulesets on first import

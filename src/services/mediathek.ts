@@ -669,6 +669,16 @@ function applyDesiredEpisodeFilter(
 // the series name. For example, "Frühling - (.*)" under the broad "Film" topic.
 function titleRequiresSeriesName(ruleset: Ruleset, seriesName: string): boolean {
   try {
+    const filters: Filter[] = JSON.parse(ruleset.filters);
+    if (
+      filters.some(
+        (filter) =>
+          filter.attribute === "title" &&
+          (filter.type === "Contains" || filter.type === "ExactMatch") &&
+          String(filter.value).toLowerCase().includes(seriesName.toLowerCase())
+      )
+    )
+      return true;
     const rules: TitleRegexRule[] = JSON.parse(ruleset.titleRegexRules);
     if (rules.length !== 1 || rules[0].type !== "regex" || rules[0].field !== "title") return false;
     const prefix = rules[0].pattern?.match(/^\^?([\p{L}\p{N} _:-]+)\(\.\*\)\$?$/u)?.[1];
@@ -695,10 +705,6 @@ export async function fetchSearchResultsById(
       .map((topic) => [topic, getRulesetsForTopicAndTvdbId(topic, tvdbData.id)] as const)
       .filter(([, rulesets]) => rulesets.length > 0)
   );
-  if (rulesetSnapshot.size === 0) {
-    const generated = await getOrGenerateRulesetForShow(tvdbData.id, tvdbData);
-    if (generated) rulesetSnapshot.set(generated.topic, [generated]);
-  }
   const topics = [...rulesetSnapshot.keys()]
     .filter((topic) => topic.trim() && topic.toLowerCase() !== searchQuery.toLowerCase())
     .filter(
@@ -772,6 +778,12 @@ export async function fetchSearchResultsById(
     );
   }
 
+  // Generate only when uncached candidates actually need matching. A cached
+  // response (including an empty one) must not trigger fresh discovery requests.
+  if (rulesetSnapshot.size === 0) {
+    const generated = await getOrGenerateRulesetForShow(tvdbData.id, tvdbData);
+    if (generated) rulesetSnapshot.set(generated.topic, [generated]);
+  }
   const { matchedEpisodes } = await applyRulesetFilters(results, tvdbData, rulesetSnapshot);
   console.log(`[Mediathek] Matched episodes after ruleset filtering: ${matchedEpisodes.length}`);
 

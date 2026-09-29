@@ -4,7 +4,12 @@ import { fetchWithRetry } from "@/lib/fetch-retry";
 import { getSetting } from "@/lib/settings";
 import { MatchingStrategy, type ApiResultItem, type Ruleset, type TvdbData } from "@/types";
 import { fetchSearchResultsById } from "./mediathek";
-import { ensureRulesetsLoaded, getAllTopics, getRulesetsForTopicAndTvdbId } from "./rulesets";
+import {
+  ensureRulesetsLoaded,
+  getAllTopics,
+  getRulesetsForTopicAndTvdbId,
+  getOrGenerateRulesetForShow,
+} from "./rulesets";
 import { getShowInfoByTvdbId } from "./shows";
 
 vi.mock("@/lib/fetch-retry", () => ({ fetchWithRetry: vi.fn() }));
@@ -313,4 +318,30 @@ it("invalidates matched RSS when rules change without changing topics", async ()
     },
   ]);
   expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).not.toContain("<item>");
+});
+
+it("omits Donna Leon broad topics based on required title filters", async () => {
+  const { default: checkedInRules } = await import("../../data/rulesets.json");
+  setRules(checkedInRules.filter((r) => r.media.media_tvdbId === 101211) as Ruleset[]);
+  mockSearch({});
+  await fetchSearchResultsById({ ...show, id: 101211, name: "Donna Leon" }, null, null, 100, 0);
+  expect(requests()).toEqual([{ fields: ["topic", "title"], query: "Donna Leon" }]);
+});
+
+it("does not regenerate missing rulesets before a cached response", async () => {
+  setRules([]);
+  mockSearch({ "Checker Tobi": [item()] });
+  await fetchSearchResultsById(show, "14", "7", 100, 0);
+  await fetchSearchResultsById(show, "14", "7", 100, 0);
+  expect(getOrGenerateRulesetForShow).toHaveBeenCalledTimes(1);
+  expect(fetchWithRetry).toHaveBeenCalledTimes(1);
+});
+
+it("does not attempt ruleset generation for empty search results", async () => {
+  setRules([]);
+  mockSearch({});
+  await fetchSearchResultsById(show, null, null, 100, 0);
+  await fetchSearchResultsById(show, null, null, 100, 0);
+  expect(getOrGenerateRulesetForShow).not.toHaveBeenCalled();
+  expect(fetchWithRetry).toHaveBeenCalledTimes(1);
 });
