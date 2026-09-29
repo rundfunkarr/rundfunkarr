@@ -751,9 +751,12 @@ export async function fetchSearchResultsById(
 
   // A duplicate URL can carry different metadata: keep all candidates until
   // ruleset, skip and desired-episode filtering have selected valid matches.
-  const uniqueEpisodes = [
-    ...new Map(matchedDesiredEpisodes.map((info) => [info.item.url_video, info])).values(),
-  ];
+  const seenUrls = new Set<string>();
+  const uniqueEpisodes = matchedDesiredEpisodes.filter(({ item }) => {
+    if (seenUrls.has(item.url_video)) return false;
+    seenUrls.add(item.url_video);
+    return true;
+  });
   const newznabItems: NewznabItem[] = uniqueEpisodes.flatMap((info) =>
     generateRssItems(info, quality)
   );

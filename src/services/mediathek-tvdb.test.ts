@@ -162,6 +162,21 @@ describe("TVDB search with ruleset topics", () => {
     expect(xml).toContain("S14E07");
   });
 
+  it("keeps the newest publication date when matching records share a video URL", async () => {
+    const newer = 1_800_000_000;
+    const older = 1_700_000_000;
+    mockSearch({
+      "Checker Tobi": [item({ filmlisteTimestamp: newer })],
+      "Checker Reportagen": [item({ filmlisteTimestamp: older })],
+    });
+
+    const xml = await fetchSearchResultsById(show, "14", "7", 100, 0);
+
+    expect(xml.match(/<item>/g)).toHaveLength(1);
+    expect(xml).toContain(`<pubDate>${new Date(newer * 1000).toUTCString()}</pubDate>`);
+    expect(xml).not.toContain(new Date(older * 1000).toUTCString());
+  });
+
   it("retries a failed topic without caching partial RSS or repeating successful searches", async () => {
     mockSearch({ "Checker Tobi": [], "Checker Reportagen": null });
     expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).not.toContain("<item>");
