@@ -674,11 +674,21 @@ export async function fetchSearchResultsById(
   const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const searchQuery = tvdbData.germanName || tvdbData.name;
+  await ensureRulesetsLoaded();
+  const topics = getAllTopics()
+    .filter((topic) => getRulesetsForTopicAndTvdbId(topic, tvdbData.id).length > 0)
+    .filter((topic) => topic.trim() && topic.toLowerCase() !== searchQuery.toLowerCase())
+    .sort();
+  // Separate requests make these alternatives rather than AND conditions.
+  const searchQueries = [
+    { fields: QUERY_FIELDS, query: searchQuery },
+    ...topics.map((topic) => ({ fields: ["topic"], query: topic })),
+  ];
   console.log(
     `[Mediathek] fetchSearchResultsById: tvdbId=${tvdbData.id}, name="${tvdbData.name}", germanName="${tvdbData.germanName}", season=${season}, episode=${episodeNumber}, quality=${quality}, minDuration=${minDuration}`
   );
 
-  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
+  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${JSON.stringify(searchQueries)}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -695,23 +705,31 @@ export async function fetchSearchResultsById(
     return response;
   }
 
-  // Check for cached API response
-  const apiCacheKey = `mediathekapi_${tvdbData.id}`;
-  let results: ApiResultItem[] | null;
-  const cachedApi = mediathekCache.get(apiCacheKey);
+  const resultsPerQuery = await Promise.all(
+    searchQueries.map(async (query) => {
+      const apiCacheKey = `mediathekapi_${tvdbData.id}_${JSON.stringify(query)}`;
+      const cachedApi = mediathekCache.get(apiCacheKey);
+      if (cachedApi) {
+        return (cachedApi as { results: ApiResultItem[] }).results;
+      }
 
-  if (cachedApi) {
-    console.log(`[Mediathek] Using cached API response for ${apiCacheKey}`);
-    results = (cachedApi as { results: ApiResultItem[] }).results;
-  } else {
-    console.log(`[Mediathek] Searching MediathekView API with query: "${searchQuery}"`);
-    results = await queryContent([{ fields: QUERY_FIELDS, query: searchQuery }], 10000);
+      console.log(`[Mediathek] Searching MediathekView API with query: "${query.query}"`);
+      const results = await queryContent([query], 10000);
+      if (results !== null) mediathekCache.set(apiCacheKey, { results });
+      return results;
+    })
+  );
+  const hasFailedQuery = resultsPerQuery.some((results) => results === null);
+  const results = [
+    ...new Map(
+      resultsPerQuery.flatMap((items) => items ?? []).map((item) => [item.url_video, item])
+    ).values(),
+  ].sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp);
 
-    if (results === null || results.length === 0) {
-      return serializeRss(getEmptyRssResult());
-    }
-
-    mediathekCache.set(apiCacheKey, { results });
+  if (results.length === 0) {
+    const response = serializeRss(getEmptyRssResult());
+    if (!hasFailedQuery) mediathekCache.set(cacheKey, { response });
+    return response;
   }
 
   console.log(`[Mediathek] API returned ${results.length} results`);
@@ -735,7 +753,7 @@ export async function fetchSearchResultsById(
 
   const response = convertItemsToRss(newznabItems, limit, offset);
 
-  mediathekCache.set(cacheKey, { response });
+  if (!hasFailedQuery) mediathekCache.set(cacheKey, { response });
   return response;
 }
 
