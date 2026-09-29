@@ -345,3 +345,15 @@ it("does not attempt ruleset generation for empty search results", async () => {
   expect(getOrGenerateRulesetForShow).not.toHaveBeenCalled();
   expect(fetchWithRetry).toHaveBeenCalledTimes(1);
 });
+
+it("uses a ruleset registered by a concurrent search after discovery captured an empty snapshot", async () => {
+  setRules([]);
+  mockSearch({ "Checker Tobi": [item()] });
+  vi.mocked(getOrGenerateRulesetForShow).mockImplementationOnce(async () => {
+    setRules([rule()]);
+    return null;
+  });
+  const xml = await fetchSearchResultsById(show, "14", "7", 100, 0);
+  expect(xml).toContain("S14E07");
+  expect(xml).toContain("climate.mp4");
+});

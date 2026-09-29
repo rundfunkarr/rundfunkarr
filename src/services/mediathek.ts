@@ -782,7 +782,15 @@ export async function fetchSearchResultsById(
   // response (including an empty one) must not trigger fresh discovery requests.
   if (rulesetSnapshot.size === 0) {
     const generated = await getOrGenerateRulesetForShow(tvdbData.id, tvdbData);
-    if (generated) rulesetSnapshot.set(generated.topic, [generated]);
+    if (generated) {
+      rulesetSnapshot.set(generated.topic, [generated]);
+    } else {
+      // Another first-time search may have registered the rule while we waited.
+      for (const topic of getAllTopics()) {
+        const rulesets = getRulesetsForTopicAndTvdbId(topic, tvdbData.id);
+        if (rulesets.length > 0) rulesetSnapshot.set(topic, rulesets);
+      }
+    }
   }
   const { matchedEpisodes } = await applyRulesetFilters(results, tvdbData, rulesetSnapshot);
   console.log(`[Mediathek] Matched episodes after ruleset filtering: ${matchedEpisodes.length}`);
