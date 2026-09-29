@@ -23,6 +23,7 @@ async function fetchFromGitHub(): Promise<Ruleset[] | null> {
     console.log(`[Rulesets] Fetching from GitHub: ${GITHUB_RULESETS_URL}`);
     const response = await fetch(GITHUB_RULESETS_URL, {
       headers: { "User-Agent": "RundfunkArr" },
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {

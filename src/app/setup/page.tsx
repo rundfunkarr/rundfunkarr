@@ -271,11 +271,13 @@ export default function SetupPage() {
                 <CardContent className="space-y-3">
                   <Input
                     value={tvdbKey}
+                    onFocus={(e) => e.currentTarget.select()}
                     onChange={(e) => setValue("api.tvdb.key", e.target.value)}
                     placeholder="API Key"
                   />
                   <Input
                     value={tvdbPin}
+                    onFocus={(e) => e.currentTarget.select()}
                     onChange={(e) => setValue("api.tvdb.pin", e.target.value)}
                     placeholder="PIN (optional)"
                   />
@@ -310,6 +312,7 @@ export default function SetupPage() {
                 <CardContent className="space-y-3">
                   <Input
                     value={tmdbKey}
+                    onFocus={(e) => e.currentTarget.select()}
                     onChange={(e) => setValue("api.tmdb.key", e.target.value)}
                     placeholder="API Key"
                   />

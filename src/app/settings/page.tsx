@@ -407,6 +407,7 @@ export default function SettingsPage() {
                     <label className="text-sm font-medium">API Key</label>
                     <Input
                       value={getFieldValue("api.tvdb.key")}
+                      onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => setFieldValue("api.tvdb.key", e.target.value)}
                       placeholder="TVDB API Key"
                       className="mt-1"
@@ -416,6 +417,7 @@ export default function SettingsPage() {
                     <label className="text-sm font-medium">PIN (optional)</label>
                     <Input
                       value={getFieldValue("api.tvdb.pin")}
+                      onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => setFieldValue("api.tvdb.pin", e.target.value)}
                       placeholder="TVDB PIN (optional)"
                       className="mt-1"
@@ -468,6 +470,7 @@ export default function SettingsPage() {
                     <label className="text-sm font-medium">API Key</label>
                     <Input
                       value={getFieldValue("api.tmdb.key")}
+                      onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => setFieldValue("api.tmdb.key", e.target.value)}
                       placeholder="TMDB API Key"
                       className="mt-1"
