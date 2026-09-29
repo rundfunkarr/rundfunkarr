@@ -137,7 +137,8 @@ Beim Serverstart werden nichtleere Werte aus `TVDB_API_KEY`, `TVDB_PIN`,
 Datenbank-Einstellungen übernommen. Bereits gespeicherte Werte haben Vorrang.
 Bei lokalen Installationen können die Variablen in `.env` stehen; Docker benötigt
 sie unter `environment` oder über `env_file`. Nach Änderungen ist ein Neustart
-nötig. Im Build werden keine Werte übernommen.
+nötig. Im Build werden keine Werte übernommen. Gespeicherte API-Zugangsdaten
+werden in der Settings-API maskiert; die Verbindungstests prüfen sie serverseitig.
 
 ### Web-Oberfläche
 

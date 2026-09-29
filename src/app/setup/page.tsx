@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSettings } from "@/contexts/settings-context";
-import { buildTvdbLoginPayload } from "@/lib/tvdb-auth";
+import { validateApiCredentials } from "@/lib/validate-api-credentials";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -75,15 +75,9 @@ export default function SetupPage() {
     setIsValidating(true);
 
     // Validate TVDB
-    const tvdbPayload = buildTvdbLoginPayload(tvdbKey, tvdbPin);
-    if (tvdbPayload) {
+    if (tvdbKey.trim()) {
       try {
-        const res = await fetch("https://api4.thetvdb.com/v4/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(tvdbPayload),
-        });
-        setTvdbValid(res.ok);
+        setTvdbValid(await validateApiCredentials("tvdb", tvdbKey, tvdbPin));
       } catch {
         setTvdbValid(false);
       }
@@ -94,8 +88,7 @@ export default function SetupPage() {
     // Validate TMDB
     if (tmdbKey) {
       try {
-        const res = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${tmdbKey}`);
-        setTmdbValid(res.ok);
+        setTmdbValid(await validateApiCredentials("tmdb", tmdbKey));
       } catch {
         setTmdbValid(false);
       }

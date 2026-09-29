@@ -19,6 +19,7 @@ vi.mock("./rulesets", () => ({
   ensureRulesetsLoaded: vi.fn(),
   getAllTopics: () => [],
   getRulesetsForTopic: () => [],
+  getOrGenerateRulesetForShow: vi.fn(async () => null),
 }));
 vi.mock("./tmdb", () => ({ searchMovieByTitle: vi.fn(async () => null) }));
 

@@ -258,3 +258,59 @@ describe("TVDB search with ruleset topics", () => {
     });
   });
 });
+
+it("skips a broad topic when its required title prefix is covered by the series-name query", async () => {
+  const filmRule = {
+    ...rule("Film"),
+    titleRegexRules: JSON.stringify([
+      { type: "regex", field: "title", pattern: "Checker Tobi - (.*)" },
+    ]),
+  };
+  setRules([filmRule]);
+  mockSearch({
+    "Checker Tobi": [item({ topic: "Film", title: "Checker Tobi - Der Klimakrisen-Check" })],
+  });
+  const xml = await fetchSearchResultsById(show, "14", "7", 100, 0);
+  expect(requests()).toEqual([{ fields: ["topic", "title"], query: "Checker Tobi" }]);
+  expect(xml).toContain("S14E07");
+});
+
+it("uses the discovery ruleset snapshot if rulesets change during the provider request", async () => {
+  vi.mocked(fetchWithRetry).mockImplementation(async (_url, options) => {
+    const { queries } = JSON.parse(String(options?.body));
+    setRules([]);
+    return Response.json({
+      result: { results: queries[0].query === "Checker Reportagen" ? [item()] : [] },
+    });
+  });
+  const xml = await fetchSearchResultsById(show, "14", "7", 100, 0);
+  expect(xml).toContain("S14E07");
+  expect(ensureRulesetsLoaded).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a topic search when any ruleset can match titles without the series name", async () => {
+  setRules([
+    rule("Film"),
+    {
+      ...rule("Film"),
+      titleRegexRules: JSON.stringify([
+        { type: "regex", field: "title", pattern: "Checker Tobi - (.*)" },
+      ]),
+    },
+  ]);
+  mockSearch({ Film: [item({ topic: "Film" })] });
+  expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).toContain("S14E07");
+  expect(requests()).toContainEqual({ fields: ["topic"], query: "Film" });
+});
+
+it("invalidates matched RSS when rules change without changing topics", async () => {
+  mockSearch({ "Checker Reportagen": [item()] });
+  expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).toContain("S14E07");
+  setRules([
+    {
+      ...rule(),
+      filters: JSON.stringify([{ attribute: "duration", type: "GreaterThan", value: "90" }]),
+    },
+  ]);
+  expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).not.toContain("<item>");
+});

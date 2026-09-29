@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSettings } from "@/contexts/settings-context";
-import { buildTvdbLoginPayload } from "@/lib/tvdb-auth";
+import { validateApiCredentials } from "@/lib/validate-api-credentials";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -123,18 +123,8 @@ export default function SettingsPage() {
     try {
       const key = getFieldValue("api.tvdb.key");
       const pin = getFieldValue("api.tvdb.pin");
-      const payload = buildTvdbLoginPayload(key, pin);
-      if (!payload) {
-        setApiStatus((prev) => ({ ...prev, tvdb: false }));
-        return;
-      }
-      // Attempt to login to TVDB
-      const res = await fetch("https://api4.thetvdb.com/v4/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      setApiStatus((prev) => ({ ...prev, tvdb: res.ok }));
+      const valid = await validateApiCredentials("tvdb", key, pin);
+      setApiStatus((prev) => ({ ...prev, tvdb: valid }));
     } catch {
       setApiStatus((prev) => ({ ...prev, tvdb: false }));
     } finally {
@@ -150,8 +140,8 @@ export default function SettingsPage() {
         setApiStatus((prev) => ({ ...prev, tmdb: false }));
         return;
       }
-      const res = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${key}`);
-      setApiStatus((prev) => ({ ...prev, tmdb: res.ok }));
+      const valid = await validateApiCredentials("tmdb", key);
+      setApiStatus((prev) => ({ ...prev, tmdb: valid }));
     } catch {
       setApiStatus((prev) => ({ ...prev, tmdb: false }));
     } finally {

@@ -472,9 +472,10 @@ async function matchesItemTitleEqualsAirdate(
 
 async function applyRulesetFilters(
   results: ApiResultItem[],
-  tvdbData?: TvdbData
+  tvdbData?: TvdbData,
+  rulesetSnapshot?: Map<string, Ruleset[]>
 ): Promise<{ matchedEpisodes: MatchedEpisodeInfo[]; unmatchedItems: ApiResultItem[] }> {
-  await ensureRulesetsLoaded();
+  if (!rulesetSnapshot) await ensureRulesetsLoaded();
   const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const hlsEnabled = await isHlsEnabled();
@@ -486,7 +487,7 @@ async function applyRulesetFilters(
   const unmatchedItems: ApiResultItem[] = [...results];
 
   // Log available rulesets for debugging
-  if (tvdbData) {
+  if (tvdbData && !rulesetSnapshot) {
     const allTopics = getAllTopics();
     console.log(`[Mediathek] Rulesets available: ${allTopics.length} topics`);
 
@@ -528,7 +529,8 @@ async function applyRulesetFilters(
     }
 
     const rulesets = tvdbData
-      ? getRulesetsForTopicAndTvdbId(item.topic, tvdbData.id)
+      ? (rulesetSnapshot?.get(item.topic) ??
+        (rulesetSnapshot ? [] : getRulesetsForTopicAndTvdbId(item.topic, tvdbData.id)))
       : getRulesetsForTopic(item.topic);
 
     // Log first few items to show what's being checked
@@ -663,6 +665,19 @@ function applyDesiredEpisodeFilter(
   );
 }
 
+// Only omit an extra topic search when every matching title necessarily includes
+// the series name. For example, "Frühling - (.*)" under the broad "Film" topic.
+function titleRequiresSeriesName(ruleset: Ruleset, seriesName: string): boolean {
+  try {
+    const rules: TitleRegexRule[] = JSON.parse(ruleset.titleRegexRules);
+    if (rules.length !== 1 || rules[0].type !== "regex" || rules[0].field !== "title") return false;
+    const prefix = rules[0].pattern?.match(/^\^?([\p{L}\p{N} _:-]+)\(\.\*\)\$?$/u)?.[1];
+    return !!prefix && prefix.toLowerCase().includes(seriesName.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchSearchResultsById(
   tvdbData: TvdbData,
   season: string | null,
@@ -675,9 +690,23 @@ export async function fetchSearchResultsById(
   const matchingSettings = await getMatchingSettings();
   const searchQuery = tvdbData.germanName || tvdbData.name;
   await ensureRulesetsLoaded();
-  const topics = getAllTopics()
-    .filter((topic) => getRulesetsForTopicAndTvdbId(topic, tvdbData.id).length > 0)
+  const rulesetSnapshot = new Map(
+    getAllTopics()
+      .map((topic) => [topic, getRulesetsForTopicAndTvdbId(topic, tvdbData.id)] as const)
+      .filter(([, rulesets]) => rulesets.length > 0)
+  );
+  if (rulesetSnapshot.size === 0) {
+    const generated = await getOrGenerateRulesetForShow(tvdbData.id, tvdbData);
+    if (generated) rulesetSnapshot.set(generated.topic, [generated]);
+  }
+  const topics = [...rulesetSnapshot.keys()]
     .filter((topic) => topic.trim() && topic.toLowerCase() !== searchQuery.toLowerCase())
+    .filter(
+      (topic) =>
+        !rulesetSnapshot
+          .get(topic)!
+          .every((ruleset) => titleRequiresSeriesName(ruleset, searchQuery))
+    )
     .sort();
   // Separate requests make these alternatives rather than AND conditions.
   const searchQueries = [
@@ -688,7 +717,7 @@ export async function fetchSearchResultsById(
     `[Mediathek] fetchSearchResultsById: tvdbId=${tvdbData.id}, name="${tvdbData.name}", germanName="${tvdbData.germanName}", season=${season}, episode=${episodeNumber}, quality=${quality}, minDuration=${minDuration}`
   );
 
-  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${JSON.stringify(searchQueries)}`;
+  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${JSON.stringify(searchQueries)}_${JSON.stringify([...rulesetSnapshot])}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -743,7 +772,7 @@ export async function fetchSearchResultsById(
     );
   }
 
-  const { matchedEpisodes } = await applyRulesetFilters(results, tvdbData);
+  const { matchedEpisodes } = await applyRulesetFilters(results, tvdbData, rulesetSnapshot);
   console.log(`[Mediathek] Matched episodes after ruleset filtering: ${matchedEpisodes.length}`);
 
   const matchedDesiredEpisodes = applyDesiredEpisodeFilter(matchedEpisodes, desiredEpisodes);

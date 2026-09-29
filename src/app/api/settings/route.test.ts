@@ -68,3 +68,23 @@ it("allows replacing and clearing a credential and invalidates the token", async
   await DELETE(new NextRequest("http://localhost/api/settings?key=api.srgssr.consumerKey"));
   expect(clearSrfTokenCache).toHaveBeenCalledTimes(3);
 });
+
+it.each(["api.tvdb.key", "api.tvdb.pin", "api.tmdb.key", "tvdb_token"])(
+  "masks %s and preserves it through single and bulk saves",
+  async (key) => {
+    values.set(key, "private-metadata-credential");
+    const all = await (await GET(new NextRequest("http://localhost/api/settings"))).json();
+    expect(all[key]).toBe("••••••••");
+    const single = await (
+      await GET(new NextRequest(`http://localhost/api/settings?key=${key}`))
+    ).json();
+    expect(single.value).toBe(all[key]);
+    await post(all);
+    await post({ key, value: single.value });
+    expect(values.get(key)).toBe("private-metadata-credential");
+    await post({ key, value: "replacement" });
+    expect(values.get(key)).toBe("replacement");
+    await post({ key, value: "" });
+    expect(values.get(key)).toBe("");
+  }
+);
