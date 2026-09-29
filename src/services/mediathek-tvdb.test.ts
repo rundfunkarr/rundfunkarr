@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mediathekCache } from "@/lib/cache";
 import { fetchWithRetry } from "@/lib/fetch-retry";
+import { getSetting } from "@/lib/settings";
 import { MatchingStrategy, type ApiResultItem, type Ruleset, type TvdbData } from "@/types";
 import { fetchSearchResultsById } from "./mediathek";
 import { ensureRulesetsLoaded, getAllTopics, getRulesetsForTopicAndTvdbId } from "./rulesets";
@@ -97,6 +98,7 @@ function requests() {
 beforeEach(() => {
   vi.clearAllMocks();
   mediathekCache.clear();
+  vi.mocked(getSetting).mockResolvedValue(null);
   vi.mocked(getShowInfoByTvdbId).mockResolvedValue(show);
   setRules([rule()]);
 });
@@ -200,5 +202,44 @@ describe("TVDB search with ruleset topics", () => {
 
     expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).toContain("S14E07");
     expect(requests().map((q) => q.query)).toEqual(["Checker Tobi", "Checker Reportagen"]);
+  });
+
+  it.each(["provider.mediathekview.enabled", "provider.srf.enabled"])(
+    "retains successful topic results when loading %s rejects and retries the failed search",
+    async (setting) => {
+      let failed = false;
+      vi.mocked(getSetting).mockImplementation(async (key) => {
+        if (key === setting && !failed) {
+          failed = true;
+          throw new Error("Temporary settings failure");
+        }
+        return null;
+      });
+      mockSearch({ "Checker Reportagen": [item()] });
+
+      expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).toContain("S14E07");
+      expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).toContain("S14E07");
+      expect(requests().map((q) => q.query)).toEqual(["Checker Reportagen", "Checker Tobi"]);
+    }
+  );
+
+  describe.each(["same request", "separate requests"])("duplicates from %s", (source) => {
+    it.each([
+      { topic: "Unrelated" },
+      { title: "Trailer" },
+      { duration: 10 },
+      { title: "Der Kinder-Check" },
+    ])("keeps the desired episode when a duplicate differs by %j", async (overrides) => {
+      mockSearch(
+        source === "same request"
+          ? { "Checker Reportagen": [item(), item(overrides)] }
+          : { "Checker Tobi": [item()], "Checker Reportagen": [item(overrides)] }
+      );
+
+      const xml = await fetchSearchResultsById(show, "14", "7", 100, 0);
+
+      expect(xml).toContain("S14E07");
+      expect(xml.match(/<item>/g)).toHaveLength(1);
+    });
   });
 });

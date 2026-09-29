@@ -714,17 +714,20 @@ export async function fetchSearchResultsById(
       }
 
       console.log(`[Mediathek] Searching MediathekView API with query: "${query.query}"`);
-      const results = await queryContent([query], 10000);
-      if (results !== null) mediathekCache.set(apiCacheKey, { results });
-      return results;
+      try {
+        const results = await queryContent([query], 10000, { deduplicate: false });
+        if (results !== null) mediathekCache.set(apiCacheKey, { results });
+        return results;
+      } catch (error) {
+        console.error(`[Mediathek] Query failed for "${query.query}":`, error);
+        return null;
+      }
     })
   );
   const hasFailedQuery = resultsPerQuery.some((results) => results === null);
-  const results = [
-    ...new Map(
-      resultsPerQuery.flatMap((items) => items ?? []).map((item) => [item.url_video, item])
-    ).values(),
-  ].sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp);
+  const results = resultsPerQuery
+    .flatMap((items) => items ?? [])
+    .sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp);
 
   if (results.length === 0) {
     const response = serializeRss(getEmptyRssResult());
@@ -746,7 +749,12 @@ export async function fetchSearchResultsById(
   const matchedDesiredEpisodes = applyDesiredEpisodeFilter(matchedEpisodes, desiredEpisodes);
   console.log(`[Mediathek] Matched desired episodes: ${matchedDesiredEpisodes.length}`);
 
-  const newznabItems: NewznabItem[] = matchedDesiredEpisodes.flatMap((info) =>
+  // A duplicate URL can carry different metadata: keep all candidates until
+  // ruleset, skip and desired-episode filtering have selected valid matches.
+  const uniqueEpisodes = [
+    ...new Map(matchedDesiredEpisodes.map((info) => [info.item.url_video, info])).values(),
+  ];
+  const newznabItems: NewznabItem[] = uniqueEpisodes.flatMap((info) =>
     generateRssItems(info, quality)
   );
   console.log(`[Mediathek] Generated ${newznabItems.length} Newznab items (quality: ${quality})`);

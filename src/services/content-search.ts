@@ -11,7 +11,7 @@ import type { ApiResultItem } from "@/types";
 export async function queryContent(
   queries: MediathekQueryField[],
   size: number,
-  options: MediathekQueryOptions = {}
+  options: MediathekQueryOptions & { deduplicate?: boolean } = {}
 ): Promise<ApiResultItem[] | null> {
   const [mvSetting, orfSetting, hlsSetting] = await Promise.all([
     getSetting("provider.mediathekview.enabled"),
@@ -68,9 +68,12 @@ export async function queryContent(
       )
         items.push(converted);
     }
-    return [...new Map(items.map((item) => [item.url_video, item])).values()]
-      .sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp)
-      .slice(0, size);
+    // Episode matching may need distinct metadata records for the same video.
+    const results =
+      options.deduplicate === false
+        ? items
+        : [...new Map(items.map((item) => [item.url_video, item])).values()];
+    return results.sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp).slice(0, size);
   } catch (error) {
     console.error("[ContentSearch] Provider failed:", error);
     return null;
