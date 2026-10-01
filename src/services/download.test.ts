@@ -6,6 +6,21 @@ function b64(value: string): string {
 }
 
 describe("parseNzbContent", () => {
+  it.each(["../../outside.nzb", "..\\..\\outside.nzb", "/outside.nzb", "bad\0name.nzb", ".nzb"])(
+    "rejects unsafe uploaded filename %s before it becomes a download path",
+    (fileName) => {
+      expect(
+        parseNzbContent(`<!-- ${b64("https://example.com/video.mp4")} -->`, fileName)
+      ).toBeNull();
+    }
+  );
+
+  it("rejects path traversal in a raw NZB filename too", () => {
+    expect(
+      parseNzbContent('filename="../../outside.nzb"\n<!-- https://example.com/video.mp4 -->')
+    ).toBeNull();
+  });
+
   it.each(["https://example.com/video.mp4", "http://example.com/video.mp4?token=abc&quality=hd"])(
     "accepts a saved legacy NZB with raw URL %s",
     (url) => {

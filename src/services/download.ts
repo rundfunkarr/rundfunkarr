@@ -60,7 +60,7 @@ export function parseNzbContent(
   const fileName = uploadedFileName
     ? uploadedFileName.replace(/\.nzb$/i, "")
     : nzbContent.match(FILE_NAME_REGEX)?.[1];
-  if (!fileName) {
+  if (!fileName || /[\\/\0]/.test(fileName)) {
     return null;
   }
 
