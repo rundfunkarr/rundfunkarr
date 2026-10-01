@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db";
 import { randomUUID } from "crypto";
-import * as path from "path";
 
 /**
  * Format seconds remaining as SABnzbd's strict "H:MM:SS" timeleft format.
@@ -54,9 +53,14 @@ const FILE_NAME_REGEX = /filename="([^"]+)\.nzb"/;
 // Accept raw URL comments too, for NZBs saved before the format changed.
 const COMMENT_REGEX = /<!--([\s\S]*?)-->/g;
 
-export function parseNzbContent(nzbContent: string): { fileName: string; url: string } | null {
-  const filenameMatch = nzbContent.match(FILE_NAME_REGEX);
-  if (!filenameMatch) {
+export function parseNzbContent(
+  nzbContent: string,
+  uploadedFileName?: string
+): { fileName: string; url: string } | null {
+  const fileName = uploadedFileName
+    ? uploadedFileName.replace(/\.nzb$/i, "")
+    : nzbContent.match(FILE_NAME_REGEX)?.[1];
+  if (!fileName) {
     return null;
   }
 
@@ -87,7 +91,7 @@ export function parseNzbContent(nzbContent: string): { fileName: string; url: st
   }
 
   return {
-    fileName: filenameMatch[1],
+    fileName,
     url,
   };
 }
@@ -179,20 +183,15 @@ export async function getHistory(): Promise<SabnzbdHistory> {
   });
 
   const slots: HistoryItem[] = downloads.map((d) => {
-    // SABnzbd returns the folder path, not the file path
-    // Sonarr scans this folder for video files
-    let storagePath = "";
-    if (d.filePath) {
-      storagePath = path.dirname(d.filePath);
-    }
-
     return {
       nzo_id: d.id,
       name: d.title,
       status: d.status === "completed" ? "Completed" : "Failed",
       completed: d.completedAt ? Math.floor(d.completedAt.getTime() / 1000) : 0,
       category: d.category,
-      storage: storagePath,
+      // Sonarr accepts a single file. A shared category directory could
+      // import or remove files belonging to other downloads.
+      storage: d.filePath || "",
       bytes: Number(d.size),
       fail_message: d.error || "",
     };

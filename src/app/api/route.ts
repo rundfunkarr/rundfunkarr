@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { addNzb } from "@/server/add-nzb";
 import {
   getQueue,
   getHistory,
   deleteHistoryItem,
-  addToQueue,
-  parseNzbContent,
   getConfigResponse,
   retryDownload,
 } from "@/services/download";
@@ -80,42 +79,5 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const mode = searchParams.get("mode");
-  const cat = searchParams.get("cat") || "default";
-
-  console.log(`[API] POST request: mode=${mode}, cat=${cat}`);
-
-  if (mode !== "addfile") {
-    return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
-  }
-
-  try {
-    // Read the NZB content from the request body
-    const nzbContent = await request.text();
-    console.log(`[API] Received NZB content (${nzbContent.length} bytes)`);
-
-    const parsed = parseNzbContent(nzbContent);
-    if (!parsed) {
-      console.log(`[API] Failed to parse NZB content`);
-      return NextResponse.json({ error: "Invalid NZB format" }, { status: 400 });
-    }
-
-    const { fileName, url } = parsed;
-    console.log(`[API] Adding to queue: ${fileName} from ${url}`);
-
-    // Add to the download queue
-    const queueItem = await addToQueue(url, fileName, cat);
-
-    return NextResponse.json({
-      status: true,
-      nzo_ids: [queueItem.id],
-    });
-  } catch (error) {
-    console.error("[API] Error adding file:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
-  }
+  return addNzb(request, true);
 }

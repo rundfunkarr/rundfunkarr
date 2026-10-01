@@ -53,9 +53,14 @@ import { processDownload } from "./download-manager";
 
 let testRoot: string;
 
-it.each(["mkv", "mp4"])(
-  "resolves SRF at download time and finishes HLS as %s across mounts",
-  async (container) => {
+it.each([
+  ["mkv", "tv"],
+  ["mp4", "tv"],
+  ["mkv", ""],
+  ["mp4", ""],
+])(
+  "resolves SRF at download time and finishes HLS as %s with category %s across mounts",
+  async (container, category) => {
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
       Promise.resolve(
         where.key === "download.path"
@@ -68,7 +73,7 @@ it.each(["mkv", "mp4"])(
     downloadFindUnique.mockResolvedValue({
       id: "hls",
       title: "Rundschau",
-      category: "tv",
+      category,
       status: "queued",
       url: "https://www.srf.ch/play/tv/redirect/detail/11111111-1111-4111-8111-111111111111#rundfunkarr-height=480",
     });
@@ -89,14 +94,14 @@ it.each(["mkv", "mp4"])(
       container,
       480
     );
-    expect(await readFile(path.join(testRoot, "tv", `Rundschau.${container}`), "utf8")).toBe(
-      "media"
-    );
+    expect(
+      await readFile(path.join(testRoot, category || "default", `Rundschau.${container}`), "utf8")
+    ).toBe("media");
     expect(downloadUpdate).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: "completed",
-          filePath: `/mapped/downloads/tv/Rundschau.${container}`,
+          filePath: `/mapped/downloads/${category || "default"}/Rundschau.${container}`,
         }),
       })
     );
@@ -123,51 +128,54 @@ afterEach(async () => {
 });
 
 describe("processDownload", () => {
-  it("keeps MP4 files unchanged when MKV conversion is disabled", async () => {
-    const mediaBytes = new Uint8Array([1, 2, 3, 4]);
-    const title = "Show.S01E01";
-    const category = "sonarr";
+  it.each(["sonarr", ""])(
+    "keeps MP4 files unchanged with category %s when MKV conversion is disabled",
+    async (category) => {
+      const mediaBytes = new Uint8Array([1, 2, 3, 4]);
+      const title = "Show.S01E01";
+      const categoryFolder = category || "default";
 
-    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
-      if (where.key === "download.path") return Promise.resolve({ value: testRoot });
-      if (where.key === "download.convertToMkv") return Promise.resolve({ value: "false" });
-      return Promise.resolve(null);
-    });
-    downloadFindUnique.mockResolvedValue({
-      id: "download-1",
-      title,
-      category,
-      status: "queued",
-      url: "https://example.com/video.mp4",
-    });
-    downloadUpdate.mockResolvedValue({});
-    downloadCount.mockResolvedValue(0);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(mediaBytes, {
-          status: 200,
-          headers: { "content-length": String(mediaBytes.byteLength) },
-        })
-      )
-    );
+      configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
+        if (where.key === "download.path") return Promise.resolve({ value: testRoot });
+        if (where.key === "download.convertToMkv") return Promise.resolve({ value: "false" });
+        return Promise.resolve(null);
+      });
+      downloadFindUnique.mockResolvedValue({
+        id: "download-1",
+        title,
+        category,
+        status: "queued",
+        url: "https://example.com/video.mp4",
+      });
+      downloadUpdate.mockResolvedValue({});
+      downloadCount.mockResolvedValue(0);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(mediaBytes, {
+            status: 200,
+            headers: { "content-length": String(mediaBytes.byteLength) },
+          })
+        )
+      );
 
-    await processDownload("download-1");
+      await processDownload("download-1");
 
-    expect(ffmpegModuleLoaded).not.toHaveBeenCalled();
-    expect(convertMp4ToMkv).not.toHaveBeenCalled();
-    await expect(readFile(path.join(testRoot, category, `${title}.mp4`))).resolves.toEqual(
-      Buffer.from(mediaBytes)
-    );
-    await expect(access(path.join(testRoot, category, `${title}.mkv`))).rejects.toThrow();
-    expect(downloadUpdate).toHaveBeenCalledWith({
-      where: { id: "download-1" },
-      data: expect.objectContaining({
-        status: "completed",
-        filePath: path.join("/mapped/downloads", category, `${title}.mp4`),
-      }),
-    });
-  });
+      expect(ffmpegModuleLoaded).not.toHaveBeenCalled();
+      expect(convertMp4ToMkv).not.toHaveBeenCalled();
+      await expect(readFile(path.join(testRoot, categoryFolder, `${title}.mp4`))).resolves.toEqual(
+        Buffer.from(mediaBytes)
+      );
+      await expect(access(path.join(testRoot, categoryFolder, `${title}.mkv`))).rejects.toThrow();
+      expect(downloadUpdate).toHaveBeenCalledWith({
+        where: { id: "download-1" },
+        data: expect.objectContaining({
+          status: "completed",
+          filePath: path.join("/mapped/downloads", categoryFolder, `${title}.mp4`),
+        }),
+      });
+    }
+  );
 
   it("recovers when the category directory is removed mid-download", async () => {
     const mediaBytes = new Uint8Array([5, 6, 7, 8]);

@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:sabnzbd": "npm run build && node scripts/smoke-sabnzbd.mjs",
     "test:coverage": "vitest run --coverage",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",

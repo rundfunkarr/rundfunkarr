@@ -151,7 +151,8 @@ async function processDownload(downloadId: string): Promise<void> {
     // Create temp and category directories
     const downloadBasePath = await getDownloadBasePath();
     const downloadTempPath = await getDownloadTempPath();
-    const categoryDir = path.join(downloadBasePath, download.category);
+    const categoryFolder = download.category || "default";
+    const categoryDir = path.join(downloadBasePath, categoryFolder);
     await fs.mkdir(downloadTempPath, { recursive: true });
     await fs.mkdir(categoryDir, { recursive: true });
 
@@ -209,7 +210,7 @@ async function processDownload(downloadId: string): Promise<void> {
       // Calculate storage path (may be mapped differently)
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
       const storagePath = downloadFolderMapping
-        ? path.join(downloadFolderMapping, download.category, `${download.title}.${container}`)
+        ? path.join(downloadFolderMapping, categoryFolder, `${download.title}.${container}`)
         : finalMkvPath;
 
       // Mark as completed
@@ -301,7 +302,7 @@ async function processDownload(downloadId: string): Promise<void> {
       // Calculate storage path (may be mapped differently)
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
       const storagePath = downloadFolderMapping
-        ? path.join(downloadFolderMapping, download.category, `${download.title}.mkv`)
+        ? path.join(downloadFolderMapping, categoryFolder, `${download.title}.mkv`)
         : finalMkvPath;
 
       // Mark as completed
@@ -330,7 +331,7 @@ async function processDownload(downloadId: string): Promise<void> {
 
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
       const storagePath = downloadFolderMapping
-        ? path.join(downloadFolderMapping, download.category, `${download.title}${fileExtension}`)
+        ? path.join(downloadFolderMapping, categoryFolder, `${download.title}${fileExtension}`)
         : finalPath;
 
       await prisma.download.update({
