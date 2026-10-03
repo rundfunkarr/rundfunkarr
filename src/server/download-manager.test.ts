@@ -415,9 +415,7 @@ describe("Warteschlangensteuerung", () => {
     downloadUpdate.mockImplementation(async ({ where, data }) =>
       Object.assign(jobs.get(where.id)!, data)
     );
-    downloadCount.mockImplementation(
-      async () => [...jobs.values()].filter((job) => job.status === "queued").length
-    );
+    downloadCount.mockRejectedValue(new Error("Zusätzliche Zählabfrage nicht erreichbar"));
     let unblock!: () => void;
     let started!: () => void;
     const firstStarted = new Promise<void>((resolve) => {
@@ -446,6 +444,7 @@ describe("Warteschlangensteuerung", () => {
       await processing;
     }
     expect(downloadHlsStream).toHaveBeenCalledTimes(2);
+    expect(downloadCount).not.toHaveBeenCalled();
     expect([...jobs.values()].map((job) => job.status)).toEqual(["completed", "completed"]);
   });
 

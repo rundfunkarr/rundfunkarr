@@ -362,13 +362,12 @@ async function processDownload(downloadId: string): Promise<void> {
   } finally {
     downloadSemaphore.release();
 
-    // Check if there are more items to process
-    const hasMore = await prisma.download.count({
-      where: { status: "queued" },
-    });
-
-    if (hasMore > 0 && !isProcessing) {
-      startDownloadProcessing().catch(console.error);
+    // Der aktive Queue-Lauf übernimmt die nächste Abfrage selbst.
+    if (!isProcessing) {
+      const hasMore = await prisma.download.count({
+        where: { status: "queued" },
+      });
+      if (hasMore > 0) startDownloadProcessing().catch(console.error);
     }
   }
 }
