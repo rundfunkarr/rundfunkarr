@@ -37,6 +37,7 @@ vi.mock("@/lib/db", () => ({
       count: downloadCount,
       findUnique: downloadFindUnique,
       update: downloadUpdate,
+      updateMany: vi.fn(async () => ({ count: 1 })),
     },
   },
 }));
@@ -92,16 +93,20 @@ it.each([
       expect.stringContaining(`Rundschau.${container}`),
       expect.any(Function),
       container,
-      480
+      480,
+      expect.any(AbortSignal)
     );
     expect(
-      await readFile(path.join(testRoot, category || "default", `Rundschau.${container}`), "utf8")
+      await readFile(
+        path.join(testRoot, category || "default", "hls", `Rundschau.${container}`),
+        "utf8"
+      )
     ).toBe("media");
     expect(downloadUpdate).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: "completed",
-          filePath: `/mapped/downloads/${category || "default"}/Rundschau.${container}`,
+          filePath: `/mapped/downloads/${category || "default"}/hls/Rundschau.${container}`,
         }),
       })
     );
@@ -163,15 +168,17 @@ describe("processDownload", () => {
 
       expect(ffmpegModuleLoaded).not.toHaveBeenCalled();
       expect(convertMp4ToMkv).not.toHaveBeenCalled();
-      await expect(readFile(path.join(testRoot, categoryFolder, `${title}.mp4`))).resolves.toEqual(
-        Buffer.from(mediaBytes)
-      );
-      await expect(access(path.join(testRoot, categoryFolder, `${title}.mkv`))).rejects.toThrow();
+      await expect(
+        readFile(path.join(testRoot, categoryFolder, "download-1", `${title}.mp4`))
+      ).resolves.toEqual(Buffer.from(mediaBytes));
+      await expect(
+        access(path.join(testRoot, categoryFolder, "download-1", `${title}.mkv`))
+      ).rejects.toThrow();
       expect(downloadUpdate).toHaveBeenCalledWith({
         where: { id: "download-1" },
         data: expect.objectContaining({
           status: "completed",
-          filePath: path.join("/mapped/downloads", categoryFolder, `${title}.mp4`),
+          filePath: path.join("/mapped/downloads", categoryFolder, "download-1", `${title}.mp4`),
         }),
       });
     }
@@ -181,7 +188,7 @@ describe("processDownload", () => {
     const mediaBytes = new Uint8Array([5, 6, 7, 8]);
     const title = "Show.S01E02";
     const category = "sonarr";
-    const categoryDir = path.join(testRoot, category);
+    const categoryDir = path.join(testRoot, category, "download-2");
 
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
       if (where.key === "download.path") return Promise.resolve({ value: testRoot });
@@ -226,7 +233,7 @@ describe("processDownload", () => {
     const mkvBytes = new Uint8Array([13, 14, 15, 16]);
     const title = "Show.S01E03";
     const category = "sonarr";
-    const categoryDir = path.join(testRoot, category);
+    const categoryDir = path.join(testRoot, category, "download-3");
 
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
       if (where.key === "download.path") return Promise.resolve({ value: testRoot });
@@ -268,7 +275,7 @@ describe("processDownload", () => {
       where: { id: "download-3" },
       data: expect.objectContaining({
         status: "completed",
-        filePath: path.join("/mapped/downloads", category, `${title}.mkv`),
+        filePath: path.join("/mapped/downloads", category, "download-3", `${title}.mkv`),
       }),
     });
   });
@@ -281,7 +288,7 @@ describe("processDownload", () => {
     const mediaBytes = new Uint8Array([17, 18, 19, 20]);
     const title = "Show.S01E04";
     const category = "sonarr";
-    const categoryDir = path.join(testRoot, category);
+    const categoryDir = path.join(testRoot, category, "download-4");
 
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
       if (where.key === "download.path") return Promise.resolve({ value: testRoot });
@@ -367,7 +374,9 @@ it.each(["network error", "stall"])("removes partial files after a %s", async (f
     if (failure === "stall") await vi.advanceTimersByTimeAsync(60001);
     else source.error(new Error("connection lost"));
     await done;
-    await expect(access(path.join(testRoot, "incomplete", "Partial.mp4"))).rejects.toThrow();
+    await expect(
+      access(path.join(testRoot, "incomplete", "failed-transfer", "Partial.mp4"))
+    ).rejects.toThrow();
     expect(downloadUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
     );

@@ -1,3 +1,4 @@
+import { handleQueueCommand } from "@/server/sabnzbd-queue-control";
 import { NextRequest, NextResponse } from "next/server";
 import { addNzb } from "@/server/add-nzb";
 import {
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest) {
 
   console.log(`[API] GET request: mode=${mode}, name=${name}, value=${value}`);
 
+  const command = await handleQueueCommand(searchParams);
+  if (command) return command;
+
   switch (mode) {
     case "version":
       return NextResponse.json({ version: "4.3.3" });
@@ -32,7 +36,7 @@ export async function GET(request: NextRequest) {
       const queue = await getQueue();
       return NextResponse.json({
         status: {
-          paused: false,
+          paused: queue.paused,
           speed: "0",
           kbpersec: "0",
           mbleft: "0",

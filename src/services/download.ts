@@ -26,6 +26,10 @@ export interface QueueItem {
   mb: string;
   mbleft: string;
   speed: string;
+  priority: string;
+  priorityValue: number;
+  attempts: number;
+  nextRetryAt: string | null;
 }
 
 export interface HistoryItem {
@@ -41,6 +45,7 @@ export interface HistoryItem {
 
 export interface SabnzbdQueue {
   slots: QueueItem[];
+  paused: boolean;
 }
 
 export interface SabnzbdHistory {
@@ -134,15 +139,16 @@ function triggerDownloadProcessing(): void {
 export async function getQueue(): Promise<SabnzbdQueue> {
   const downloads = await prisma.download.findMany({
     where: {
-      status: { in: ["queued", "downloading", "converting"] },
+      status: { in: ["queued", "downloading", "converting", "paused"] },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
   });
 
   const slots: QueueItem[] = downloads.map((d) => {
     let statusText = "Queued";
     if (d.status === "downloading") statusText = "Downloading";
     else if (d.status === "converting") statusText = "Extracting";
+    else if (d.status === "paused") statusText = "Paused";
 
     // Convert BigInt to Number for arithmetic operations
     const totalSizeNum = Number(d.totalSize);
@@ -160,6 +166,10 @@ export async function getQueue(): Promise<SabnzbdQueue> {
 
     return {
       nzo_id: d.id,
+      priority: d.priority > 0 ? "High" : d.priority < 0 ? "Low" : "Normal",
+      priorityValue: d.priority || 0,
+      attempts: d.attempts,
+      nextRetryAt: d.nextRetryAt?.toISOString() || null,
       filename: d.title,
       status: statusText,
       percentage: d.progress.toString(),
@@ -171,13 +181,14 @@ export async function getQueue(): Promise<SabnzbdQueue> {
     };
   });
 
-  return { slots };
+  const { getSetting } = await import("@/lib/settings");
+  return { slots, paused: (await getSetting("download.paused")) === "true" };
 }
 
 export async function getHistory(): Promise<SabnzbdHistory> {
   const downloads = await prisma.download.findMany({
     where: {
-      status: { in: ["completed", "failed"] },
+      status: { in: ["completed", "failed", "cancelled"] },
     },
     orderBy: { completedAt: "desc" },
   });
@@ -209,6 +220,11 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
     return false;
   }
 
+  if (["queued", "downloading", "converting", "paused"].includes(download.status)) {
+    const { controlDownload } = await import("@/server/download-queue");
+    await controlDownload(nzoId, "cancel");
+  }
+
   // Delete the file if requested
   if (delFiles && download.filePath) {
     try {
@@ -234,6 +250,8 @@ export async function retryDownload(nzoId: string): Promise<{ id: string } | nul
   if (!download) {
     return null;
   }
+
+  if (!["failed", "cancelled"].includes(download.status)) return null;
 
   // Delete the old entry
   await prisma.download.delete({

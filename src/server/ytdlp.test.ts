@@ -324,3 +324,21 @@ it("clears the download timeout after a process error", async () => {
     vi.useRealTimers();
   }
 });
+
+it("beendet yt-dlp bei einem Abbruch und startet danach keine Audiospur", async () => {
+  const controller = new AbortController();
+  const done = downloadHlsStream(
+    "https://example.org/master.m3u8",
+    "/tmp/result.mkv",
+    undefined,
+    "mkv",
+    undefined,
+    controller.signal
+  );
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  controller.abort("pause");
+  expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+  child.emit("close", null);
+  expect((await done).success).toBe(false);
+  expect(spawn).toHaveBeenCalledTimes(1);
+});

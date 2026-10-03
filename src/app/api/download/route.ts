@@ -1,3 +1,4 @@
+import { handleQueueCommand } from "@/server/sabnzbd-queue-control";
 import { NextRequest, NextResponse } from "next/server";
 import { addNzb } from "@/server/add-nzb";
 import {
@@ -14,6 +15,9 @@ export async function GET(request: NextRequest) {
   const name = searchParams.get("name");
   const value = searchParams.get("value");
   const delFiles = searchParams.get("del_files") === "1";
+
+  const command = await handleQueueCommand(searchParams);
+  if (command) return command;
 
   switch (mode) {
     case "version":

@@ -3,7 +3,9 @@ import { NextRequest } from "next/server";
 import type { Download } from "@prisma/client";
 
 const { create, findMany } = vi.hoisted(() => ({ create: vi.fn(), findMany: vi.fn() }));
-vi.mock("@/lib/db", () => ({ prisma: { download: { create, findMany } } }));
+vi.mock("@/lib/db", () => ({
+  prisma: { download: { create, findMany }, config: { findUnique: vi.fn(async () => null) } },
+}));
 vi.mock("@/server/download-manager", () => ({ startDownloadProcessing: vi.fn(async () => {}) }));
 
 import { GET, POST } from "./route";

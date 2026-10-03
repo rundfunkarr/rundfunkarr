@@ -1,3 +1,4 @@
+import { cancelProcessOnAbort, cancellableProcessOptions } from "./process-cancellation";
 import { spawn } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -168,6 +169,7 @@ export interface YtdlpDownloadResult {
 
 export interface YtdlpDownloadOptions {
   outputPath: string;
+  signal?: AbortSignal;
   format?: string; // e.g., "bestvideo+bestaudio/best"
   useProxy?: boolean;
   container?: "mkv" | "mp4";
@@ -333,7 +335,10 @@ export async function downloadVideo(
 
   return new Promise((resolve) => {
     console.log(`[yt-dlp] Starting download: ${url} -> ${options.outputPath}`);
-    const proc = spawn(ytdlpPath, args);
+    const proc = spawn(ytdlpPath, args, cancellableProcessOptions);
+    const stopCancellation = cancelProcessOnAbort(proc, options.signal);
+    proc.once("close", stopCancellation);
+    proc.once("error", stopCancellation);
 
     let stderr = "";
     let progressUpdates = Promise.resolve();
@@ -469,7 +474,8 @@ export async function downloadHlsStream(
   // caller already builds it with the right one) since the final merge
   // writes straight to outputPath - kept for API compatibility with callers.
   _container: "mkv" | "mp4" = "mkv",
-  maxHeight?: 480 | 720 | 1080
+  maxHeight?: 480 | 720 | 1080,
+  signal?: AbortSignal
 ): Promise<YtdlpDownloadResult> {
   const tempDir = path.dirname(outputPath);
   const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -495,6 +501,7 @@ export async function downloadHlsStream(
   try {
     const videoResult = await downloadVideo(hlsUrl, {
       outputPath: videoTempPath,
+      signal,
       container: "mp4",
       format: maxHeight
         ? `bestvideo[height<=${maxHeight}]/best[height<=${maxHeight}]`
@@ -508,6 +515,7 @@ export async function downloadHlsStream(
 
     const audioResult = await downloadVideo(hlsUrl, {
       outputPath: audioTempPath,
+      signal,
       container: "mp4",
       // "/best" fallback: some HLS masters only expose combined
       // #EXT-X-STREAM-INF variants with no separate audio-only format, so
@@ -523,7 +531,10 @@ export async function downloadHlsStream(
     }
 
     const { mergeVideoAudio } = await import("./ffmpeg");
-    const mergeResult = await mergeVideoAudio(videoOutputPath, audioOutputPath, outputPath);
+    signal?.throwIfAborted();
+    const mergeResult = signal
+      ? await mergeVideoAudio(videoOutputPath, audioOutputPath, outputPath, signal)
+      : await mergeVideoAudio(videoOutputPath, audioOutputPath, outputPath);
     if (!mergeResult.success) {
       await fs.unlink(outputPath).catch(() => {});
       return { success: false, error: mergeResult.error };
