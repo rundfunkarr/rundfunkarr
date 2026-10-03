@@ -18,7 +18,13 @@ const { testDir } = await vi.hoisted(async () => {
 });
 vi.mock("@/lib/db", async () => {
   const { PrismaClient } = await import("@prisma/client");
-  return { prisma: new PrismaClient({ datasourceUrl: `file:${testDir}/queue.db` }) };
+  const prisma = new PrismaClient({ datasourceUrl: `file:${testDir}/queue.db` });
+  // Wrap these proxy methods so individual tests can inject query failures or delays.
+  Object.assign(prisma.download, {
+    count: vi.fn(prisma.download.count),
+    findFirst: vi.fn(prisma.download.findFirst),
+  });
+  return { prisma };
 });
 
 const bytes = Buffer.from([1, 2, 3, 4]);
@@ -105,6 +111,88 @@ const job = (
   });
 
 describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
+  it("verarbeitet bei Parallelität eins jeden Auftrag einmal und benötigt keine Zählabfrage", async () => {
+    await prisma.config.update({ where: { key: "download.parallel" }, data: { value: "1" } });
+    clearSettingsCache();
+    await job("first", undefined, { priority: 10 });
+    await job("second");
+    blocked.add("/first.mp4");
+    const count = vi
+      .mocked(prisma.download.count)
+      .mockRejectedValue(new Error("Zusätzliche Zählabfrage nicht erreichbar"));
+    const processing = startDownloadProcessing();
+    try {
+      await vi.waitFor(() => expect(requests).toEqual(["/first.mp4"]));
+      expect(startDownloadProcessing()).toBe(processing);
+      expect(startDownloadProcessing()).toBe(processing);
+      for (const response of pending) response.end(bytes.subarray(2));
+      await processing;
+      expect(requests).toEqual(["/first.mp4", "/second.mp4"]);
+      expect(maximum).toBe(1);
+      expect(await prisma.download.findMany()).toEqual([
+        expect.objectContaining({ status: "completed", attempts: 1 }),
+        expect.objectContaining({ status: "completed", attempts: 1 }),
+      ]);
+      expect(count).not.toHaveBeenCalled();
+    } finally {
+      count.mockReset();
+    }
+  });
+
+  it("kann nach einem Datenbankfehler erneut gestartet werden", async () => {
+    await job("restart");
+    const lookup = vi
+      .mocked(prisma.download.findFirst)
+      .mockRejectedValueOnce(new Error("Datenbank vorübergehend nicht erreichbar"));
+    try {
+      await expect(startDownloadProcessing()).rejects.toThrow("Datenbank");
+      await startDownloadProcessing();
+      expect(requests).toEqual(["/restart.mp4"]);
+      expect(await prisma.download.findUnique({ where: { id: "restart" } })).toMatchObject({
+        status: "completed",
+        attempts: 1,
+      });
+    } finally {
+      lookup.mockReset();
+    }
+  });
+
+  it("berücksichtigt einen Auftrag, der während der letzten leeren Abfrage eingeht", async () => {
+    let entered!: () => void;
+    let release!: (value: null) => void;
+    const lastLookupStarted = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const lastLookup = new Promise<null>((resolve) => {
+      release = resolve;
+    });
+    const lookup = vi
+      .mocked(prisma.download.findFirst)
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(() => {
+        entered();
+        return lastLookup as ReturnType<typeof prisma.download.findFirst>;
+      });
+    const processing = startDownloadProcessing();
+    try {
+      await lastLookupStarted;
+      await job("late");
+      expect(startDownloadProcessing()).toBe(processing);
+    } finally {
+      release(null);
+      try {
+        await processing;
+      } finally {
+        lookup.mockReset();
+      }
+    }
+    expect(requests).toEqual(["/late.mp4"]);
+    expect(await prisma.download.findUnique({ where: { id: "late" } })).toMatchObject({
+      status: "completed",
+      attempts: 1,
+    });
+  });
+
   it("begrenzt Parallelität, beachtet Priorität und trennt gleichnamige Dateien", async () => {
     await job("a");
     await job("b", "/b.mp4", { priority: 10 });
@@ -223,6 +311,9 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     try {
       await startDownloadProcessing();
       expect((await prisma.download.findUnique({ where: { id: "ok" } }))?.status).toBe("completed");
+      expect((await prisma.download.findUnique({ where: { id: "defekt" } }))?.status).toBe(
+        "queued"
+      );
       expect(requests).toEqual(["/ok.mp4"]);
     } finally {
       await prisma.$executeRawUnsafe("DROP TRIGGER block_job");

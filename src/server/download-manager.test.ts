@@ -120,6 +120,7 @@ beforeEach(async () => {
   downloadFindUnique.mockReset();
   downloadUpdate.mockReset();
   convertMp4ToMkv.mockReset();
+  downloadHlsStream.mockReset();
 
   testRoot = await mkdtemp(path.join(tmpdir(), "rundfunkarr-download-manager-"));
   vi.stubEnv("DOWNLOAD_TEMP_PATH", path.join(testRoot, "incomplete"));
