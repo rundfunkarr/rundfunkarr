@@ -139,9 +139,10 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     blocked.clear();
     await controlDownload("pause", "resume");
     await startDownloadProcessing();
-    expect((await prisma.download.findUnique({ where: { id: "pause" } }))?.status).toBe(
-      "completed"
-    );
+    expect(await prisma.download.findUnique({ where: { id: "pause" } })).toMatchObject({
+      status: "completed",
+      attempts: 1,
+    });
     expect(requests).toHaveLength(2);
   });
 

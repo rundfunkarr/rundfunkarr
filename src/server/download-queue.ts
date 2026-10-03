@@ -151,7 +151,18 @@ export async function controlDownload(
   }
   const result = await prisma.download.updateMany({
     where: { id, status: { in: action === "resume" ? ["paused"] : ["queued", "paused"] } },
-    data: action === "resume" ? { status: "queued", error: null, nextRetryAt: null } : { priority },
+    data:
+      action === "resume"
+        ? {
+            status: "queued",
+            error: null,
+            nextRetryAt: null,
+            attempts: 0,
+            progress: 0,
+            downloadedBytes: 0,
+            speed: 0,
+          }
+        : { priority },
   });
   if (result.count) void startDownloadProcessing().catch(console.error);
   return result.count > 0;
