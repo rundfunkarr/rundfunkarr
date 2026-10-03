@@ -43,6 +43,7 @@ export default function DownloadsPage() {
   const [queue, setQueue] = useState<QueueSlot[]>([]);
   const [history, setHistory] = useState<HistorySlot[]>([]);
   const [page, setPage] = useState(0);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const requestSequence = useRef(0);
@@ -82,7 +83,7 @@ export default function DownloadsPage() {
     fetchData();
     const interval = setInterval(fetchData, 5000);
     return () => { clearInterval(interval); requestSequence.current++; };
-  }, [fetchData]);
+  }, [fetchData, refreshVersion]);
 
   const handleDelete = async (nzoId: string, delFiles: boolean = false) => {
     try {
@@ -94,7 +95,7 @@ export default function DownloadsPage() {
       }
       const data = await res.json();
       if (data.status) {
-        fetchData();
+        setRefreshVersion((version) => version + 1);
       }
     } catch (error) {
       console.error("Delete failed:", error);
@@ -109,7 +110,7 @@ export default function DownloadsPage() {
       }
       const data = await res.json();
       if (data.status) {
-        fetchData();
+        setRefreshVersion((version) => version + 1);
       }
     } catch (error) {
       console.error("Retry failed:", error);
