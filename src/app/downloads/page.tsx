@@ -119,12 +119,12 @@ export default function DownloadsPage() {
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Downloads</h1>
           <p className="text-muted-foreground text-sm">Verwalte deine Downloads</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground" suppressHydrationWarning>
             Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}
           </span>
@@ -155,8 +155,8 @@ export default function DownloadsPage() {
               ) : queue.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">Keine aktiven Downloads</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
+                <div className="min-w-0">
+                  <Table scrollLabel="Warteschlange" className="min-w-[52rem]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
@@ -212,8 +212,8 @@ export default function DownloadsPage() {
                   Keine Downloads in der Historie
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
+                <div className="min-w-0">
+                  <Table scrollLabel="Download-Historie" className="min-w-[44rem]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>

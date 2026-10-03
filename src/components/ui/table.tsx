@@ -1,13 +1,96 @@
+"use client";
+
 import * as React from "react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
-      <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
-    </div>
-  )
+type TableProps = React.HTMLAttributes<HTMLTableElement> & { scrollLabel?: string };
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, scrollLabel, ...props }, ref) => {
+    const viewport = React.useRef<HTMLDivElement>(null);
+    const [scroll, setScroll] = React.useState({ left: 0, max: 0 });
+    const measure = React.useCallback(() => {
+      const element = viewport.current;
+      if (!element) return;
+      const max = Math.max(0, element.scrollWidth - element.clientWidth);
+      const left = Math.max(0, Math.min(element.scrollLeft, max));
+      setScroll((previous) =>
+        previous.left === left && previous.max === max ? previous : { left, max }
+      );
+    }, []);
+
+    React.useEffect(() => {
+      if (!scrollLabel || !viewport.current) return;
+      const observer = new ResizeObserver(measure);
+      observer.observe(viewport.current);
+      if (viewport.current.firstElementChild) observer.observe(viewport.current.firstElementChild);
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        observer.disconnect();
+        cancelAnimationFrame(frame);
+      };
+    }, [measure, scrollLabel]);
+
+    const move = (left: number) => {
+      if (viewport.current) viewport.current.scrollLeft = left;
+      measure();
+    };
+    const overflows = !!scrollLabel && scroll.max > 1;
+    return (
+      <div className="min-w-0 max-w-full">
+        {overflows && (
+          <div className="mb-3 rounded-md border border-input bg-muted/40 px-3 py-2">
+            <p className="mb-1 text-xs text-muted-foreground">
+              Weitere Spalten: horizontal verschieben
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                aria-label={`${scrollLabel}: nach links`}
+                disabled={scroll.left <= 1}
+                onClick={() => move(scroll.left - (viewport.current?.clientWidth || 250) * 0.8)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-input bg-background disabled:opacity-35"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+              <input
+                type="range"
+                aria-label={`${scrollLabel}: horizontale Position`}
+                aria-valuetext={`${Math.round((scroll.left / scroll.max) * 100)} Prozent`}
+                min={0}
+                max={scroll.max}
+                step={1}
+                value={scroll.left}
+                onChange={(event) => move(Number(event.target.value))}
+                className="h-9 min-w-0 w-full cursor-pointer accent-primary"
+              />
+              <button
+                type="button"
+                aria-label={`${scrollLabel}: nach rechts`}
+                disabled={scroll.left >= scroll.max - 1}
+                onClick={() => move(scroll.left + (viewport.current?.clientWidth || 250) * 0.8)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-input bg-background disabled:opacity-35"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+        <div
+          ref={viewport}
+          onScroll={scrollLabel ? measure : undefined}
+          role={overflows ? "region" : undefined}
+          aria-label={overflows ? scrollLabel : undefined}
+          tabIndex={overflows ? 0 : undefined}
+          className="relative w-full overflow-auto overscroll-x-contain focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
+        </div>
+      </div>
+    );
+  }
 );
 Table.displayName = "Table";
 
