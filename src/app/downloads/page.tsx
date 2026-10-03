@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -49,37 +49,54 @@ export default function DownloadsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueSlot[]>([]);
   const [history, setHistory] = useState<HistorySlot[]>([]);
+  const [historyPage, setHistoryPage] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [total, setTotal] = useState(0);
+  const requestSequence = useRef(0);
+  const pageSize = 50;
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   const fetchData = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     try {
       const [queueRes, historyRes, optionsRes] = await Promise.all([
         fetch("/api/download?mode=queue"),
-        fetch("/api/download?mode=history"),
+        fetch(`/api/download?mode=history&start=${page * pageSize}&limit=${pageSize}`),
         fetch("/api/download/control"),
       ]);
       if (!queueRes.ok || !historyRes.ok || !optionsRes.ok)
         throw new Error("Downloads konnten nicht geladen werden.");
-      setOptions(await optionsRes.json());
       const queueData = await queueRes.json();
       const historyData = await historyRes.json();
+      const optionsData = await optionsRes.json();
+      if (sequence !== requestSequence.current) return;
+      const count = historyData.history?.noofslots ?? 0;
+      setTotal(count);
+      if (page > 0 && page * pageSize >= count) {
+        setPage(Math.max(0, Math.ceil(count / pageSize) - 1));
+        return;
+      }
+      setLoadError(null);
+      setOptions(optionsData);
       setQueue(queueData.queue?.slots || []);
       setHistory(historyData.history?.slots || []);
+      setHistoryPage(page);
       setLastRefresh(new Date());
-      setLoadError(null);
-    } catch {
-      setLoadError("Downloads konnten nicht geladen werden. Die Verbindung wird erneut geprüft.");
+    } catch (error) {
+      if (sequence === requestSequence.current)
+        setLoadError(error instanceof Error ? error.message : "Laden fehlgeschlagen.");
     } finally {
-      setIsLoading(false);
+      if (sequence === requestSequence.current) setIsLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+    return () => { clearInterval(interval); requestSequence.current++; };
+  }, [fetchData, refreshVersion]);
 
   const handleAction = async (action: string, extra: Record<string, string | number> = {}) => {
     setBusy(true);
@@ -92,7 +109,7 @@ export default function DownloadsPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Die Aktion ist fehlgeschlagen.");
-      await fetchData();
+      setRefreshVersion((version) => version + 1);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Die Aktion ist fehlgeschlagen.");
     } finally {
@@ -110,7 +127,7 @@ export default function DownloadsPage() {
       }
       const data = await res.json();
       if (data.status) {
-        fetchData();
+        setRefreshVersion((version) => version + 1);
       }
     } catch (error) {
       console.error("Delete failed:", error);
@@ -125,7 +142,7 @@ export default function DownloadsPage() {
       }
       const data = await res.json();
       if (data.status) {
-        fetchData();
+        setRefreshVersion((version) => version + 1);
       }
     } catch (error) {
       console.error("Retry failed:", error);
@@ -241,7 +258,7 @@ export default function DownloadsPage() {
           <Tabs defaultValue="queue">
             <TabsList className="mb-4">
               <TabsTrigger value="queue">Warteschlange ({queue.length})</TabsTrigger>
-              <TabsTrigger value="history">Historie ({history.length})</TabsTrigger>
+              <TabsTrigger value="history">Historie ({total})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="queue">
@@ -339,7 +356,20 @@ export default function DownloadsPage() {
             </TabsContent>
 
             <TabsContent value="history">
-              {history.length === 0 ? (
+              <nav aria-label="Historienseiten" className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground" aria-live="polite">
+                  {total === 0 ? "0 Einträge" : `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} von ${total} Einträgen`}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Zurück</Button>
+                  <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(page + 1)}>Weiter</Button>
+                </div>
+              </nav>
+              {historyPage !== page ? (
+                <p className="text-muted-foreground text-center py-8">
+                  {loadError ? "Historie konnte nicht geladen werden." : "Laden..."}
+                </p>
+              ) : history.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
                   Keine Downloads in der Historie
                 </p>

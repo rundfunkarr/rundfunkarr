@@ -6,7 +6,10 @@ const { create, findMany } = vi.hoisted(() => ({ create: vi.fn(), findMany: vi.f
 vi.mock("@/lib/db", () => ({
   prisma: { download: { create, findMany }, config: { findUnique: vi.fn(async () => null) } },
 }));
-vi.mock("@/server/download-manager", () => ({ startDownloadProcessing: vi.fn(async () => {}) }));
+vi.mock("@/server/download-queue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/download-queue")>()),
+  startDownloadProcessing: vi.fn(async () => {}),
+}));
 
 import { GET, POST } from "./route";
 import { POST as webPost } from "./download/route";

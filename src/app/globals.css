@@ -122,3 +122,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+.table-scrollbar {
+  scrollbar-color: var(--muted-foreground) var(--muted);
+}
+
+.table-scrollbar::-webkit-scrollbar {
+  height: 12px;
+}
+
+.table-scrollbar::-webkit-scrollbar-track {
+  background: var(--muted);
+}
+
+.table-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border: 3px solid var(--muted);
+  border-radius: 6px;
+}

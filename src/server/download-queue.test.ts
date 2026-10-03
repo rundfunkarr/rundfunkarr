@@ -1,8 +1,11 @@
 import { beforeAll, afterAll, beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { createServer, type ServerResponse } from "node:http";
 import { readFile, rm } from "node:fs/promises";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { clearSettingsCache } from "@/lib/settings";
+import { GET as getApi } from "@/app/api/route";
+import { GET as getDownloadApi } from "@/app/api/download/route";
 import {
   startDownloadProcessing,
   controlDownload,
@@ -74,6 +77,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(source.address() as { port: number }).port}`;
 });
 beforeEach(async () => {
+  vi.clearAllMocks();
   requests = [];
   blocked.clear();
   maximum = 0;
@@ -111,6 +115,38 @@ const job = (
   });
 
 describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
+  it.each([
+    ["/api", getApi],
+    ["/api/download", getDownloadApi],
+  ])("zählt abgebrochene Downloads in den Historienseiten von %s mit", async (path, get) => {
+    await prisma.download.createMany({
+      data: ["completed", "failed", "cancelled", "queued", "paused"].map((status) => ({
+        id: status,
+        title: status,
+        url: `${base}/${status}.mp4`,
+        category: "tv",
+        status,
+        completedAt: new Date("2026-10-01T12:00:00Z"),
+      })),
+    });
+
+    const first = await get(new NextRequest(`http://localhost${path}?mode=history&limit=2`));
+    const second = await get(
+      new NextRequest(`http://localhost${path}?mode=history&start=2&limit=2`)
+    );
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const firstPage = (await first.json()).history;
+    const secondPage = (await second.json()).history;
+    expect(firstPage.noofslots).toBe(3);
+    expect(secondPage.noofslots).toBe(3);
+    expect(firstPage.slots).toHaveLength(2);
+    expect(secondPage.slots).toHaveLength(1);
+    expect(
+      [...firstPage.slots, ...secondPage.slots].map((item: { nzo_id: string }) => item.nzo_id)
+    ).toEqual(["failed", "completed", "cancelled"]);
+  });
+
   it("verarbeitet bei Parallelität eins jeden Auftrag einmal und benötigt keine Zählabfrage", async () => {
     await prisma.config.update({ where: { key: "download.parallel" }, data: { value: "1" } });
     clearSettingsCache();
