@@ -38,7 +38,7 @@ export default function Dashboard() {
     try {
       const [queueRes, historyRes] = await Promise.all([
         fetch("/api/download?mode=queue"),
-        fetch("/api/download?mode=history"),
+        fetch("/api/download?mode=history&limit=5"),
       ]);
       const queueData = await queueRes.json();
       const historyData = await historyRes.json();

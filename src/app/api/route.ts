@@ -1,3 +1,4 @@
+import { parseHistoryPage } from "@/lib/history-pagination";
 import { NextRequest, NextResponse } from "next/server";
 import { addNzb } from "@/server/add-nzb";
 import {
@@ -68,7 +69,13 @@ export async function GET(request: NextRequest) {
       }
 
       // Return history list
-      const history = await getHistory();
+      let page;
+      try {
+        page = parseHistoryPage(searchParams);
+      } catch (error) {
+        return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+      }
+      const history = page ? await getHistory(page) : await getHistory();
       return NextResponse.json({ history });
     }
 
