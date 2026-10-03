@@ -177,6 +177,65 @@ describe("processDownload", () => {
     }
   );
 
+  it.each(["mp4", "mkv", "hls"])(
+    "keeps a finished %s download complete when subtitle settings cannot be read",
+    async (source) => {
+      const mediaBytes = new Uint8Array([1, 2, 3, 4]);
+      const title = "Subtitle.Settings.Failure";
+      const extension = source === "mkv" ? "mkv" : "mp4";
+      configFindUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
+        if (where.key === "download.path") return { value: testRoot };
+        if (where.key === "download.convertToMkv") return { value: String(source === "mkv") };
+        if (where.key === "download.subtitleMode") throw new Error("Settings unavailable");
+        return null;
+      });
+      downloadFindUnique.mockResolvedValue({
+        id: "subtitle-settings",
+        title,
+        category: "sonarr",
+        status: "queued",
+        url: `https://example.com/video.${source === "hls" ? "m3u8" : "mp4"}`,
+        mediaMetadata: JSON.stringify({ subtitleUrl: "https://example.com/subtitles.vtt" }),
+      });
+      downloadUpdate.mockResolvedValue({});
+      downloadCount.mockResolvedValue(0);
+      convertMp4ToMkv.mockImplementation(async (_input: string, output: string) => {
+        await writeFile(output, mediaBytes);
+        return { success: true };
+      });
+      downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
+        await writeFile(output, mediaBytes);
+        return { success: true, outputPath: output };
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(mediaBytes, {
+            status: 200,
+            headers: { "content-length": String(mediaBytes.byteLength) },
+          })
+        )
+      );
+
+      await processDownload("subtitle-settings");
+
+      await expect(
+        readFile(path.join(testRoot, "sonarr", `${title}.${extension}`))
+      ).resolves.toEqual(Buffer.from(mediaBytes));
+      expect(downloadUpdate).toHaveBeenLastCalledWith({
+        where: { id: "subtitle-settings" },
+        data: expect.objectContaining({
+          status: "completed",
+          warning: expect.stringContaining("Untertitel"),
+          filePath: `/mapped/downloads/sonarr/${title}.${extension}`,
+        }),
+      });
+      expect(downloadUpdate).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+      );
+    }
+  );
+
   it("recovers when the category directory is removed mid-download", async () => {
     const mediaBytes = new Uint8Array([5, 6, 7, 8]);
     const title = "Show.S01E02";

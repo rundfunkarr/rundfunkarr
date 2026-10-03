@@ -166,7 +166,12 @@ export async function processSubtitles(
   videoPath: string,
   metadataJson?: string | null
 ): Promise<string | null> {
-  const mode = await getSetting("download.subtitleMode");
+  let mode: string | null;
+  try {
+    mode = await getSetting("download.subtitleMode");
+  } catch {
+    return "Untertitel konnten nicht verarbeitet werden.";
+  }
   if (mode !== "sidecar" && mode !== "embed") return null;
   const metadata = parseMediaMetadata(metadataJson);
   if (!metadata.subtitleUrl) return null;
