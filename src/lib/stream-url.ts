@@ -19,7 +19,7 @@ export function isHlsUrl(value: string): boolean {
 }
 
 export function isStreamingUrl(value: string): boolean {
-  return isHlsUrl(value) || srfUrnFromUrl(value) !== null;
+  return isHlsUrl(value) || srfUrnFromUrl(value) !== null || isMediaPageReference(value);
 }
 
 export type StreamHeight = 480 | 720 | 1080;
@@ -27,11 +27,42 @@ export type StreamHeight = 480 | 720 | 1080;
 /** Keep the requested rendition with a stable URL through NZB and queue storage. */
 export function withStreamQuality(value: string, quality: "low" | "standard" | "high"): string {
   const url = new URL(value);
-  url.hash = `rundfunkarr-height=${quality === "low" ? 480 : quality === "standard" ? 720 : 1080}`;
+  const params = new URLSearchParams(isMediaPageReference(value) ? "rundfunkarr-page=1" : "");
+  params.set(
+    "rundfunkarr-height",
+    String(quality === "low" ? 480 : quality === "standard" ? 720 : 1080)
+  );
+  url.hash = params.toString();
   return url.toString();
 }
 
 export function getStreamHeight(value: string): StreamHeight | undefined {
-  const match = value.match(/#rundfunkarr-height=(480|720|1080)$/);
-  return match ? (Number(match[1]) as StreamHeight) : undefined;
+  try {
+    const height = Number(
+      new URLSearchParams(new URL(value).hash.slice(1)).get("rundfunkarr-height")
+    );
+    return [480, 720, 1080].includes(height) ? (height as StreamHeight) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isMediathekWebsite(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      ["http:", "https:"].includes(url.protocol) &&
+      ["ardmediathek.de", "zdf.de", "arte.tv", "3sat.de", "orf.at", "srf.ch"].some(
+        (host) => url.hostname === host || url.hostname.endsWith(`.${host}`)
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+function isMediaPageReference(value: string): boolean {
+  return (
+    isMediathekWebsite(value) &&
+    new URLSearchParams(new URL(value).hash.slice(1)).get("rundfunkarr-page") === "1"
+  );
 }
