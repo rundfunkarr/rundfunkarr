@@ -382,6 +382,38 @@ it.each(["network error", "stall"])("removes partial files after a %s", async (f
 });
 
 describe("Warteschlangensteuerung", () => {
+  it("setzt die übrige Queue fort, wenn auch das Speichern des Fehlerstatus scheitert", async () => {
+    configFindUnique.mockImplementation(async ({ where }) =>
+      where.key === "download.path" ? { value: testRoot } : null
+    );
+    const jobs = ["defekt", "bereit"].map((id) => ({
+      id,
+      title: id,
+      category: "tv",
+      status: "queued",
+      url: `https://example.org/${id}.m3u8`,
+    }));
+    downloadFindFirst.mockImplementation(
+      async ({ where }) =>
+        jobs.find((job) => job.status === "queued" && !where.id?.notIn.includes(job.id)) ?? null
+    );
+    downloadFindUnique.mockImplementation(async ({ where }) =>
+      jobs.find((job) => job.id === where.id)
+    );
+    downloadUpdate.mockImplementation(async ({ where, data }) => {
+      if (where.id === "defekt") throw new Error("Schreibfehler");
+      return Object.assign(jobs.find((job) => job.id === where.id)!, data);
+    });
+    downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
+      await writeFile(output, "media");
+      return { success: true, outputPath: output };
+    });
+    await expect(startDownloadProcessing()).resolves.toBeUndefined();
+    expect(jobs.map((job) => job.status)).toEqual(["queued", "completed"]);
+    expect(downloadFindFirst).toHaveBeenCalledTimes(3);
+    expect(downloadHlsStream).toHaveBeenCalledTimes(1);
+  });
+
   it("plant während eines laufenden Downloads keine weiteren Startaufrufe ein", async () => {
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
       Promise.resolve(where.key === "download.path" ? { value: testRoot } : null)

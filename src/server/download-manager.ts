@@ -63,11 +63,12 @@ export function startDownloadProcessing(): Promise<void> {
 
   isProcessing = true;
   processingPromise = (async () => {
+    const skippedIds = new Set<string>();
     try {
       // Auch Anforderungen während der letzten, leeren Abfrage berücksichtigen.
       do {
         processingRequested = false;
-        await processQueue();
+        await processQueue(skippedIds);
       } while (processingRequested);
     } finally {
       isProcessing = false;
@@ -77,11 +78,11 @@ export function startDownloadProcessing(): Promise<void> {
   return processingPromise;
 }
 
-async function processQueue(): Promise<void> {
+async function processQueue(skippedIds: Set<string>): Promise<void> {
   while (true) {
     // Get next queued download
     const nextDownload = await prisma.download.findFirst({
-      where: { status: "queued" },
+      where: { status: "queued", ...(skippedIds.size ? { id: { notIn: [...skippedIds] } } : {}) },
       orderBy: { createdAt: "asc" },
     });
 
@@ -92,7 +93,17 @@ async function processQueue(): Promise<void> {
 
     // Erst nach Abschluss den nächsten Auftrag auswählen. Sonst wird derselbe
     // wartende Auftrag bei belegtem Semaphore immer wieder vorgemerkt.
-    await processDownload(nextDownload.id);
+    try {
+      await processDownload(nextDownload.id);
+    } catch (error) {
+      // Wenn selbst der Fehlerstatus nicht gespeichert werden kann, den Auftrag
+      // in diesem Durchlauf überspringen und die übrige Warteschlange fortsetzen.
+      skippedIds.add(nextDownload.id);
+      console.error(
+        `[Download] Auftrag ${nextDownload.id} konnte nicht abgeschlossen werden:`,
+        error
+      );
+    }
   }
 }
 
