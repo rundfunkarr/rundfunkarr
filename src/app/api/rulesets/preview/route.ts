@@ -24,8 +24,10 @@ export async function POST(request: NextRequest) {
         { status: 502 }
       );
     const rule = inputToRuleset(input.data, show.name);
+    const exact = candidates.filter((item) => item.topic === rule.topic);
+    const other = candidates.filter((item) => item.topic !== rule.topic);
     const results = [];
-    for (const item of candidates.slice(0, 30))
+    for (const item of [...exact, ...other].slice(0, 30))
       results.push(await diagnoseRuleset(item, rule, show));
     return NextResponse.json({
       show: show.germanName || show.name,

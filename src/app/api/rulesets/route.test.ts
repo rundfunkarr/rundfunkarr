@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import type { ApiResultItem } from "@/types";
+import { diagnoseRuleset } from "@/services/mediathek";
 const { findUnique, create, update, deleteMany, reload, show, query } = vi.hoisted(() => ({
   findUnique: vi.fn(),
   create: vi.fn(),
@@ -79,6 +81,45 @@ describe("Lokale Rulesets", () => {
   it("zeigt einen Quellenausfall als Fehler an, nicht als leere Trefferliste", async () => {
     query.mockResolvedValue(null);
     expect((await preview(request(data))).status).toBe(502);
+  });
+  it("behält exakte Thementreffer vor neueren Teiltreffern innerhalb des Vorschau-Limits", async () => {
+    const candidate = (title: string, topic: string, timestamp: number): ApiResultItem => ({
+      channel: "ARD",
+      title,
+      topic,
+      description: "",
+      filmlisteTimestamp: timestamp,
+      duration: 1800,
+      size: 100,
+      url_website: "https://example.org/folge",
+      url_video: "https://example.org/folge.mp4",
+      url_video_hd: "",
+      url_video_low: "",
+    });
+    const partial = Array.from({ length: 30 }, (_, index) =>
+      candidate(`Teiltreffer ${index}`, "Testserie Extra", 100 - index)
+    );
+    const exact = [candidate("Exakt neu", data.topic, 2), candidate("Exakt alt", data.topic, 1)];
+    query.mockResolvedValue([...partial, ...exact]);
+    vi.mocked(diagnoseRuleset).mockImplementation(async (item) => ({
+      title: item.title,
+      topic: item.topic,
+      duration: item.duration,
+      url: item.url_website,
+      status: "filtered",
+      reason: "Testdiagnose",
+    }));
+
+    const response = await preview(request(data));
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.limit).toBe(30);
+    expect(body.results).toHaveLength(30);
+    expect(body.results.map((result: { title: string }) => result.title)).toEqual([
+      ...exact.map((item) => item.title),
+      ...partial.slice(0, 28).map((item) => item.title),
+    ]);
+    expect(diagnoseRuleset).toHaveBeenCalledTimes(30);
   });
   it("unterscheidet nicht verfügbare Metadaten", async () => {
     show.mockResolvedValue(null);
