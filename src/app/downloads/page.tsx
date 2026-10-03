@@ -42,6 +42,7 @@ interface HistorySlot {
 export default function DownloadsPage() {
   const [queue, setQueue] = useState<QueueSlot[]>([]);
   const [history, setHistory] = useState<HistorySlot[]>([]);
+  const [historyPage, setHistoryPage] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [total, setTotal] = useState(0);
@@ -71,6 +72,7 @@ export default function DownloadsPage() {
       setError(null);
       setQueue(queueData.queue?.slots || []);
       setHistory(historyData.history?.slots || []);
+      setHistoryPage(page);
       setLastRefresh(new Date());
     } catch (error) {
       if (sequence === requestSequence.current) setError(error instanceof Error ? error.message : "Laden fehlgeschlagen.");
@@ -208,7 +210,11 @@ export default function DownloadsPage() {
                   <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(page + 1)}>Weiter</Button>
                 </div>
               </nav>
-              {history.length === 0 ? (
+              {historyPage !== page ? (
+                <p className="text-muted-foreground text-center py-8">
+                  {error ? "Historie konnte nicht geladen werden." : "Laden..."}
+                </p>
+              ) : history.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
                   Keine Downloads in der Historie
                 </p>
