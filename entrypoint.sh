@@ -86,7 +86,7 @@ else
 fi
 
 MISSING_TABLES=""
-for table in TvdbSeries TvdbEpisode Download Config GeneratedRuleset TopicCategory; do
+for table in TvdbSeries TvdbEpisode Download Config GeneratedRuleset TopicCategory SearchSubscription SubscriptionMatch; do
     if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$table';" | grep -q 1; then
         MISSING_TABLES="$MISSING_TABLES $table"
     fi
