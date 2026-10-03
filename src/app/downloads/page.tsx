@@ -46,6 +46,7 @@ export default function DownloadsPage() {
   const [options, setOptions] = useState({ parallel: 1, maxRetries: 2, paused: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueSlot[]>([]);
   const [history, setHistory] = useState<HistorySlot[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,8 +67,9 @@ export default function DownloadsPage() {
       setQueue(queueData.queue?.slots || []);
       setHistory(historyData.history?.slots || []);
       setLastRefresh(new Date());
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Laden fehlgeschlagen.");
+      setLoadError(null);
+    } catch {
+      setLoadError("Downloads konnten nicht geladen werden. Die Verbindung wird erneut geprüft.");
     } finally {
       setIsLoading(false);
     }
@@ -149,9 +151,9 @@ export default function DownloadsPage() {
         </div>
       </div>
 
-      {error && (
+      {(error || loadError) && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {error || loadError}
         </p>
       )}
       <Card>
