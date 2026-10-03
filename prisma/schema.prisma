@@ -83,3 +83,43 @@ model TopicCategory {
 
   @@index([topic])
 }
+
+model SearchSubscription {
+  id String @id @default(uuid())
+  name String
+  query String
+  channel String @default("")
+  minMinutes Int @default(0)
+  maxMinutes Int @default(0)
+  intervalMinutes Int @default(60)
+  quality String @default("high")
+  action String @default("notify")
+  category String @default("default")
+  paused Boolean @default(false)
+  initialized Boolean @default(false)
+  lastCheckedAt DateTime?
+  nextCheckAt DateTime @default(now())
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  matches SubscriptionMatch[]
+  @@index([paused, nextCheckAt])
+}
+
+model SubscriptionMatch {
+  id String @id @default(uuid())
+  subscriptionId String
+  sourceKey String
+  title String
+  topic String
+  channel String
+  videoUrl String
+  websiteUrl String
+  duration Int
+  state String @default("new")
+  downloadId String?
+  foundAt DateTime @default(now())
+  subscription SearchSubscription @relation(fields:[subscriptionId], references:[id], onDelete:Cascade)
+  @@unique([subscriptionId,sourceKey])
+  @@index([subscriptionId,state,foundAt])
+}

@@ -12,6 +12,7 @@ import {
   Settings2,
   Settings,
   Wand2,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const navGroups: { items: NavItem[] }[] = [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/search", label: "Suche", icon: Search },
       { href: "/downloads", label: "Downloads", icon: Download },
+      { href: "/subscriptions", label: "Suchabos", icon: Bell },
     ],
   },
   {
