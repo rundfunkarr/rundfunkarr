@@ -85,6 +85,13 @@ else
     fail "Database initialization failed. Check that /app/prisma/data is writable by UID $PUID/GID $PGID."
 fi
 
+# Bestehende Datenbanken behalten ihre Downloads beim Schema-Upgrade.
+for column in mediaMetadata warning; do
+    if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT name FROM pragma_table_info('Download');" | grep -qx "$column"; then
+        su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE Download ADD COLUMN $column TEXT;"
+    fi
+done
+
 MISSING_TABLES=""
 for table in TvdbSeries TvdbEpisode Download Config GeneratedRuleset TopicCategory; do
     if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$table';" | grep -q 1; then

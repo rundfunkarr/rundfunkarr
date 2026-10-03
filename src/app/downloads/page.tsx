@@ -37,6 +37,7 @@ interface HistorySlot {
   storage: string;
   bytes: number;
   fail_message: string;
+  warning?: string;
 }
 
 export default function DownloadsPage() {
@@ -202,6 +203,7 @@ export default function DownloadsPage() {
                         <TableRow key={item.nzo_id}>
                           <TableCell className="font-medium max-w-xs">
                             <span className="truncate block">{item.name}</span>
+                            {item.warning && <span className="text-xs text-amber-500">{item.warning}</span>}
                             {item.fail_message && (
                               <span className="text-xs text-destructive">{item.fail_message}</span>
                             )}

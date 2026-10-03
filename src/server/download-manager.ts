@@ -1,3 +1,4 @@
+import { processSubtitles } from "./subtitles";
 import { prisma } from "@/lib/db";
 import { isMkvConversionEnabled } from "@/lib/settings";
 import { downloadHlsStream } from "./ytdlp";
@@ -205,6 +206,7 @@ async function processDownload(downloadId: string): Promise<void> {
       await moveIntoCategoryDir(outputPath, finalMkvPath, categoryDir);
 
       // Get file size
+      const warning = await processSubtitles(finalMkvPath, download.mediaMetadata);
       const stats = await fs.stat(finalMkvPath);
 
       // Calculate storage path (may be mapped differently)
@@ -220,6 +222,7 @@ async function processDownload(downloadId: string): Promise<void> {
         where: { id: downloadId },
         data: {
           status: "completed",
+          warning,
           progress: 100,
           size: stats.size,
           filePath: storagePath,
@@ -297,6 +300,7 @@ async function processDownload(downloadId: string): Promise<void> {
       await fs.unlink(mp4Path).catch(() => {});
 
       // Get file size
+      const warning = await processSubtitles(finalMkvPath, download.mediaMetadata);
       const stats = await fs.stat(finalMkvPath);
 
       // Calculate storage path (may be mapped differently)
@@ -312,6 +316,7 @@ async function processDownload(downloadId: string): Promise<void> {
         where: { id: downloadId },
         data: {
           status: "completed",
+          warning,
           progress: 100,
           size: stats.size,
           filePath: storagePath,
@@ -327,6 +332,7 @@ async function processDownload(downloadId: string): Promise<void> {
       const finalPath = path.join(categoryDir, `${download.title}${fileExtension}`);
       await moveIntoCategoryDir(mp4Path, finalPath, categoryDir);
 
+      const warning = await processSubtitles(finalPath, download.mediaMetadata);
       const stats = await fs.stat(finalPath);
 
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
@@ -338,6 +344,7 @@ async function processDownload(downloadId: string): Promise<void> {
         where: { id: downloadId },
         data: {
           status: "completed",
+          warning,
           progress: 100,
           size: stats.size,
           filePath: storagePath,

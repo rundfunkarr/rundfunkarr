@@ -35,6 +35,8 @@ export interface ProviderContentItem {
   websiteUrl: string;
   /** Available video URLs by quality */
   videoUrls: ProviderVideoUrls;
+  subtitleUrl?: string;
+  audioLanguage?: string;
 }
 
 /**

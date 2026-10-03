@@ -46,6 +46,8 @@ model Download {
   speed           BigInt    @default(0)
   filePath        String?
   error           String?
+  mediaMetadata   String?
+  warning         String?
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
 
