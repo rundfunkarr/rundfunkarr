@@ -20,7 +20,7 @@ const state = (shared.rundfunkarrLogs ??= {
   installed: false,
 });
 export function rememberLogSecret(value: unknown) {
-  if (typeof value === "string" && value.length >= 4) {
+  if (typeof value === "string" && value.length > 0) {
     state.secrets.add(value);
     if (state.secrets.size > 512) state.secrets.delete(state.secrets.values().next().value!);
   }

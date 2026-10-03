@@ -39,3 +39,8 @@ it("bereinigt auch strukturierte Fehlermeldungen und später bekannte Werte", ()
   rememberLogSecret("nachtraeglich-vertraulich");
   expect(readLogs().at(-1)?.message).toBe("[vertraulich]");
 });
+
+it("blendet auch kurze gespeicherte PINs aus", () => {
+  rememberLogSecret("29");
+  expect(redactLog("Verwendete PIN 29")).not.toContain("29");
+});
