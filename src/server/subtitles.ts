@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import path from "node:path";
 import { getSetting } from "@/lib/settings";
 import { parseMediaMetadata } from "@/lib/media-metadata";
+import { publishSubtitleSidecar, type SubtitleArtifact } from "./subtitle-artifact";
 
 interface Cue {
   start: number;
@@ -165,37 +166,53 @@ async function embed(video: string, subtitle: string, output: string): Promise<v
 export async function processSubtitles(
   videoPath: string,
   metadataJson?: string | null
-): Promise<string | null> {
+): Promise<{ warning: string | null; artifact: SubtitleArtifact | null }> {
   let mode: string | null;
   try {
     mode = await getSetting("download.subtitleMode");
   } catch {
-    return "Untertitel konnten nicht verarbeitet werden.";
+    return { warning: "Untertitel konnten nicht verarbeitet werden.", artifact: null };
   }
-  if (mode !== "sidecar" && mode !== "embed") return null;
+  if (mode !== "sidecar" && mode !== "embed") return { warning: null, artifact: null };
   const metadata = parseMediaMetadata(metadataJson);
-  if (!metadata.subtitleUrl) return null;
+  if (!metadata.subtitleUrl) return { warning: null, artifact: null };
   const base = videoPath.slice(0, -path.extname(videoPath).length);
   const sidecar = `${base}.srt`;
-  const temporary = `${base}.subtitles${path.extname(videoPath)}`;
+  let directory: string | undefined;
+  let artifact: SubtitleArtifact | null = null;
   try {
     const srt = await subtitleToSrt(await fetchSubtitle(metadata.subtitleUrl));
-    await fs.writeFile(`${sidecar}.tmp`, srt, "utf8");
-    await fs.rename(`${sidecar}.tmp`, sidecar);
-    if (mode === "embed") {
-      if (![".mkv", ".mp4"].includes(path.extname(videoPath).toLowerCase()))
-        return "Untertitel wurden separat gespeichert; Einbetten ist nur für MKV und MP4 verfügbar.";
-      await embed(videoPath, sidecar, temporary);
-      await fs.rename(temporary, videoPath);
-      await fs.unlink(sidecar);
+    directory = await fs.mkdtemp(path.join(path.dirname(videoPath), ".rundfunkarr-subtitles-"));
+    const staged = path.join(directory, "subtitle.srt");
+    await fs.writeFile(staged, srt, { encoding: "utf8", flag: "wx" });
+    if (mode === "embed" && [".mkv", ".mp4"].includes(path.extname(videoPath).toLowerCase())) {
+      const temporary = path.join(directory, `video${path.extname(videoPath)}`);
+      try {
+        await embed(videoPath, staged, temporary);
+        await fs.rename(temporary, videoPath);
+        return { warning: null, artifact: null };
+      } catch (error) {
+        artifact = await publishSubtitleSidecar(staged, sidecar);
+        throw error;
+      }
     }
-    return null;
+    artifact = await publishSubtitleSidecar(staged, sidecar);
+    return {
+      warning:
+        mode === "embed"
+          ? "Untertitel wurden separat gespeichert; Einbetten ist nur für MKV und MP4 verfügbar."
+          : null,
+      artifact,
+    };
   } catch (error) {
-    return error instanceof Error
-      ? `Untertitel: ${error.message}`
-      : "Untertitel konnten nicht verarbeitet werden.";
+    return {
+      warning:
+        error instanceof Error
+          ? `Untertitel: ${error.message}`
+          : "Untertitel konnten nicht verarbeitet werden.",
+      artifact,
+    };
   } finally {
-    await fs.unlink(temporary).catch(() => {});
-    await fs.unlink(`${sidecar}.tmp`).catch(() => {});
+    if (directory) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
   }
 }

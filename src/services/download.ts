@@ -224,12 +224,8 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
     try {
       const fs = await import("fs/promises");
       await fs.unlink(download.filePath).catch(() => {});
-      if (parseMediaMetadata(download.mediaMetadata).subtitleUrl) {
-        const path = await import("node:path");
-        const subtitlePath =
-          download.filePath.slice(0, -path.extname(download.filePath).length) + ".srt";
-        await fs.unlink(subtitlePath).catch(() => {});
-      }
+      const { deleteSubtitleSidecar } = await import("@/server/subtitle-artifact");
+      await deleteSubtitleSidecar(download.subtitleArtifact);
     } catch {
       // File might not exist, ignore error
     }

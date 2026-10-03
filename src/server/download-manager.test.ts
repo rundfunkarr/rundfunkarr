@@ -177,16 +177,23 @@ describe("processDownload", () => {
     }
   );
 
-  it.each(["mp4", "mkv", "hls"])(
-    "keeps a finished %s download complete when subtitle settings cannot be read",
-    async (source) => {
+  it.each(
+    ["mp4", "mkv", "hls"].flatMap((source) =>
+      [true, false].map((settingFailure) => ({ source, settingFailure }))
+    )
+  )(
+    "keeps a finished $source download complete (subtitle setting failure: $settingFailure)",
+    async ({ source, settingFailure }) => {
       const mediaBytes = new Uint8Array([1, 2, 3, 4]);
       const title = "Subtitle.Settings.Failure";
       const extension = source === "mkv" ? "mkv" : "mp4";
       configFindUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
         if (where.key === "download.path") return { value: testRoot };
         if (where.key === "download.convertToMkv") return { value: String(source === "mkv") };
-        if (where.key === "download.subtitleMode") throw new Error("Settings unavailable");
+        if (where.key === "download.subtitleMode") {
+          if (settingFailure) throw new Error("Settings unavailable");
+          return { value: "sidecar" };
+        }
         return null;
       });
       downloadFindUnique.mockResolvedValue({
@@ -209,12 +216,14 @@ describe("processDownload", () => {
       });
       vi.stubGlobal(
         "fetch",
-        vi.fn().mockResolvedValue(
-          new Response(mediaBytes, {
+        vi.fn(async (url: string) => {
+          if (url === "https://example.com/subtitles.vtt")
+            return new Response("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n");
+          return new Response(mediaBytes, {
             status: 200,
             headers: { "content-length": String(mediaBytes.byteLength) },
-          })
-        )
+          });
+        })
       );
 
       await processDownload("subtitle-settings");
@@ -226,13 +235,20 @@ describe("processDownload", () => {
         where: { id: "subtitle-settings" },
         data: expect.objectContaining({
           status: "completed",
-          warning: expect.stringContaining("Untertitel"),
+          warning: settingFailure ? expect.stringContaining("Untertitel") : null,
           filePath: `/mapped/downloads/sonarr/${title}.${extension}`,
         }),
       });
       expect(downloadUpdate).not.toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
       );
+      const artifact = downloadUpdate.mock.lastCall![0].data.subtitleArtifact;
+      if (settingFailure) expect(artifact).toBeNull();
+      else {
+        const record = JSON.parse(artifact);
+        expect(record.path).toBe(path.join(testRoot, "sonarr", `${title}.srt`));
+        await expect(readFile(record.path, "utf8")).resolves.toContain("Subtitle");
+      }
     }
   );
 

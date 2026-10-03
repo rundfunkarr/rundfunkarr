@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS Download (
     error TEXT,
     mediaMetadata TEXT,
     warning TEXT,
+    subtitleArtifact TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     completedAt DATETIME
 );

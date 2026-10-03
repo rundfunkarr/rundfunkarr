@@ -48,6 +48,7 @@ model Download {
   error           String?
   mediaMetadata   String?
   warning         String?
+  subtitleArtifact String?   // JSON identity of the sidecar created by this download
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
 

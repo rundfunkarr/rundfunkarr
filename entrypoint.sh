@@ -86,7 +86,7 @@ else
 fi
 
 # Bestehende Datenbanken behalten ihre Downloads beim Schema-Upgrade.
-for column in mediaMetadata warning; do
+for column in mediaMetadata warning subtitleArtifact; do
     if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT name FROM pragma_table_info('Download');" | grep -qx "$column"; then
         su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE Download ADD COLUMN $column TEXT;"
     fi
