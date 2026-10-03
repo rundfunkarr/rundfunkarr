@@ -55,17 +55,26 @@ class Semaphore {
 const downloadSemaphore = new Semaphore(MAX_CONCURRENT_DOWNLOADS);
 let isProcessing = false;
 let processingPromise: Promise<void> | null = null;
+let processingRequested = false;
 
-export async function startDownloadProcessing(): Promise<void> {
-  if (isProcessing) {
-    return processingPromise || Promise.resolve();
-  }
+export function startDownloadProcessing(): Promise<void> {
+  processingRequested = true;
+  if (processingPromise) return processingPromise;
 
   isProcessing = true;
-  processingPromise = processQueue();
-  await processingPromise;
-  isProcessing = false;
-  processingPromise = null;
+  processingPromise = (async () => {
+    try {
+      // Auch Anforderungen während der letzten, leeren Abfrage berücksichtigen.
+      do {
+        processingRequested = false;
+        await processQueue();
+      } while (processingRequested);
+    } finally {
+      isProcessing = false;
+      processingPromise = null;
+    }
+  })();
+  return processingPromise;
 }
 
 async function processQueue(): Promise<void> {
@@ -81,11 +90,9 @@ async function processQueue(): Promise<void> {
       break;
     }
 
-    // Start download in background (respecting semaphore)
-    processDownload(nextDownload.id).catch(console.error);
-
-    // Small delay to prevent tight loop
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Erst nach Abschluss den nächsten Auftrag auswählen. Sonst wird derselbe
+    // wartende Auftrag bei belegtem Semaphore immer wieder vorgemerkt.
+    await processDownload(nextDownload.id);
   }
 }
 
