@@ -1,193 +1,418 @@
 "use client";
-
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download } from "lucide-react";
 import { formatDuration, formatSize, formatDate } from "@/lib/formatters";
+import type { SearchResult } from "@/app/api/search/route";
 
-interface SearchResult {
-  id: string;
-  channel: string;
-  topic: string;
-  title: string;
-  description: string;
-  timestamp: number;
-  duration: number;
-  size: number;
-  url_video: string;
-  url_video_hd: string;
-  url_website: string;
-  category?: "movie" | "tv" | "unknown";
-}
-
+type Quality = "low" | "standard" | "high";
+const selectClass = "h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm";
 export default function SearchPage() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setIsSearching(true);
+  const [filters, setFilters] = useState({
+    q: "",
+    channel: "",
+    minMinutes: "",
+    maxMinutes: "",
+    from: "",
+    to: "",
+    sort: "date",
+  });
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [snapshot, setSnapshot] = useState("");
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [limited, setLimited] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [selection, setSelection] = useState(new Set<string>());
+  const [added, setAdded] = useState(new Set<string>());
+  const [quality, setQuality] = useState<Quality>("high");
+  const [manualUrl, setManualUrl] = useState("");
+  const sequence = useRef(0);
+  const change = (key: keyof typeof filters, value: string) =>
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  async function search(more = false) {
+    const request = ++sequence.current;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    if (!more) {
+      setResults([]);
+      setSelection(new Set());
+      setAdded(new Set());
+      setSnapshot("");
+      setHasMore(false);
+      setSearched(false);
+    }
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=50`);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setSearchResults(data.results || []);
-    } catch (error) {
-      console.error("Search failed:", error);
-      setSearchResults([]);
+      const params = more
+        ? new URLSearchParams({ snapshot, offset: String(results.length) })
+        : new URLSearchParams(filters);
+      const response = await fetch(`/api/search/advanced?${params}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Die Suche ist fehlgeschlagen.");
+      if (request !== sequence.current) return;
+      setResults((prev) => (more ? [...prev, ...data.results] : data.results));
+      setSnapshot(data.snapshot);
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+      setLimited(data.limited);
+      setSearched(true);
+    } catch (e) {
+      if (request === sequence.current)
+        setError(e instanceof Error ? e.message : "Die Suche ist fehlgeschlagen.");
     } finally {
-      setIsSearching(false);
+      if (request === sequence.current) setBusy(false);
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
-  };
-
-  const handleDownload = async (result: SearchResult) => {
-    setDownloadingIds((prev) => new Set(prev).add(result.id));
-
-    const fileName = `${result.topic} - ${result.title}`.replace(/[<>:"/\\|?*]/g, "_");
-    const nzbContent = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE nzb PUBLIC "-//newzBin//DTD NZB 1.1//EN" "http://www.newzbin.com/DTD/nzb/nzb-1.1.dtd">
-<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">
-  <head>
-    <meta type="filename" filename="${fileName}.nzb"/>
-  </head>
-  <!-- ${result.url_video_hd || result.url_video} -->
-</nzb>`;
-
-    // Use category for download folder: movie -> /movie, tv -> /tv
-    const cat = result.category === "movie" ? "movie" : result.category === "tv" ? "tv" : "default";
-
+  }
+  async function download(ids: string[]) {
+    setAdding(true);
+    setError("");
+    setMessage("");
     try {
-      const res = await fetch(`/api/download?mode=addfile&cat=${cat}`, {
+      const response = await fetch("/api/search/batch", {
         method: "POST",
-        body: nzbContent,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snapshot, ids, quality }),
       });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      if (!data.status) {
-        console.error("Download failed");
-      }
-    } catch (error) {
-      console.error("Download failed:", error);
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error || "Downloads konnten nicht hinzugefügt werden.");
+      const accepted = (data.results as { id: string; downloadId?: string }[])
+        .filter((x) => x.downloadId)
+        .map((x) => x.id);
+      setAdded((prev) => new Set([...prev, ...accepted]));
+      setSelection((prev) => new Set([...prev].filter((id) => !accepted.includes(id))));
+      setMessage(
+        `${accepted.length} Download${accepted.length === 1 ? "" : "s"} zur Warteschlange hinzugefügt.`
+      );
+      if (accepted.length < ids.length)
+        setError(
+          "Einige Downloads konnten nicht hinzugefügt werden. Die verbleibende Auswahl kann erneut versucht werden."
+        );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Downloads konnten nicht hinzugefügt werden.");
     } finally {
-      setDownloadingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(result.id);
-        return next;
-      });
+      setAdding(false);
     }
-  };
-
+  }
+  async function manual() {
+    setAdding(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/search/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: manualUrl, quality }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Der Link konnte nicht hinzugefügt werden.");
+      setMessage(`„${data.title}“ wurde zur Warteschlange hinzugefügt.`);
+      setManualUrl("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Der Link konnte nicht hinzugefügt werden.");
+    } finally {
+      setAdding(false);
+    }
+  }
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
+    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 min-w-0">
       <div>
         <h1 className="text-2xl font-bold">Suche</h1>
-        <p className="text-muted-foreground text-sm">Durchsuche die Mediatheken</p>
+        <p className="text-muted-foreground text-sm">
+          Sendungen finden und gemeinsam herunterladen
+        </p>
       </div>
-
-      {/* Search Input */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Mediathek durchsuchen</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Suchbegriff eingeben..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="pl-10"
-              />
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void search();
+            }}
+            className="space-y-4"
+          >
+            <div className="flex gap-2">
+              <label className="flex-1 min-w-0">
+                <span className="sr-only">Suchbegriff</span>
+                <Input
+                  placeholder="Titel oder Thema, z. B. Terra X"
+                  value={filters.q}
+                  onChange={(e) => change("q", e.target.value)}
+                  minLength={2}
+                  maxLength={200}
+                  required
+                />
+              </label>
+              <Button type="submit" disabled={busy || adding}>
+                {busy ? "Suche läuft…" : "Suchen"}
+              </Button>
             </div>
-            <Button onClick={handleSearch} disabled={isSearching}>
-              {isSearching ? "Suche..." : "Suchen"}
-            </Button>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
+              <label className="text-sm min-w-0">
+                Sender
+                <Input
+                  placeholder="Alle Sender"
+                  value={filters.channel}
+                  onChange={(e) => change("channel", e.target.value)}
+                  maxLength={100}
+                />
+              </label>
+              <label className="text-sm min-w-0">
+                Laufzeit ab (Minuten)
+                <Input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  value={filters.minMinutes}
+                  onChange={(e) => change("minMinutes", e.target.value)}
+                  placeholder="0"
+                />
+              </label>
+              <label className="text-sm min-w-0">
+                Laufzeit bis (Minuten)
+                <Input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  value={filters.maxMinutes}
+                  onChange={(e) => change("maxMinutes", e.target.value)}
+                  placeholder="Unbegrenzt"
+                />
+              </label>
+              <label className="text-sm min-w-0">
+                Ausgestrahlt ab
+                <Input
+                  type="date"
+                  value={filters.from}
+                  onChange={(e) => change("from", e.target.value)}
+                />
+              </label>
+              <label className="text-sm min-w-0">
+                Ausgestrahlt bis
+                <Input
+                  type="date"
+                  value={filters.to}
+                  onChange={(e) => change("to", e.target.value)}
+                />
+              </label>
+              <label className="text-sm min-w-0">
+                Sortierung
+                <select
+                  className={selectClass}
+                  value={filters.sort}
+                  onChange={(e) => change("sort", e.target.value)}
+                >
+                  <option value="date">Neueste zuerst</option>
+                  <option value="title">Titel A–Z</option>
+                  <option value="duration">Längste zuerst</option>
+                </select>
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Laufzeit und Datum filtern die bis zu 1.000 neuesten Treffer der aktivierten Quellen.
+              Ein genauer Suchbegriff oder Sender grenzt die Suche bereits an der Quelle ein.
+              Datumsgrenzen beziehen sich auf UTC.
+            </p>
+          </form>
         </CardContent>
       </Card>
-
-      {/* Search Results */}
-      {searchResults.length > 0 && (
-        <Card>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-sm min-w-0 w-52">
+          Download-Qualität
+          <select
+            className={selectClass}
+            value={quality}
+            onChange={(e) => setQuality(e.target.value as Quality)}
+          >
+            <option value="high">Hoch / bis 1080p</option>
+            <option value="standard">Standard / bis 720p</option>
+            <option value="low">Niedrig / bis 480p</option>
+          </select>
+        </label>
+        <p className="text-xs text-muted-foreground max-w-md">
+          Fehlt die gewählte Direktdatei, wird die Standarddatei verwendet. Streams werden auf die
+          gewählte Höhe begrenzt.
+        </p>
+      </div>
+      <Card className="min-w-0">
+        <CardContent className="pt-5">
+          <details>
+            <summary className="cursor-pointer font-medium">Link direkt hinzufügen</summary>
+            <p className="text-sm text-muted-foreground my-3">
+              MP4-/M3U8-Link oder Sendungsseite von ARD, ZDF, Arte, 3sat, ORF oder SRF. Für
+              Sendungsseiten muss HLS aktiviert sein.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void manual();
+              }}
+              className="flex flex-col sm:flex-row gap-2"
+            >
+              <Input
+                type="url"
+                aria-label="Mediathek-Link"
+                placeholder="https://…"
+                value={manualUrl}
+                onChange={(e) => setManualUrl(e.target.value)}
+                required
+                className="min-w-0"
+              />
+              <Button disabled={adding || busy} type="submit">
+                {adding ? "Wird hinzugefügt…" : "Download hinzufügen"}
+              </Button>
+            </form>
+          </details>
+        </CardContent>
+      </Card>
+      {error && (
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm break-words"
+        >
+          {error}
+        </p>
+      )}
+      {message && (
+        <p role="status" className="text-sm">
+          {message}{" "}
+          <a className="underline" href="/downloads">
+            Zur Warteschlange
+          </a>
+        </p>
+      )}
+      {searched && (
+        <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>{searchResults.length} Ergebnisse</CardTitle>
+            <CardTitle>
+              {results.length} von {total} Ergebnissen
+            </CardTitle>
+            {limited && (
+              <p className="text-sm text-amber-500">
+                Die Grenze von 1.000 Quelltreffern wurde erreicht. Bitte die Suche eingrenzen, um
+                weitere passende Sendungen zu finden.
+              </p>
+            )}
           </CardHeader>
           <CardContent className="space-y-3">
-            {searchResults.map((result) => (
-              <Card key={result.id} className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <Badge variant="outline" className="text-xs">
-                        {result.channel}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">{result.topic}</span>
-                      {result.category === "movie" && (
-                        <Badge className="text-xs bg-violet-600">Film</Badge>
-                      )}
-                      {result.category === "tv" && (
-                        <Badge className="text-xs bg-sky-600">Serie</Badge>
-                      )}
-                      {result.title.includes("Gebärdensprache") && (
-                        <Badge className="text-xs bg-purple-600">DGS</Badge>
-                      )}
-                      {(result.title.includes("Audiodeskription") ||
-                        result.title.includes("Hörfassung")) && (
-                        <Badge className="text-xs bg-blue-600">AD</Badge>
-                      )}
-                      {result.title.includes("Untertitel") && (
-                        <Badge className="text-xs bg-green-600">UT</Badge>
-                      )}
+            {!!results.length && (
+              <div className="flex flex-wrap gap-2 items-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={adding}
+                  onClick={() =>
+                    setSelection(
+                      new Set(
+                        results
+                          .filter((x) => !added.has(x.id))
+                          .slice(0, 50)
+                          .map((x) => x.id)
+                      )
+                    )
+                  }
+                >
+                  Bis zu 50 auswählen
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelection(new Set())}
+                  disabled={!selection.size || adding}
+                >
+                  Auswahl aufheben
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!selection.size || adding || busy}
+                  onClick={() => void download([...selection])}
+                >
+                  {selection.size} herunterladen
+                </Button>
+              </div>
+            )}
+            {results.map((result) => (
+              <article key={result.id} className="rounded-lg border p-4 min-w-0">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 shrink-0"
+                    aria-label={`${result.title} auswählen`}
+                    checked={selection.has(result.id)}
+                    disabled={
+                      added.has(result.id) ||
+                      adding ||
+                      (!selection.has(result.id) && selection.size >= 50)
+                    }
+                    onChange={(e) =>
+                      setSelection((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(result.id);
+                        else next.delete(result.id);
+                        return next;
+                      })
+                    }
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex gap-2 flex-wrap items-center">
+                      <Badge variant="outline">{result.channel}</Badge>
+                      <span className="text-sm text-muted-foreground break-words">
+                        {result.topic}
+                      </span>
                     </div>
-                    <h3 className="font-medium">{result.title}</h3>
+                    <h2 className="font-medium mt-1 break-words">{result.title}</h2>
                     {result.description && (
                       <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                         {result.description}
                       </p>
                     )}
-                    <p className="text-sm text-muted-foreground mt-2">
-                      {formatDate(result.timestamp)} &bull; {formatDuration(result.duration)} &bull;{" "}
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {formatDate(result.timestamp)} · {formatDuration(result.duration)} ·{" "}
                       {formatSize(result.size)}
                     </p>
+                    <div className="flex flex-wrap gap-3 mt-3 items-center">
+                      <Button
+                        size="sm"
+                        disabled={adding || added.has(result.id) || busy}
+                        onClick={() => void download([result.id])}
+                      >
+                        {added.has(result.id) ? "Hinzugefügt" : "Herunterladen"}
+                      </Button>
+                      {/^https?:\/\//i.test(result.url_website) && (
+                        <a
+                          href={result.url_website}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm underline"
+                        >
+                          Sendungsseite
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={() => handleDownload(result)}
-                    disabled={downloadingIds.has(result.id)}
-                  >
-                    <Download className="w-4 h-4 mr-1" />
-                    {downloadingIds.has(result.id) ? "..." : "Download"}
-                  </Button>
                 </div>
-              </Card>
+              </article>
             ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Empty State */}
-      {!isSearching && searchResults.length === 0 && searchQuery && (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            Keine Ergebnisse gefunden für &quot;{searchQuery}&quot;
+            {!results.length && (
+              <p className="text-sm text-muted-foreground">
+                Keine Treffer für diese Filter. Suchbegriff, Sender oder Zeitraum anpassen.
+              </p>
+            )}
+            {hasMore && (
+              <Button variant="outline" disabled={busy || adding} onClick={() => void search(true)}>
+                {busy ? "Wird geladen…" : "Weitere 50 laden"}
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
