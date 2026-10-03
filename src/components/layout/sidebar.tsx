@@ -12,6 +12,7 @@ import {
   Settings2,
   Settings,
   Wand2,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +40,7 @@ const navGroups: { items: NavItem[] }[] = [
   {
     items: [
       { href: "/settings", label: "Settings", icon: Settings },
+      { href: "/logs", label: "Diagnose & Protokoll", icon: FileText },
       { href: "/setup", label: "Setup", icon: Wand2 },
     ],
   },
