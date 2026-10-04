@@ -3,8 +3,13 @@ import { NextRequest } from "next/server";
 import type { Download } from "@prisma/client";
 
 const { create, findMany } = vi.hoisted(() => ({ create: vi.fn(), findMany: vi.fn() }));
-vi.mock("@/lib/db", () => ({ prisma: { download: { create, findMany } } }));
-vi.mock("@/server/download-manager", () => ({ startDownloadProcessing: vi.fn(async () => {}) }));
+vi.mock("@/lib/db", () => ({
+  prisma: { download: { create, findMany }, config: { findUnique: vi.fn(async () => null) } },
+}));
+vi.mock("@/server/download-queue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/download-queue")>()),
+  startDownloadProcessing: vi.fn(async () => {}),
+}));
 
 import { GET, POST } from "./route";
 import { POST as webPost } from "./download/route";

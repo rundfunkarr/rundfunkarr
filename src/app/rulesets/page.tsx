@@ -20,6 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { RulesetEditor } from "@/components/rulesets/ruleset-editor";
+import type { RulesetInput } from "@/lib/ruleset-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,16 +33,20 @@ interface Ruleset {
   tvdbId: number;
   showName: string;
   germanName: string | null;
-  matchingStrategy: string;
+  matchingStrategy: RulesetInput["matchingStrategy"];
   filters: string;
   episodeRegex: string;
   seasonRegex: string;
   titleRegexRules: string;
   createdAt: string;
-  updatedAt: string;
+  updatedAt: string | null;
+  source: "local" | "community";
 }
 
 export default function RulesetsPage() {
+  const [editing, setEditing] = useState<Ruleset | null | undefined>(undefined);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [rulesets, setRulesets] = useState<Ruleset[]>([]);
   const [filteredRulesets, setFilteredRulesets] = useState<Ruleset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,10 +64,11 @@ export default function RulesetsPage() {
         throw new Error(`HTTP ${res.status}`);
       }
       const data = await res.json();
+      setError(null);
       setRulesets(Array.isArray(data) ? data : []);
       setFilteredRulesets(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Failed to fetch rulesets:", error);
+      setError(error instanceof Error ? error.message : "Regeln konnten nicht geladen werden.");
       setRulesets([]);
       setFilteredRulesets([]);
     } finally {
@@ -94,11 +101,11 @@ export default function RulesetsPage() {
 
     try {
       const res = await fetch(`/api/rulesets?id=${deleteConfirm.ruleset.id}`, { method: "DELETE" });
-      if (res.ok) {
-        fetchRulesets();
-      }
+      if (!res.ok) throw new Error((await res.json()).error || "Löschen fehlgeschlagen.");
+      setMessage("Lokale Regel gelöscht. Die Community-Regeln gelten wieder.");
+      fetchRulesets();
     } catch (error) {
-      console.error("Failed to delete ruleset:", error);
+      setError(error instanceof Error ? error.message : "Löschen fehlgeschlagen.");
     } finally {
       setDeleteConfirm({ show: false, ruleset: null });
     }
@@ -108,9 +115,10 @@ export default function RulesetsPage() {
     switch (strategy) {
       case "SeasonAndEpisodeNumber":
         return <Badge variant="outline">S+E Nummer</Badge>;
-      case "TitleMatch":
+      case "ItemTitleExact":
+      case "ItemTitleIncludes":
         return <Badge variant="secondary">Titel Match</Badge>;
-      case "DateBased":
+      case "ItemTitleEqualsAirdate":
         return <Badge>Datum</Badge>;
       default:
         return <Badge variant="outline">{strategy}</Badge>;
@@ -130,6 +138,37 @@ export default function RulesetsPage() {
           Aktualisieren
         </Button>
       </div>
+
+      {message && (
+        <p role="status" className="text-sm">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <Button
+        onClick={() => {
+          setEditing(null);
+          setMessage(null);
+        }}
+      >
+        Eigene Regel anlegen
+      </Button>
+      {editing !== undefined && (
+        <RulesetEditor
+          key={editing?.id || "new"}
+          initial={editing}
+          onClose={() => setEditing(undefined)}
+          onSaved={() => {
+            setEditing(undefined);
+            setMessage("Lokale Regel gespeichert. Sie gilt ab der nächsten Suche.");
+            void fetchRulesets();
+          }}
+        />
+      )}
 
       {/* Search */}
       <Card>
@@ -172,7 +211,7 @@ export default function RulesetsPage() {
                     <TableHead>Show</TableHead>
                     <TableHead>TVDB ID</TableHead>
                     <TableHead>Strategie</TableHead>
-                    <TableHead>Aktualisiert</TableHead>
+                    <TableHead>Quelle</TableHead>
                     <TableHead className="w-24">Aktionen</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -201,15 +240,20 @@ export default function RulesetsPage() {
                         </a>
                       </TableCell>
                       <TableCell>{getStrategyBadge(rs.matchingStrategy)}</TableCell>
-                      <TableCell>
-                        {new Date(rs.updatedAt).toLocaleDateString("de-DE", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                        })}
-                      </TableCell>
+                      <TableCell>{rs.source === "local" ? "Lokal" : "Community"}</TableCell>
                       <TableCell>
                         <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditing(rs);
+                            setMessage(null);
+                          }}
+                        >
+                          Bearbeiten
+                        </Button>
+                        <Button
+                          disabled={rs.source !== "local"}
                           variant="ghost"
                           size="icon"
                           onClick={() => setDeleteConfirm({ show: true, ruleset: rs })}
@@ -237,7 +281,7 @@ export default function RulesetsPage() {
             <AlertDialogTitle>Ruleset löschen?</AlertDialogTitle>
             <AlertDialogDescription>
               Möchtest du das Ruleset für &quot;{deleteConfirm.ruleset?.topic}&quot; wirklich
-              löschen? Diese Aktion kann nicht rückgängig gemacht werden.
+              löschen? Danach gelten wieder die Community-Regeln für dieses Thema.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

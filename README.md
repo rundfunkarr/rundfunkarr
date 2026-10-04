@@ -332,6 +332,20 @@ verwendet.
 
 3. Pull Request erstellen
 
+### Regex execution limits
+
+Custom and community rule expressions run in a separate worker with a 100 ms
+execution limit, both in the preview and in regular searches. JavaScript regex
+syntax, including lookarounds and backreferences, remains supported. A timed-out
+expression aborts the current evaluation and is rejected for one minute; simplify
+the expression before trying again. The preview displays an error rather than an
+incomplete set of matches.
+
+The shared worker accepts at most 64 pending evaluations, with a maximum queue
+wait of two seconds. Expressions are limited to 4,096 characters and input fields
+to 65,536 characters (UTF-16 code units); oversized values are rejected, never
+truncated. The rule editor retains its tighter 300-character expression limit.
+
 ## Entwicklung
 
 ```bash

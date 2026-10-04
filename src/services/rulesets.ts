@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { mediathekCache } from "@/lib/cache";
 import type { Ruleset, TvdbData } from "@/types";
 import {
   getGeneratedRulesets,
@@ -137,7 +138,8 @@ export function getRulesetsForTopic(topic: string): Ruleset[] {
   const external = rulesetsByTopic.get(topic) || [];
 
   // Generated rulesets take priority, then external
-  return [...generated, ...external];
+  const overridden = new Set(generated.map((rule) => rule.media.media_tvdbId));
+  return [...generated, ...external.filter((rule) => !overridden.has(rule.media.media_tvdbId))];
 }
 
 export function getRulesetsForTopicAndTvdbId(topic: string, tvdbId: number): Ruleset[] {
@@ -244,4 +246,9 @@ export async function ensureRulesetsLoaded(): Promise<void> {
   }
 
   await initPromise;
+}
+
+export async function reloadLocalRulesets(): Promise<void> {
+  await loadGeneratedRulesets();
+  mediathekCache.clear();
 }

@@ -1,3 +1,4 @@
+import { handleQueueCommand } from "@/server/sabnzbd-queue-control";
 import { parseHistoryPage } from "@/lib/history-pagination";
 import { NextRequest, NextResponse } from "next/server";
 import { addNzb } from "@/server/add-nzb";
@@ -15,6 +16,9 @@ export async function GET(request: NextRequest) {
   const name = searchParams.get("name");
   const value = searchParams.get("value");
   const delFiles = searchParams.get("del_files") === "1";
+
+  const command = await handleQueueCommand(searchParams);
+  if (command) return command;
 
   switch (mode) {
     case "version":
@@ -54,7 +58,7 @@ export async function GET(request: NextRequest) {
       } catch (error) {
         return NextResponse.json({ error: (error as Error).message }, { status: 400 });
       }
-      const history = page ? await getHistory(page) : await getHistory();
+      const history = await getHistory(page, true);
       return NextResponse.json({ history });
     }
 

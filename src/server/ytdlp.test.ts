@@ -199,33 +199,37 @@ it("still reports success if only the final progress callback fails", async () =
   expect(await done).toEqual({ success: true, outputPath: "/tmp/result.mkv" });
 });
 
-it("awaits pending progress updates before marking a download complete", async () => {
-  let release!: () => void;
-  const onProgress = vi.fn(
-    () =>
-      new Promise<void>((resolve) => {
-        release = resolve;
-      })
-  );
-  const done = downloadVideo("https://example.org/master.m3u8", {
-    outputPath: "/tmp/result.mkv",
-    onProgress,
-  });
-  await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
-  child.stdout.emit(
-    "data",
-    Buffer.from("[download]  45.2% of 500.00MiB at 10.50MiB/s ETA 00:25\n")
-  );
-  child.emit("close", 0);
-  let completed = false;
-  void done.then(() => {
-    completed = true;
-  });
-  await vi.waitFor(() => expect(onProgress).toHaveBeenCalled());
-  expect(completed).toBe(false);
-  release();
-  expect((await done).success).toBe(true);
-});
+it.each([false, true])(
+  "awaits pending progress after process closure (write fails: %s)",
+  async (writeFails) => {
+    let release!: () => void;
+    const onProgress = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          release = () => (writeFails ? reject(new Error("database unavailable")) : resolve());
+        })
+    );
+    const done = downloadVideo("https://example.org/master.m3u8", {
+      outputPath: "/tmp/result.mkv",
+      onProgress,
+    });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    child.stdout.emit(
+      "data",
+      Buffer.from("[download]  45.2% of 500.00MiB at 10.50MiB/s ETA 00:25\n")
+    );
+    child.emit("close", 0);
+    let completed = false;
+    void done.then(() => {
+      completed = true;
+    });
+    await vi.waitFor(() => expect(onProgress).toHaveBeenCalled());
+    expect(completed).toBe(false);
+    release();
+    expect((await done).success).toBe(!writeFails);
+    expect(child.kill).not.toHaveBeenCalled();
+  }
+);
 
 it("reports rejected progress writes without an unhandled rejection", async () => {
   const done = downloadVideo("https://example.org/master.m3u8", {
@@ -239,7 +243,7 @@ it("reports rejected progress writes without an unhandled rejection", async () =
     "data",
     Buffer.from("[download]  45.2% of 500.00MiB at 10.50MiB/s ETA 00:25\n")
   );
-  await vi.waitFor(() => expect(child.kill).toHaveBeenCalled());
+  await vi.waitFor(() => expect(child.kill).toHaveBeenCalledWith("SIGKILL"));
   child.emit("close", 0);
   expect((await done).success).toBe(false);
 });
@@ -270,22 +274,60 @@ it.each([480, 720, 1080] as const)(
   }
 );
 
-it("times out a silent downloader without waiting for a close event", async () => {
-  vi.useFakeTimers();
-  try {
-    const done = downloadVideo("https://example.org/master.m3u8", {
-      outputPath: "/tmp/result.mkv",
-    });
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
-    await vi.advanceTimersByTimeAsync(10 * 60_000);
-    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
-    expect(await done).toEqual({ success: false, error: expect.stringContaining("timed out") });
-    child.emit("close", 0);
-    expect(vi.getTimerCount()).toBe(0);
-  } finally {
-    vi.useRealTimers();
+it.each([false, true])(
+  "waits for process closure and pending progress after a timeout (pending write: %s)",
+  async (pendingWrite) => {
+    vi.useFakeTimers();
+    let releaseProgress = () => {};
+    const onProgress = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseProgress = resolve;
+        })
+    );
+    const kill = vi.spyOn(process, "kill").mockReturnValue(true);
+    if (process.platform !== "win32") Object.assign(child, { pid: 12345 });
+    try {
+      const done = downloadVideo("https://example.org/master.m3u8", {
+        outputPath: "/tmp/result.mkv",
+        onProgress,
+      });
+      let settled = false;
+      void done.then(() => {
+        settled = true;
+      });
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+      if (pendingWrite) {
+        child.stdout.emit(
+          "data",
+          Buffer.from("[download]  45.2% of 500.00MiB at 10.50MiB/s ETA 00:25\n")
+        );
+        await vi.waitFor(() => expect(onProgress).toHaveBeenCalled());
+      }
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(settled).toBe(false);
+      if (process.platform !== "win32") expect(kill).toHaveBeenCalledWith(-12345, "SIGKILL");
+      else expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+      // Even a late successful exit cannot undo the timeout. New output must
+      // neither restart its timer nor schedule progress after termination.
+      child.stdout.emit(
+        "data",
+        Buffer.from("[download]  99.0% of 500.00MiB at 10.50MiB/s ETA 00:01\n")
+      );
+      child.emit("close", 0);
+      await vi.advanceTimersByTimeAsync(0);
+      if (pendingWrite) expect(settled).toBe(false);
+      releaseProgress();
+      expect(await done).toEqual({ success: false, error: expect.stringContaining("timed out") });
+      expect(onProgress).toHaveBeenCalledTimes(pendingWrite ? 1 : 0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      releaseProgress();
+      kill.mockRestore();
+      vi.useRealTimers();
+    }
   }
-});
+);
 
 it("allows long active downloads and clears the timeout on completion", async () => {
   vi.useFakeTimers();
@@ -323,4 +365,22 @@ it("clears the download timeout after a process error", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("beendet yt-dlp bei einem Abbruch und startet danach keine Audiospur", async () => {
+  const controller = new AbortController();
+  const done = downloadHlsStream(
+    "https://example.org/master.m3u8",
+    "/tmp/result.mkv",
+    undefined,
+    "mkv",
+    undefined,
+    controller.signal
+  );
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  controller.abort("pause");
+  expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+  child.emit("close", null);
+  expect((await done).success).toBe(false);
+  expect(spawn).toHaveBeenCalledTimes(1);
 });
