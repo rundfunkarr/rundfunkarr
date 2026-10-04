@@ -1,4 +1,8 @@
-import { cancelProcessOnAbort, cancellableProcessOptions } from "./process-cancellation";
+import {
+  cancelProcessOnAbort,
+  cancellableProcessOptions,
+  terminateProcess,
+} from "./process-cancellation";
 import { spawn } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -344,19 +348,20 @@ export async function downloadVideo(
     let progressUpdates = Promise.resolve();
     let progressError: unknown;
     let ended = false;
+    let timedOut = false;
     let stallTimer: ReturnType<typeof setTimeout>;
     const resetStallTimer = () => {
       clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
-        ended = true;
-        proc.kill("SIGKILL");
-        resolve({ success: false, error: "yt-dlp timed out after 10 minutes without output" });
+        timedOut = true;
+        // Wait for close and outstanding progress writes before allowing a retry.
+        terminateProcess(proc);
       }, DOWNLOAD_STALL_TIMEOUT_MS);
     };
     resetStallTimer();
 
     proc.stdout.on("data", (data) => {
-      if (ended) return;
+      if (ended || timedOut || progressError || options.signal?.aborted) return;
       resetStallTimer();
       const line = data.toString();
 
@@ -374,13 +379,14 @@ export async function downloadVideo(
           .then(() => options.onProgress?.(percent, speed, eta))
           .catch((error) => {
             progressError = error;
-            proc.kill();
+            clearTimeout(stallTimer);
+            if (!ended) terminateProcess(proc);
           });
       }
     });
 
     proc.stderr.on("data", (data) => {
-      if (ended) return;
+      if (ended || timedOut || progressError || options.signal?.aborted) return;
       resetStallTimer();
       stderr += data.toString();
     });
@@ -390,6 +396,10 @@ export async function downloadVideo(
       if (ended) return;
       ended = true;
       await progressUpdates;
+      if (timedOut) {
+        resolve({ success: false, error: "yt-dlp timed out after 10 minutes without output" });
+        return;
+      }
       if (progressError) {
         resolve({ success: false, error: "Failed to persist download progress" });
         return;
@@ -420,10 +430,11 @@ export async function downloadVideo(
       }
     });
 
-    proc.on("error", (err) => {
+    proc.on("error", async (err) => {
       clearTimeout(stallTimer);
       if (ended) return;
       ended = true;
+      await progressUpdates;
       console.error("[yt-dlp] Process error:", err);
       resolve({ success: false, error: err.message });
     });

@@ -1,6 +1,7 @@
 import { beforeAll, afterAll, beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { createServer, type ServerResponse } from "node:http";
 import { readFile, rm } from "node:fs/promises";
+import * as fsp from "fs/promises";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { clearSettingsCache } from "@/lib/settings";
@@ -18,6 +19,10 @@ const { testDir } = await vi.hoisted(async () => {
   const { mkdtemp } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   return { testDir: await mkdtemp(`${tmpdir()}/rundfunkarr-queue-`) };
+});
+vi.mock("fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs/promises")>();
+  return { ...actual, rename: vi.fn(actual.rename) };
 });
 vi.mock("@/lib/db", async () => {
   const { PrismaClient } = await import("@prisma/client");
@@ -275,7 +280,7 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     blocked.add("/cancel.mp4");
     const processing = startDownloadProcessing();
     await vi.waitFor(() => expect(requests).toEqual(["/cancel.mp4"]));
-    await controlDownload("cancel", "cancel");
+    expect(await controlDownload("cancel", "cancel")).toBe(true);
     await processing;
     expect(await prisma.download.findUnique({ where: { id: "cancel" } })).toMatchObject({
       status: "cancelled",
@@ -283,6 +288,38 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     });
     expect(await controlDownload("cancel", "resume")).toBe(false);
   });
+
+  it.each(["pause", "cancel"] as const)(
+    "meldet %s während des abschließenden Verschiebens nicht fälschlich als erfolgreich",
+    async (action) => {
+      await job("finalizing");
+      const actual = await vi.importActual<typeof import("fs/promises")>("fs/promises");
+      let releaseMove = () => {};
+      const gate = new Promise<void>((resolve) => {
+        releaseMove = resolve;
+      });
+      let moving = false;
+      vi.mocked(fsp.rename).mockImplementationOnce(async (sourcePath, targetPath) => {
+        moving = true;
+        await gate;
+        await actual.rename(sourcePath, targetPath);
+      });
+      const processing = startDownloadProcessing();
+      try {
+        await vi.waitFor(() => expect(moving).toBe(true));
+        const controlled = controlDownload("finalizing", action);
+        releaseMove();
+        expect(await controlled).toBe(false);
+        await processing;
+        const finished = await prisma.download.findUniqueOrThrow({ where: { id: "finalizing" } });
+        expect(finished.status).toBe("completed");
+        expect(await readFile(finished.filePath!)).toEqual(bytes);
+      } finally {
+        releaseMove();
+        await processing;
+      }
+    }
+  );
 
   it("plant HTTP 503 erneut ein, begrenzt Versuche und wiederholt HTTP 404 nicht", async () => {
     await job("retry", "/retry.mp4");

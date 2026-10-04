@@ -31,15 +31,11 @@ async function getDownloadTempPath(): Promise<string> {
 }
 
 /**
- * Move a finished file into the category folder.
+ * Create the per-download folder and move a finished file into it.
  *
- * The folder was created when the download started, but *arr apps remove the
- * imported file from the category folder while later downloads are still
- * running, and delete the folder once it is empty -- so it is re-created
- * right before the move. That still leaves a moment between mkdir and rename;
- * if an import deletes the folder in exactly that instant, the ENOENT is
- * answered with one more re-create and retry. A missing SOURCE file also
- * surfaces as ENOENT and fails the retry identically, which is correct.
+ * An *arr import may remove the empty folder between mkdir and rename.
+ * Re-create it and retry once on ENOENT. A missing source also surfaces as
+ * ENOENT and correctly fails the retry.
  */
 async function moveIntoCategoryDir(
   sourcePath: string,
@@ -70,6 +66,7 @@ async function processDownload(
   signal: AbortSignal = new AbortController().signal
 ): Promise<void> {
   let jobTempPath: string | undefined;
+  let finalDir: string | undefined;
 
   const startTime = Date.now();
 
@@ -93,14 +90,14 @@ async function processDownload(
     });
     if (!claimed.count) return;
 
-    // Create temp and category directories
+    // Create the temporary directory; defer the destination until the move.
     const downloadBasePath = await getDownloadBasePath();
     const downloadTempPath = path.join(await getDownloadTempPath(), downloadId);
     jobTempPath = downloadTempPath;
     const categoryFolder = download.category || "default";
     const categoryDir = path.join(downloadBasePath, categoryFolder, downloadId);
+    finalDir = categoryDir;
     await fs.mkdir(downloadTempPath, { recursive: true });
-    await fs.mkdir(categoryDir, { recursive: true });
 
     // Check if this is an HLS stream
     const isHls = isStreamingUrl(download.url);
@@ -288,6 +285,7 @@ async function processDownload(
     } else {
       // Keep non-MP4 files and MP4 files with disabled conversion unchanged.
       const finalPath = path.join(categoryDir, `${download.title}${fileExtension}`);
+      signal?.throwIfAborted();
       await moveIntoCategoryDir(mp4Path, finalPath, categoryDir);
 
       const stats = await fs.stat(finalPath);
@@ -361,6 +359,7 @@ async function processDownload(
     }
   } finally {
     if (jobTempPath) await fs.rm(jobTempPath, { recursive: true, force: true }).catch(() => {});
+    if (finalDir) await fs.rmdir(finalDir).catch(() => {});
   }
 }
 

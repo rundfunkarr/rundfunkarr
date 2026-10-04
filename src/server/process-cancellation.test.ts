@@ -1,10 +1,14 @@
 import { expect, it } from "vitest";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { cancelProcessOnAbort, cancellableProcessOptions } from "./process-cancellation";
-it.skipIf(process.platform === "win32")(
-  "beendet auch einen gestarteten Kindprozess und schließt seine geerbten Ausgabekanäle",
-  async () => {
+import {
+  cancelProcessOnAbort,
+  cancellableProcessOptions,
+  terminateProcess,
+} from "./process-cancellation";
+it.skipIf(process.platform === "win32").each(["abort", "terminate"])(
+  "beendet mit %s auch einen gestarteten Kindprozess und schließt seine geerbten Ausgabekanäle",
+  async (method) => {
     const controller = new AbortController();
     const proc = spawn(
       process.execPath,
@@ -18,11 +22,12 @@ it.skipIf(process.platform === "win32")(
     const cleanup = cancelProcessOnAbort(proc, controller.signal);
     try {
       await once(proc.stdout, "data");
-      controller.abort("cancel");
+      if (method === "abort") controller.abort("cancel");
+      else terminateProcess(proc);
       const [, signal] = await close;
       expect(signal).toBe("SIGKILL");
     } finally {
-      controller.abort();
+      if (proc.exitCode === null && proc.signalCode === null) terminateProcess(proc);
       cleanup();
     }
   },

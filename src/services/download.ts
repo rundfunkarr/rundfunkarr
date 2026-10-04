@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { randomUUID } from "crypto";
+import * as path from "path";
 import type { HistoryPage } from "@/lib/history-pagination";
 
 /**
@@ -238,7 +239,12 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
   if (delFiles && download.filePath) {
     try {
       const fs = await import("fs/promises");
-      await fs.unlink(download.filePath);
+      await fs.unlink(download.filePath).catch(() => {});
+      const directory = path.dirname(download.filePath);
+      // Legacy downloads use shared category folders, which must remain intact.
+      if (path.basename(directory) === download.id) {
+        await fs.rmdir(directory).catch(() => {});
+      }
     } catch {
       // File might not exist, ignore error
     }

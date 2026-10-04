@@ -147,7 +147,12 @@ export async function controlDownload(
           : {}),
       },
     });
-    return result.count > 0 || !!worker;
+    if (result.count > 0) return true;
+    if (!worker) return false;
+    // Completion can win once the finished file is being published. Report
+    // the actual outcome instead of claiming that every abort request worked.
+    const download = await prisma.download.findUnique({ where: { id } });
+    return download?.status === (action === "pause" ? "paused" : "cancelled");
   }
   const result = await prisma.download.updateMany({
     where: { id, status: { in: action === "resume" ? ["paused"] : ["queued", "paused"] } },

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as fsp from "fs/promises";
-import { access, mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 
 // Everything stays the real implementation; only `rename` is wrapped in a
 // vi.fn so a single test can inject a failure into its first call (ESM module
@@ -331,6 +331,93 @@ describe("processDownload", () => {
       data: expect.objectContaining({ status: "completed" }),
     });
   });
+});
+
+describe("completed download folders", () => {
+  const downloadId = "folder-cleanup";
+
+  beforeEach(() => {
+    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
+      Promise.resolve(
+        where.key === "download.path"
+          ? { value: testRoot }
+          : where.key === "download.convertToMkv"
+            ? { value: "false" }
+            : null
+      )
+    );
+    downloadFindUnique.mockResolvedValue({
+      id: downloadId,
+      title: "Video",
+      category: "tv",
+      status: "queued",
+      attempts: 1,
+      url: "https://example.com/video.mp4",
+    });
+    downloadUpdate.mockResolvedValue({});
+  });
+
+  it.each([
+    ["pause", "paused"],
+    ["cancel", "cancelled"],
+    ["retry", "queued"],
+    ["failure", "failed"],
+  ])("does not create a completed folder for %s", async (outcome, status) => {
+    const directory = path.join(testRoot, "tv", downloadId);
+    const controller = new AbortController();
+    let directoryExistsDuringTransfer = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        directoryExistsDuringTransfer = await access(directory).then(
+          () => true,
+          () => false
+        );
+        if (outcome === "pause" || outcome === "cancel") {
+          controller.abort(outcome);
+          throw new Error("Transfer stopped");
+        }
+        return new Response(null, { status: outcome === "retry" ? 503 : 404 });
+      })
+    );
+
+    await processDownload(downloadId, controller.signal);
+
+    expect(directoryExistsDuringTransfer).toBe(false);
+    await expect(access(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(path.join(testRoot, "incomplete", downloadId))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(downloadUpdate).toHaveBeenLastCalledWith({
+      where: { id: downloadId },
+      data: expect.objectContaining({ status }),
+    });
+  });
+
+  it.each([false, true])(
+    "cleans up a failed move without removing unrelated files (existing file: %s)",
+    async (existingFile) => {
+      const directory = path.join(testRoot, "tv", downloadId);
+      const otherFile = path.join(directory, "keep.txt");
+      if (existingFile) {
+        await mkdir(directory, { recursive: true });
+        await writeFile(otherFile, "unrelated bytes");
+      }
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("video bytes")));
+      vi.mocked(fsp.rename).mockRejectedValueOnce(
+        Object.assign(new Error("move failed"), { code: "EACCES" })
+      );
+
+      await processDownload(downloadId);
+
+      if (existingFile) await expect(readFile(otherFile, "utf8")).resolves.toBe("unrelated bytes");
+      else await expect(access(directory)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(downloadUpdate).toHaveBeenLastCalledWith({
+        where: { id: downloadId },
+        data: expect.objectContaining({ status: "failed" }),
+      });
+    }
+  );
 });
 
 it.each(["network error", "stall"])("removes partial files after a %s", async (failure) => {
