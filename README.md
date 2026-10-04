@@ -140,6 +140,54 @@ sie unter `environment` oder über `env_file`. Nach Änderungen ist ein Neustart
 nötig. Im Build werden keine Werte übernommen. Gespeicherte API-Zugangsdaten
 werden in der Settings-API maskiert; die Verbindungstests prüfen sie serverseitig.
 
+### Optionale Anmeldung
+
+Unter **Settings → General → Sicherheit** lässt sich ein Anmeldeformular mit
+Benutzername und Passwort aktivieren. Standardmäßig ist die Anmeldung aus, damit
+bestehende Installationen unverändert starten. Neue Passwörter benötigen mindestens
+12 Zeichen und werden ausschließlich als gesalzener scrypt-Hash gespeichert.
+
+Bei aktivierter Anmeldung gelten folgende Zugriffswege:
+
+- Browser: Loginformular; die Sitzung läuft nach 12 Stunden ab, mit „30 Tage
+  angemeldet bleiben“ nach 30 Tagen. Abmelden widerruft die Sitzung auf dem Server.
+- Sonarr/Radarr/Prowlarr: den **Integrationsschlüssel** aus den Sicherheitseinstellungen
+  als API-Key sowohl im RundfunkArr-Newznab-Indexer als auch im SABnzbd-Download-Client
+  eintragen. Vorher beliebige Werte funktionieren dann nicht mehr. `apikey` als
+  URL-Parameter und `X-Api-Key` als Header werden unterstützt.
+- Der Integrationsschlüssel gilt nur für die SABnzbd-/Newznab-Schnittstellen, nicht
+  für die Verwaltungs-API. NZB-Links aus authentifizierten Suchantworten erhalten
+  eine Signatur für genau diese Datei, damit der Download ohne Browsercookie gelingt.
+- Interne Adressen und Docker-Netze bleiben nutzbar. Es gibt keine automatische
+  Anmeldeausnahme für lokale Adressen oder `X-Forwarded-For`.
+- `/api/health` bleibt für Container-Healthchecks ohne Anmeldung erreichbar und
+  liefert ausschließlich einen allgemeinen Status.
+
+Änderungen an der Sicherheit erfordern bei aktivierter Anmeldung das aktuelle
+Passwort und melden andere Sitzungen ab. Beim Erzeugen eines neuen
+Integrationsschlüssels müssen die verbundenen Anwendungen aktualisiert werden;
+alte NZB-Links werden ebenfalls ungültig. Das Abschalten öffnet Oberfläche und APIs
+wieder, daher vorher die Erreichbarkeit auf ein vertrauenswürdiges Netz begrenzen.
+
+Für Zugriff außerhalb eines vertrauenswürdigen Netzes HTTPS verwenden. Hinter
+einem Reverse Proxy `AUTH_PUBLIC_URL` auf den öffentlichen Ursprung setzen, etwa
+`https://rundfunk.example.com` (ohne Pfad). Das erlaubt die Prüfung von Browseranfragen
+und setzt bei HTTPS sichere Sitzungscookies. `AUTH_COOKIE_SECURE=true` erzwingt
+sichere Cookies zusätzlich. Der Proxy muss den Hostnamen weitergeben. Cookies sind
+HttpOnly und SameSite=Strict; Passwörter und Sitzungstoken werden nicht im
+Browserspeicher abgelegt.
+
+Docker legt die Authentifizierungstabellen beim Start auch für vorhandene
+Datenbanken an. Bei nativer Installation vor dem Start `npx prisma migrate deploy`
+oder den bereits verwendeten `npx prisma db push`-Ablauf ausführen.
+
+**Passwort vergessen:** Auf dem Server mit Zugriff auf dieselbe Datenbank
+`node scripts/reset-auth.mjs --confirm` ausführen; im Container entsprechend
+`docker exec rundfunkarr node /app/scripts/reset-auth.mjs --confirm`.
+Das deaktiviert die Anmeldung, löscht das Passwort, widerruft alle Sitzungen und
+ersetzt den Integrationsschlüssel. Danach im vertrauenswürdigen Netz ein neues
+Konto konfigurieren. Ein Neustart allein löscht keine Anmeldung.
+
 ### Web-Oberfläche
 
 RundfunkArr bietet eine vollständige Web-Oberfläche mit:
@@ -191,14 +239,14 @@ Für Shows die nicht in TVDB/TMDB sind, können Einträge in `data/shows.json` h
 
 1. Indexer hinzufügen → Generic Newznab
 2. URL: `http://rundfunkarr:6767/api/newznab`
-3. API Key: beliebig (wird nicht validiert)
+3. API Key: bei aktivierter Anmeldung der Integrationsschlüssel aus den Sicherheitseinstellungen, sonst beliebig
 
 ### Als Download Client
 
 1. Download Client hinzufügen → SABnzbd
 2. Host: `rundfunkarr`
 3. Port: `6767`
-4. API Key: beliebig
+4. API Key: bei aktivierter Anmeldung der Integrationsschlüssel aus den Sicherheitseinstellungen, sonst beliebig
 
 Prowlarr synchronisiert nur den Indexer zu Sonarr und Radarr. Richte RundfunkArr
 als Download Client zusätzlich direkt in jeder *arr App ein. Ein in Prowlarr

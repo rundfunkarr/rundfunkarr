@@ -1,4 +1,5 @@
 "use client";
+import { SignOut } from "@/components/auth/sign-out";
 
 import { useState } from "react";
 import Image from "next/image";
@@ -62,6 +63,7 @@ export function MobileNav() {
               </div>
             ))}
           </nav>
+          <SignOut />
         </SheetContent>
       </Sheet>
     </div>

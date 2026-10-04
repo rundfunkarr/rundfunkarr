@@ -21,7 +21,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "validate": "tsx scripts/validate-data.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:auth": "npm run build && node scripts/smoke-sabnzbd.mjs --auth"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

@@ -2,6 +2,7 @@
 // Uses an isolated database, local media server and temporary download folders.
 // This checks the real HTTP/download lifecycle; it does not launch Sonarr.
 import assert from "node:assert/strict";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +33,11 @@ execFileSync(
 );
 const db = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
 await db.config.create({ data: { key: "download.convertToMkv", value: "false" } });
+const authentication = process.argv.includes("--auth");
+const integrationKey = randomBytes(32).toString("hex");
+if (authentication) {
+  await db.authConfig.create({ data: { id: 1, enabled: true, username: "smoke-test", passwordHash: "unused-by-integration", apiKey: integrationKey, revision: randomUUID() } });
+}
 const fixtures = new Map();
 for (const height of [720, 1080]) {
   const file = `${root}/fixture-${height}.mp4`;
@@ -80,8 +86,11 @@ const appExited = new Promise((resolve) => app.once("exit", resolve));
 app.stdout.pipe(log);
 app.stderr.pipe(log);
 const results = [];
-const request = (url, options) =>
-  fetch(`${base}${url}`, { ...options, signal: AbortSignal.timeout(10000) });
+const request = (url, options) => {
+  const target = new URL(url, base);
+  if (authentication) target.searchParams.set("apikey", integrationKey);
+  return fetch(target, { ...options, signal: AbortSignal.timeout(10000) });
+};
 async function waitFor(fn) {
   for (let i = 0; i < 150; i++) {
     const result = await fn();
@@ -103,6 +112,12 @@ try {
       return false;
     }
   });
+  if (authentication) {
+    assert.equal((await fetch(`${base}/api?mode=version`)).status, 401);
+    assert.equal((await request("/api/settings")).status, 401);
+    assert.equal((await fetch(`${base}/api/health`)).status, 200);
+    results.push({ case: "integration-key-boundary", status: "passed" });
+  }
   const invalid =
     '<nzb><file poster="test" date="0" subject="test"><groups><group>test</group></groups><segments><segment bytes="0" number="1">test</segment></segments></file></nzb>';
   for (const output of ["", "&output=json"]) {

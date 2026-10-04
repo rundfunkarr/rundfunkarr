@@ -9,6 +9,8 @@ services:
       - DOWNLOAD_FOLDER_PATH=/downloads
       - DOWNLOAD_FOLDER_PATH_MAPPING=/downloads/completed  # Path mapping for Sonarr/Radarr
       - DATABASE_URL=file:/app/prisma/data/rundfunkarr.db
+      - AUTH_PUBLIC_URL=${AUTH_PUBLIC_URL:-}
+      - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-false}
     volumes:
       - ./data:/app/prisma/data          # Database persistence
       - ./downloads:/app/downloads        # Temporary download folder
@@ -16,7 +18,7 @@ services:
       - "6767:6767"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:6767/api/download?mode=version"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:6767/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
