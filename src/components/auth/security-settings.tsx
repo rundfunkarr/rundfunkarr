@@ -63,9 +63,13 @@ export function SecuritySettings() {
       setConfirm("");
       setCurrentPassword("");
       setRegenerateApiKey(false);
+      setVisible(false);
       setMessage(
         data.enabled
-          ? "Anmeldung aktiviert. Andere Sitzungen wurden abgemeldet."
+          ? "Anmeldung aktiviert. Andere Sitzungen wurden abgemeldet." +
+              (data.apiKey !== saved?.apiKey
+                ? " Ein neuer Integrationsschlüssel wurde erzeugt. Bitte in Sonarr/Radarr übernehmen."
+                : "")
           : "Anmeldung deaktiviert."
       );
       window.dispatchEvent(new Event("auth-changed"));
@@ -105,7 +109,9 @@ export function SecuritySettings() {
             </label>
             <p className="text-sm text-muted-foreground">
               {enabled
-                ? "Die Anmeldung gilt für alle Adressen, auch im lokalen Netz. Sonarr/Radarr verwenden den Integrationsschlüssel unten."
+                ? saved.enabled
+                  ? "Die Anmeldung gilt für alle Adressen, auch im lokalen Netz. Sonarr/Radarr verwenden den Integrationsschlüssel unten."
+                  : "Beim Aktivieren wird ein neuer Integrationsschlüssel erzeugt. Nach dem Speichern in Sonarr/Radarr eintragen; bisherige Schlüssel und NZB-Links werden ungültig. Die Anmeldung gilt auch im lokalen Netz."
                 : "Oberfläche und APIs sind ohne Anmeldung zugänglich. Nur in einem vertrauenswürdigen Netzwerk betreiben."}
             </p>
             {enabled && (
@@ -150,41 +156,43 @@ export function SecuritySettings() {
                 </label>
               </div>
             )}
-            <div className="space-y-2">
-              <label className="text-sm flex flex-col gap-1">
-                Integrationsschlüssel
-                <Input
-                  type={visible ? "text" : "password"}
-                  readOnly
-                  value={saved.apiKey}
-                  autoComplete="off"
-                  onFocus={(e) => e.target.select()}
-                />
-              </label>
-              <Button variant="outline" type="button" onClick={() => setVisible(!visible)}>
-                {visible ? "Schlüssel verbergen" : "Schlüssel anzeigen"}
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                Beim Aktivieren diesen Wert in Sonarr/Radarr als API-Key für den RundfunkArr-Indexer
-                und den SABnzbd-Download-Client eintragen. Der Schlüssel erlaubt keine Änderung der
-                Sicherheitseinstellungen.
-              </p>
-              <label className="text-sm flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={regenerateApiKey}
-                  onChange={(e) => setRegenerateApiKey(e.target.checked)}
-                  disabled={busy}
-                />
-                Beim Speichern einen neuen Schlüssel erzeugen
-              </label>
-              {regenerateApiKey && (
-                <p className="text-sm text-amber-600">
-                  Danach den neuen Schlüssel in allen verbundenen Anwendungen eintragen. Bisherige
-                  NZB-Links verlieren ihre Gültigkeit.
+            {saved.enabled && (
+              <div className="space-y-2">
+                <label className="text-sm flex flex-col gap-1">
+                  Integrationsschlüssel
+                  <Input
+                    type={visible ? "text" : "password"}
+                    readOnly
+                    value={saved.apiKey}
+                    autoComplete="off"
+                    onFocus={(e) => e.target.select()}
+                  />
+                </label>
+                <Button variant="outline" type="button" onClick={() => setVisible(!visible)}>
+                  {visible ? "Schlüssel verbergen" : "Schlüssel anzeigen"}
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  Diesen Wert in Sonarr/Radarr als API-Key für den RundfunkArr-Indexer und den
+                  SABnzbd-Download-Client eintragen. Der Schlüssel erlaubt keine Änderung der
+                  Sicherheitseinstellungen.
                 </p>
-              )}
-            </div>
+                <label className="text-sm flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={regenerateApiKey}
+                    onChange={(e) => setRegenerateApiKey(e.target.checked)}
+                    disabled={busy}
+                  />
+                  Beim Speichern einen neuen Schlüssel erzeugen
+                </label>
+                {regenerateApiKey && (
+                  <p className="text-sm text-amber-600">
+                    Danach den neuen Schlüssel in allen verbundenen Anwendungen eintragen. Bisherige
+                    NZB-Links verlieren ihre Gültigkeit.
+                  </p>
+                )}
+              </div>
+            )}
             {saved.enabled && (
               <label className="text-sm flex flex-col gap-1 max-w-sm">
                 Aktuelles Passwort zur Bestätigung

@@ -163,11 +163,15 @@ Bei aktivierter Anmeldung gelten folgende Zugriffswege:
 - `/api/health` bleibt für Container-Healthchecks ohne Anmeldung erreichbar und
   liefert ausschließlich einen allgemeinen Status.
 
-Änderungen an der Sicherheit erfordern bei aktivierter Anmeldung das aktuelle
-Passwort und melden andere Sitzungen ab. Beim Erzeugen eines neuen
-Integrationsschlüssels müssen die verbundenen Anwendungen aktualisiert werden;
-alte NZB-Links werden ebenfalls ungültig. Das Abschalten öffnet Oberfläche und APIs
-wieder, daher vorher die Erreichbarkeit auf ein vertrauenswürdiges Netz begrenzen.
+Bei jedem Wechsel von deaktivierter zu aktivierter Anmeldung wird der
+Integrationsschlüssel automatisch ersetzt, auch beim erneuten Aktivieren eines
+vorhandenen Kontos. Den neuen Wert **nach dem Speichern** in den verbundenen
+Anwendungen eintragen; alte Schlüssel und NZB-Links werden ungültig.
+Änderungen bei bereits aktivierter Anmeldung erfordern das aktuelle Passwort und
+melden andere Sitzungen ab. Dabei bleibt der Integrationsschlüssel erhalten,
+sofern nicht ausdrücklich ein neuer erzeugt wird. Das Abschalten öffnet Oberfläche
+und APIs wieder, daher vorher die Erreichbarkeit auf ein vertrauenswürdiges Netz
+begrenzen.
 
 Für Zugriff außerhalb eines vertrauenswürdigen Netzes HTTPS verwenden. Hinter
 einem Reverse Proxy `AUTH_PUBLIC_URL` auf den öffentlichen Ursprung setzen, etwa
@@ -176,6 +180,39 @@ und setzt bei HTTPS sichere Sitzungscookies. `AUTH_COOKIE_SECURE=true` erzwingt
 sichere Cookies zusätzlich. Der Proxy muss den Hostnamen weitergeben. Cookies sind
 HttpOnly und SameSite=Strict; Passwörter und Sitzungstoken werden nicht im
 Browserspeicher abgelegt.
+
+Für öffentlich erreichbare Installationen zusätzlich die Anmeldeversuche am
+Reverse Proxy pro tatsächlicher Client-Adresse begrenzen. RundfunkArr reserviert
+für Passwortprüfungen ein festes Zwei-Sekunden-Fenster; falsche Passwörter und
+abgewiesene Versuche verlängern es nicht. Diese gemeinsame Begrenzung schützt
+die Rechenkapazität, verhindert aber keine gezielt getaktete Blockierung neuer
+Anmeldungen. Bestehende Sitzungen bleiben dabei nutzbar.
+
+Beispiel für [NGINX-Anfragelimits](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html):
+Die ersten beiden Direktiven gehören in den `http`-Kontext; den `location`-Block
+in den vorhandenen HTTPS-Server integrieren und das Proxy-Ziel anpassen.
+
+```nginx
+map $uri $rundfunkarr_login_client {
+    default "";
+    ~^/api/auth/login/?$ $binary_remote_addr;
+}
+limit_req_zone $rundfunkarr_login_client zone=rundfunkarr_login:10m rate=5r/m;
+
+location / {
+    limit_req zone=rundfunkarr_login burst=5 nodelay;
+    limit_req_status 429;
+    proxy_set_header Host $http_host;
+    proxy_pass http://rundfunkarr:6767;
+}
+```
+
+Nur Login-Anfragen verbrauchen dieses Limit. Den RundfunkArr-Port von außen
+ausschließlich über diesen Proxy erreichbar machen. Ist ein weiterer Proxy oder
+ein CDN vorgeschaltet, dessen feste Adressen über
+[`set_real_ip_from`](https://nginx.org/en/docs/http/ngx_http_realip_module.html#set_real_ip_from)
+als vertrauenswürdig konfigurieren; vom Client gesetzte `X-Forwarded-For`-Werte
+dürfen keine neuen Limit-Gruppen erzeugen.
 
 Docker legt die Authentifizierungstabellen beim Start auch für vorhandene
 Datenbanken an. Bei nativer Installation vor dem Start `npx prisma migrate deploy`

@@ -19,8 +19,15 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, remember }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Anmeldung fehlgeschlagen.");
+      const data = await response.json().catch(() => null);
+      if (!response.ok)
+        throw new Error(
+          typeof data?.error === "string"
+            ? data.error
+            : response.status === 429
+              ? "Zu viele Anmeldeversuche. Bitte kurz warten und erneut versuchen."
+              : "Anmeldung fehlgeschlagen."
+        );
       setPassword("");
       window.location.replace(returnTo);
     } catch (e) {

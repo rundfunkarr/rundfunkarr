@@ -196,8 +196,9 @@ export async function login(username: string, password: string, remember: boolea
   const config = await getAuthConfig();
   if (!config?.enabled) throw new AuthError("Die Anmeldung ist deaktiviert.", 400);
   const now = new Date();
-  // The single administrator account has a shared, persistent attempt limit.
-  // Spoofing proxy/IP headers cannot create fresh rate-limit buckets.
+  // Bound password-hashing work with fixed, persistent pacing. Failures must
+  // not extend this shared window and lock out the administrator for longer.
+  // Public deployments also need per-client limits at their trusted proxy.
   const claimed = await prisma.authConfig.updateMany({
     where: {
       id: 1,
@@ -212,10 +213,7 @@ export async function login(username: string, password: string, remember: boolea
   if (!passwordMatches || !equalSecret(username, config.username)) {
     await prisma.authConfig.updateMany({
       where: { id: 1, revision: config.revision },
-      data: {
-        failedLogins: { increment: 1 },
-        ...(config.failedLogins >= 4 ? { loginBlockedUntil: new Date(Date.now() + 30_000) } : {}),
-      },
+      data: { failedLogins: { increment: 1 } },
     });
     throw new AuthError("Benutzername oder Passwort ist falsch.", 401);
   }
@@ -260,7 +258,12 @@ export async function saveAuthConfig(
         username: input.username,
         passwordHash,
         revision,
-        apiKey: input.regenerateApiKey ? randomBytes(32).toString("hex") : config.apiKey,
+        // Disabled-mode settings are public, so their key cannot become an
+        // authenticated credential when the operator enables login.
+        apiKey:
+          input.regenerateApiKey || (input.enabled && !config.enabled)
+            ? randomBytes(32).toString("hex")
+            : config.apiKey,
         failedLogins: 0,
         loginBlockedUntil: null,
       },

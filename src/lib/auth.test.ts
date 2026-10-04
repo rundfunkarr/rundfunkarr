@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFile, rm } from "node:fs/promises";
 import { NextRequest } from "next/server";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
@@ -52,6 +52,7 @@ beforeEach(async () => {
   await db.prisma.authSession.deleteMany({});
   await db.prisma.authConfig.deleteMany({});
 });
+afterEach(() => vi.useRealTimers());
 afterAll(async () => {
   vi.unstubAllEnvs();
   await db.prisma.$disconnect();
@@ -153,16 +154,87 @@ it("persists login throttling independently of spoofed proxy headers", async () 
   expect((await signIn()).status).toBe(200);
 });
 
-it("applies a longer cooldown after five failed attempts", async () => {
+it("keeps failed-login pacing fixed and allows login after two seconds, even after five failures", async () => {
   await enable();
+  const existingSession = cookie(await signIn());
+  const start = Date.now();
+  vi.useFakeTimers({ toFake: ["Date"] });
   for (let i = 0; i < 5; i++) {
-    await allowNextLogin();
+    vi.setSystemTime(start + i * 2500);
     expect((await signIn({ password: "wrong" })).status).toBe(401);
   }
-  const config = await getAuthConfig();
-  expect(config?.failedLogins).toBe(5);
-  expect(config!.loginBlockedUntil!.getTime() - Date.now()).toBeGreaterThan(25_000);
+  const blocked = await getAuthConfig();
+  expect(blocked?.failedLogins).toBe(5);
+  expect(blocked!.loginBlockedUntil!.getTime()).toBe(start + 12_000);
+  const rejected = await login(
+    request("/api/auth/login", {
+      method: "POST",
+      headers: { "X-Forwarded-For": "203.0.113.7" },
+      body: JSON.stringify(credentials({ password: "wrong-again" })),
+    })
+  );
+  expect(rejected.status).toBe(429);
+  expect((await getAuthConfig())?.loginBlockedUntil).toEqual(blocked?.loginBlockedUntil);
+  expect(await hasSession(request("/", { headers: { cookie: existingSession } }), blocked)).toBe(
+    true
+  );
+  vi.setSystemTime(start + 12_001);
+  expect((await signIn()).status).toBe(200);
+  expect((await getAuthConfig())?.failedLogins).toBe(0);
 });
+
+it.each([false, true])(
+  "retires exposed integration keys and signed links when enabling login (previously enabled: %s)",
+  async (previouslyEnabled) => {
+    if (previouslyEnabled) {
+      await enable();
+      const session = cookie(await signIn());
+      const disabled = await saveSettings(
+        request("/api/auth/settings", {
+          method: "POST",
+          headers: { cookie: session },
+          body: JSON.stringify({ enabled: false, username: "admin", currentPassword: password }),
+        })
+      );
+      expect(disabled.status).toBe(200);
+    }
+    const exposed = await (await getSettings(request("/api/auth/settings"))).json();
+    expect(exposed.enabled).toBe(false);
+    const nzbLink = "/api/newznab/fake_nzb_download?encodedUrl=dXJs&amp;encodedTitle=dGl0bGU%3D";
+    const signedLink = (key: string) =>
+      signNzbLinks(`<link>${nzbLink}</link>`, key)
+        .match(/<link>(.*?)<\/link>/)![1]
+        .replaceAll("&amp;", "&");
+    const oldLink = signedLink(exposed.apiKey);
+    const enabled = await saveSettings(
+      request("/api/auth/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          enabled: true,
+          username: "admin",
+          password,
+          regenerateApiKey: false,
+        }),
+      })
+    );
+    expect(enabled.status).toBe(200);
+    const current = await enabled.json();
+    expect(current.apiKey).not.toBe(exposed.apiKey);
+    expect((await proxy(request(`/api?mode=version&apikey=${exposed.apiKey}`))).status).toBe(401);
+    expect((await proxy(request(oldLink))).status).toBe(401);
+    expect((await proxy(request(`/api?mode=version&apikey=${current.apiKey}`))).status).toBe(200);
+    expect((await proxy(request(signedLink(current.apiKey)))).status).toBe(200);
+    const unchanged = await saveSettings(
+      request("/api/auth/settings", {
+        method: "POST",
+        headers: { cookie: cookie(enabled) },
+        body: JSON.stringify({ enabled: true, username: "admin", currentPassword: password }),
+      })
+    );
+    expect(unchanged.status).toBe(200);
+    expect((await unchanged.json()).apiKey).toBe(current.apiKey);
+  }
+);
 
 it.each([
   "/api/settings",
