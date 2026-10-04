@@ -1,6 +1,7 @@
 import { isStreamingUrl } from "@/lib/stream-url";
 import { mediathekCache } from "@/lib/cache";
 import { getMinDurationSeconds, getSetting } from "@/lib/settings";
+import { runRulesetRegex } from "@/server/ruleset-regex";
 import { queryContent } from "./content-search";
 import { getShowInfoByTvdbId } from "./shows";
 import {
@@ -102,7 +103,7 @@ function getFieldValue(item: ApiResultItem, fieldName: string): string {
   }
 }
 
-function filterMatches(item: ApiResultItem, filter: Filter): boolean {
+async function filterMatches(item: ApiResultItem, filter: Filter): Promise<boolean> {
   const attributeValue = getFieldValue(item, filter.attribute);
   const filterValue = String(filter.value);
 
@@ -112,11 +113,7 @@ function filterMatches(item: ApiResultItem, filter: Filter): boolean {
     case "Contains" as MatchType:
       return attributeValue.toLowerCase().includes(filterValue.toLowerCase());
     case "Regex" as MatchType:
-      try {
-        return new RegExp(filterValue).test(attributeValue);
-      } catch {
-        return false;
-      }
+      return runRulesetRegex("test", filterValue, attributeValue);
     case "GreaterThan" as MatchType: {
       const attrNum = parseFloat(attributeValue);
       const filterNum = parseFloat(filterValue);
@@ -132,21 +129,29 @@ function filterMatches(item: ApiResultItem, filter: Filter): boolean {
   }
 }
 
-function extractValueUsingRegex(item: ApiResultItem, pattern: string | null): string | null {
+async function firstRejectedFilter(item: ApiResultItem, filters: Filter[]): Promise<Filter | null> {
+  for (const filter of filters) {
+    if (!(await filterMatches(item, filter))) return filter;
+  }
+  return null;
+}
+
+async function extractValueUsingRegex(
+  item: ApiResultItem,
+  pattern: string | null
+): Promise<string | null> {
   if (!pattern) return null;
 
   const fieldValue = getFieldValue(item, "title");
   if (!fieldValue) return null;
 
-  try {
-    const match = fieldValue.match(pattern);
-    return match && match.length > 1 ? match[1] : null;
-  } catch {
-    return null;
-  }
+  return runRulesetRegex("first", pattern, fieldValue);
 }
 
-function buildTitleFromRegexRules(item: ApiResultItem, rulesJson: string): string | null {
+async function buildTitleFromRegexRules(
+  item: ApiResultItem,
+  rulesJson: string
+): Promise<string | null> {
   let rules: TitleRegexRule[];
   try {
     rules = JSON.parse(rulesJson);
@@ -165,17 +170,9 @@ function buildTitleFromRegexRules(item: ApiResultItem, rulesJson: string): strin
       if (rule.pattern && rule.field) {
         const fieldValue = getFieldValue(item, rule.field);
         if (fieldValue) {
-          try {
-            const match = fieldValue.match(rule.pattern);
-            if (match && match.length > 0) {
-              // Use the last group
-              parts.push(match[match.length - 1]);
-            } else {
-              return null; // Abort if regex match failed
-            }
-          } catch {
-            return null;
-          }
+          const value = await runRulesetRegex("last", rule.pattern, fieldValue);
+          if (value === null) return null;
+          parts.push(value);
         }
       }
     }
@@ -324,8 +321,8 @@ async function matchesSeasonAndEpisode(
   const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
-  const season = extractValueUsingRegex(item, ruleset.seasonRegex);
-  const episode = extractValueUsingRegex(item, ruleset.episodeRegex);
+  const season = await extractValueUsingRegex(item, ruleset.seasonRegex);
+  const episode = await extractValueUsingRegex(item, ruleset.episodeRegex);
 
   if (!season || !episode) return null;
 
@@ -353,7 +350,7 @@ async function matchesItemTitleIncludes(
   const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
-  const constructedTitle = buildTitleFromRegexRules(item, ruleset.titleRegexRules);
+  const constructedTitle = await buildTitleFromRegexRules(item, ruleset.titleRegexRules);
   if (!constructedTitle) return null;
 
   const formattedConstructed = formatTitle(constructedTitle).toLowerCase();
@@ -394,7 +391,7 @@ async function matchesItemTitleExact(
   const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
-  const constructedTitle = buildTitleFromRegexRules(item, ruleset.titleRegexRules);
+  const constructedTitle = await buildTitleFromRegexRules(item, ruleset.titleRegexRules);
   if (!constructedTitle) return null;
 
   const formattedTitle = formatTitle(constructedTitle).toLowerCase();
@@ -452,7 +449,7 @@ async function matchesItemTitleEqualsAirdate(
   const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
-  const constructedTitle = buildTitleFromRegexRules(item, ruleset.titleRegexRules);
+  const constructedTitle = await buildTitleFromRegexRules(item, ruleset.titleRegexRules);
   if (!constructedTitle) return null;
 
   const parsedDate = tryParseDate(constructedTitle);
@@ -550,7 +547,7 @@ async function applyRulesetFilters(
         filters = [];
       }
 
-      if (!filters.every((filter) => filterMatches(item, filter))) {
+      if (await firstRejectedFilter(item, filters)) {
         const idx = unmatchedItems.indexOf(item);
         if (idx > -1) unmatchedItems.splice(idx, 1);
         continue;
@@ -1245,7 +1242,7 @@ export async function diagnoseRuleset(
   if (item.topic !== rule.topic)
     return { ...result, reason: "Das Mediathek-Thema stimmt nicht mit der Regel überein." };
   const filters = JSON.parse(rule.filters) as Filter[];
-  const rejected = filters.find((filter) => !filterMatches(item, filter));
+  const rejected = await firstRejectedFilter(item, filters);
   if (rejected)
     return {
       ...result,

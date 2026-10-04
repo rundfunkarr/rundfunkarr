@@ -1,13 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { inputToRuleset } from "@/lib/ruleset-input";
-import type { ApiResultItem, TvdbData } from "@/types";
+import type { ApiResultItem, Ruleset, TvdbData } from "@/types";
+import { MatchingStrategy } from "@/types";
 vi.mock("@/lib/settings", () => ({
   getSetting: vi.fn(async () => null),
   getMinDurationSeconds: vi.fn(async () => 300),
 }));
 vi.mock("./shows", () => ({ getShowInfoByTvdbId: vi.fn() }));
+vi.mock("./content-search", () => ({ queryContent: vi.fn() }));
+vi.mock("./rulesets", () => ({
+  ensureRulesetsLoaded: vi.fn(),
+  getRulesetsForTopic: vi.fn(),
+}));
 import { getShowInfoByTvdbId } from "./shows";
-import { diagnoseRuleset } from "./mediathek";
+import { queryContent } from "./content-search";
+import { getRulesetsForTopic } from "./rulesets";
+import { diagnoseRuleset, fetchSearchResultsByString } from "./mediathek";
 const show: TvdbData = {
   id: 123,
   name: "Testserie",
@@ -73,6 +81,42 @@ describe("Matching-Diagnose mit dem Produktionsmatcher", () => {
     expect(await diagnoseRuleset({ ...item, topic: "Andere Serie" }, rule, show)).toMatchObject({
       status: "filtered",
       reason: expect.stringContaining("Thema"),
+    });
+  });
+  it.each([
+    { filters: JSON.stringify([{ attribute: "title", type: "Regex", value: "^(a+)+$" }]) },
+    { seasonRegex: "^(a+)+$" },
+    { episodeRegex: "^(a+)+$" },
+    ...(
+      [
+        MatchingStrategy.ItemTitleIncludes,
+        MatchingStrategy.ItemTitleExact,
+        MatchingStrategy.ItemTitleEqualsAirdate,
+      ] as const
+    ).map((matchingStrategy) => ({
+      matchingStrategy,
+      titleRegexRules: JSON.stringify([{ type: "regex", field: "title", pattern: "^(a+)+$" }]),
+    })),
+  ] satisfies Partial<Ruleset>[])(
+    "bricht problematische Regeln in jedem Regex-Pfad ab: %j",
+    async (changes) => {
+      await expect(
+        diagnoseRuleset({ ...item, title: "a".repeat(32) + "!" }, { ...rule, ...changes }, show)
+      ).rejects.toMatchObject({ code: "timeout" });
+      expect(await diagnoseRuleset(item, rule, show)).toMatchObject({ status: "matched" });
+    }
+  );
+
+  it("schützt auch die reguläre Suche mit gespeicherten Regeln", async () => {
+    vi.mocked(queryContent).mockResolvedValue([{ ...item, title: "a".repeat(32) + "!" }]);
+    vi.mocked(getRulesetsForTopic).mockReturnValue([
+      {
+        ...rule,
+        filters: JSON.stringify([{ attribute: "title", type: "Regex", value: "^(a+)+$" }]),
+      },
+    ]);
+    await expect(fetchSearchResultsByString("Regex-Schutz", null, 100, 0)).rejects.toMatchObject({
+      code: "timeout",
     });
   });
 });

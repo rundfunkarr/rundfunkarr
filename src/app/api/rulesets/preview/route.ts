@@ -3,6 +3,7 @@ import { rulesetInput, inputToRuleset } from "@/lib/ruleset-input";
 import { queryContent } from "@/services/content-search";
 import { getShowInfoByTvdbId } from "@/services/shows";
 import { diagnoseRuleset } from "@/services/mediathek";
+import { isRulesetRegexError } from "@/server/ruleset-regex";
 
 export async function POST(request: NextRequest) {
   const input = rulesetInput.safeParse(await request.json().catch(() => null));
@@ -35,7 +36,12 @@ export async function POST(request: NextRequest) {
       limit: 30,
       results,
     });
-  } catch {
+  } catch (error) {
+    if (isRulesetRegexError(error))
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.code === "timeout" || error.code === "too-large" ? 422 : 503 }
+      );
     return NextResponse.json(
       { error: "Die Vorschau konnte nicht erstellt werden." },
       { status: 500 }

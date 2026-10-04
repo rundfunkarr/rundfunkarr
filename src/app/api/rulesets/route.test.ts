@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import type { ApiResultItem } from "@/types";
 import { diagnoseRuleset } from "@/services/mediathek";
+import { RulesetRegexError } from "@/server/ruleset-regex";
 const { findUnique, create, update, deleteMany, reload, show, query } = vi.hoisted(() => ({
   findUnique: vi.fn(),
   create: vi.fn(),
@@ -124,5 +125,34 @@ describe("Lokale Rulesets", () => {
   it("unterscheidet nicht verfügbare Metadaten", async () => {
     show.mockResolvedValue(null);
     expect((await preview(request(data))).status).toBe(422);
+  });
+  it.each([
+    ["timeout", 422],
+    ["too-large", 422],
+    ["busy", 503],
+    ["unavailable", 503],
+  ] as const)(
+    "meldet Regex-Fehler %s und bricht die weitere Auswertung ab",
+    async (code, status) => {
+      query.mockResolvedValue([{ topic: data.topic }, { topic: data.topic }]);
+      const error = new RulesetRegexError(code);
+      vi.mocked(diagnoseRuleset).mockRejectedValue(error);
+      const response = await preview(request(data));
+      expect(response.status).toBe(status);
+      expect(await response.json()).toEqual({ error: error.message });
+      expect(diagnoseRuleset).toHaveBeenCalledOnce();
+    }
+  );
+  it("erkennt Fehler eines Workers auch nach einem Modul-Neuladen", async () => {
+    query.mockResolvedValue([{ topic: data.topic }]);
+    vi.mocked(diagnoseRuleset).mockRejectedValue(
+      Object.assign(new Error("Bitte vereinfache die Regel."), {
+        name: "RulesetRegexError",
+        code: "timeout",
+      })
+    );
+    const response = await preview(request(data));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "Bitte vereinfache die Regel." });
   });
 });
