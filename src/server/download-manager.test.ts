@@ -16,18 +16,22 @@ const {
   configFindUnique,
   downloadCount,
   downloadFindUnique,
+  downloadFindFirst,
   downloadUpdate,
   ffmpegModuleLoaded,
   convertMp4ToMkv,
   downloadHlsStream,
+  fetchSubtitle,
 } = vi.hoisted(() => ({
   configFindUnique: vi.fn(),
   downloadCount: vi.fn(),
   downloadFindUnique: vi.fn(),
+  downloadFindFirst: vi.fn(),
   downloadUpdate: vi.fn(),
   ffmpegModuleLoaded: vi.fn(),
   convertMp4ToMkv: vi.fn(),
   downloadHlsStream: vi.fn(),
+  fetchSubtitle: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -36,6 +40,7 @@ vi.mock("@/lib/db", () => ({
     download: {
       count: downloadCount,
       findUnique: downloadFindUnique,
+      findFirst: downloadFindFirst,
       update: downloadUpdate,
     },
   },
@@ -47,9 +52,10 @@ vi.mock("./ffmpeg", () => {
 });
 
 vi.mock("./ytdlp", () => ({ downloadHlsStream }));
+vi.mock("./subtitle-fetch", () => ({ fetchSubtitle }));
 
 import { clearSettingsCache } from "@/lib/settings";
-import { processDownload } from "./download-manager";
+import { processDownload, startDownloadProcessing } from "./download-manager";
 
 let testRoot: string;
 
@@ -113,8 +119,11 @@ beforeEach(async () => {
   configFindUnique.mockReset();
   downloadCount.mockReset();
   downloadFindUnique.mockReset();
+  downloadFindFirst.mockReset();
   downloadUpdate.mockReset();
   convertMp4ToMkv.mockReset();
+  fetchSubtitle.mockReset().mockResolvedValue("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n");
+  downloadHlsStream.mockReset();
 
   testRoot = await mkdtemp(path.join(tmpdir(), "rundfunkarr-download-manager-"));
   vi.stubEnv("DOWNLOAD_TEMP_PATH", path.join(testRoot, "incomplete"));
@@ -174,6 +183,79 @@ describe("processDownload", () => {
           filePath: path.join("/mapped/downloads", categoryFolder, `${title}.mp4`),
         }),
       });
+    }
+  );
+
+  it.each(
+    ["mp4", "mkv", "hls"].flatMap((source) =>
+      [true, false].map((settingFailure) => ({ source, settingFailure }))
+    )
+  )(
+    "keeps a finished $source download complete (subtitle setting failure: $settingFailure)",
+    async ({ source, settingFailure }) => {
+      const mediaBytes = new Uint8Array([1, 2, 3, 4]);
+      const title = "Subtitle.Settings.Failure";
+      const extension = source === "mkv" ? "mkv" : "mp4";
+      configFindUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
+        if (where.key === "download.path") return { value: testRoot };
+        if (where.key === "download.convertToMkv") return { value: String(source === "mkv") };
+        if (where.key === "download.subtitleMode") {
+          if (settingFailure) throw new Error("Settings unavailable");
+          return { value: "sidecar" };
+        }
+        return null;
+      });
+      downloadFindUnique.mockResolvedValue({
+        id: "subtitle-settings",
+        title,
+        category: "sonarr",
+        status: "queued",
+        url: `https://example.com/video.${source === "hls" ? "m3u8" : "mp4"}`,
+        mediaMetadata: JSON.stringify({ subtitleUrl: "https://example.com/subtitles.vtt" }),
+      });
+      downloadUpdate.mockResolvedValue({});
+      downloadCount.mockResolvedValue(0);
+      convertMp4ToMkv.mockImplementation(async (_input: string, output: string) => {
+        await writeFile(output, mediaBytes);
+        return { success: true };
+      });
+      downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
+        await writeFile(output, mediaBytes);
+        return { success: true, outputPath: output };
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          return new Response(mediaBytes, {
+            status: 200,
+            headers: { "content-length": String(mediaBytes.byteLength) },
+          });
+        })
+      );
+
+      await processDownload("subtitle-settings");
+
+      await expect(
+        readFile(path.join(testRoot, "sonarr", `${title}.${extension}`))
+      ).resolves.toEqual(Buffer.from(mediaBytes));
+      expect(downloadUpdate).toHaveBeenLastCalledWith({
+        where: { id: "subtitle-settings" },
+        data: expect.objectContaining({
+          status: "completed",
+          warning: settingFailure ? expect.stringContaining("Untertitel") : null,
+          filePath: `/mapped/downloads/sonarr/${title}.${extension}`,
+        }),
+      });
+      expect(downloadUpdate).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+      );
+      const artifact = downloadUpdate.mock.lastCall![0].data.subtitleArtifact;
+      if (settingFailure) expect(artifact).toBeNull();
+      else {
+        const record = JSON.parse(artifact);
+        expect(record.path).toBe(path.join(testRoot, "sonarr", `${title}.srt`));
+        await expect(readFile(record.path, "utf8")).resolves.toContain("Subtitle");
+      }
     }
   );
 
@@ -374,4 +456,128 @@ it.each(["network error", "stall"])("removes partial files after a %s", async (f
   } finally {
     vi.useRealTimers();
   }
+});
+
+describe("Warteschlangensteuerung", () => {
+  it("setzt die übrige Queue fort, wenn auch das Speichern des Fehlerstatus scheitert", async () => {
+    configFindUnique.mockImplementation(async ({ where }) =>
+      where.key === "download.path" ? { value: testRoot } : null
+    );
+    const jobs = ["defekt", "bereit"].map((id) => ({
+      id,
+      title: id,
+      category: "tv",
+      status: "queued",
+      url: `https://example.org/${id}.m3u8`,
+    }));
+    downloadFindFirst.mockImplementation(
+      async ({ where }) =>
+        jobs.find((job) => job.status === "queued" && !where.id?.notIn.includes(job.id)) ?? null
+    );
+    downloadFindUnique.mockImplementation(async ({ where }) =>
+      jobs.find((job) => job.id === where.id)
+    );
+    downloadUpdate.mockImplementation(async ({ where, data }) => {
+      if (where.id === "defekt") throw new Error("Schreibfehler");
+      return Object.assign(jobs.find((job) => job.id === where.id)!, data);
+    });
+    downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
+      await writeFile(output, "media");
+      return { success: true, outputPath: output };
+    });
+    await expect(startDownloadProcessing()).resolves.toBeUndefined();
+    expect(jobs.map((job) => job.status)).toEqual(["queued", "completed"]);
+    expect(downloadFindFirst).toHaveBeenCalledTimes(3);
+    expect(downloadHlsStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("plant während eines laufenden Downloads keine weiteren Startaufrufe ein", async () => {
+    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
+      Promise.resolve(where.key === "download.path" ? { value: testRoot } : null)
+    );
+    const jobs = new Map([
+      [
+        "eins",
+        {
+          id: "eins",
+          title: "Eins",
+          category: "tv",
+          status: "queued",
+          url: "https://example.com/eins.m3u8",
+        },
+      ],
+      [
+        "zwei",
+        {
+          id: "zwei",
+          title: "Zwei",
+          category: "tv",
+          status: "queued",
+          url: "https://example.com/zwei.m3u8",
+        },
+      ],
+    ]);
+    downloadFindFirst.mockImplementation(
+      async () => [...jobs.values()].find((job) => job.status === "queued") ?? null
+    );
+    downloadFindUnique.mockImplementation(async ({ where }) => jobs.get(where.id));
+    downloadUpdate.mockImplementation(async ({ where, data }) =>
+      Object.assign(jobs.get(where.id)!, data)
+    );
+    downloadCount.mockRejectedValue(new Error("Zusätzliche Zählabfrage nicht erreichbar"));
+    let unblock!: () => void;
+    let started!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
+      if (output.includes("Eins")) {
+        started();
+        await blocked;
+      }
+      await writeFile(output, "media");
+      return { success: true, outputPath: output };
+    });
+    const processing = startDownloadProcessing();
+    await firstStarted;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      expect(downloadFindFirst).toHaveBeenCalledTimes(1);
+      expect(downloadHlsStream).toHaveBeenCalledTimes(1);
+      expect(startDownloadProcessing()).toBe(processing);
+    } finally {
+      unblock();
+      await processing;
+    }
+    expect(downloadHlsStream).toHaveBeenCalledTimes(2);
+    expect(downloadCount).not.toHaveBeenCalled();
+    expect([...jobs.values()].map((job) => job.status)).toEqual(["completed", "completed"]);
+  });
+
+  it("kann nach einem Datenbankfehler erneut gestartet werden", async () => {
+    downloadFindFirst.mockRejectedValueOnce(new Error("Datenbank vorübergehend nicht erreichbar"));
+    await expect(startDownloadProcessing()).rejects.toThrow("Datenbank");
+    downloadFindFirst.mockResolvedValue(null);
+    await expect(startDownloadProcessing()).resolves.toBeUndefined();
+    expect(downloadFindFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it("berücksichtigt einen Auftrag, der während der letzten leeren Abfrage eingeht", async () => {
+    let unblock!: (value: null) => void;
+    downloadFindFirst.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          unblock = resolve;
+        })
+    );
+    downloadFindFirst.mockResolvedValue(null);
+    const processing = startDownloadProcessing();
+    startDownloadProcessing();
+    unblock(null);
+    await processing;
+    expect(downloadFindFirst).toHaveBeenCalledTimes(2);
+  });
 });

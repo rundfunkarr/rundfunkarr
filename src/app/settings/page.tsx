@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SecuritySettings } from "@/components/auth/security-settings";
 import { useSettings } from "@/contexts/settings-context";
 import { validateApiCredentials } from "@/lib/validate-api-credentials";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -232,6 +233,7 @@ export default function SettingsPage() {
 
             {/* General Tab */}
             <TabsContent value="general" className="space-y-4">
+              <SecuritySettings />
               <Card>
                 <CardHeader>
                   <CardTitle>Allgemeine Einstellungen</CardTitle>
@@ -267,6 +269,47 @@ export default function SettingsPage() {
                       Welche Qualitäten sollen im Newznab-Feed angezeigt werden?
                     </p>
                   </div>
+                  <div>
+                    <label htmlFor="subtitle-mode" className="text-sm font-medium">
+                      Untertitel
+                    </label>
+                    <select
+                      id="subtitle-mode"
+                      value={getFieldValue("download.subtitleMode") || "off"}
+                      onChange={(e) => setFieldValue("download.subtitleMode", e.target.value)}
+                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="off">Nicht herunterladen</option>
+                      <option value="sidecar">Als SRT-Datei daneben speichern</option>
+                      <option value="embed">In MKV oder MP4 einbetten</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Nutzt die von der Mediathek bereitgestellten Untertitel. SRT, WebVTT und TTML
+                      werden unterstützt. Wenn Einbetten scheitert, bleibt die SRT-Datei erhalten
+                      und die Historie zeigt den Hinweis.
+                    </p>
+                  </div>
+                  <div>
+                    <label htmlFor="audio-variant" className="text-sm font-medium">
+                      Fassungen in Suche und Feed
+                    </label>
+                    <select
+                      id="audio-variant"
+                      value={getFieldValue("matching.audioVariant") || "all"}
+                      onChange={(e) => setFieldValue("matching.audioVariant", e.target.value)}
+                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="all">Alle Fassungen</option>
+                      <option value="standard">Standardfassung</option>
+                      <option value="original">Originalfassung / OmU</option>
+                      <option value="description">Audiodeskription / Hörfassung</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Erkennt Fassungen anhand der Titelangaben. Die tatsächliche Audiosprache wird
+                      dabei nicht ermittelt. Vorhandene Sprachangaben bleiben beim Konvertieren
+                      erhalten.
+                    </p>
+                  </div>
                   <label className="flex items-center justify-between gap-4 rounded-md border border-input p-3">
                     <span>
                       <span className="block text-sm font-medium">MP4 in MKV konvertieren</span>
@@ -287,7 +330,13 @@ export default function SettingsPage() {
 
                   <Button
                     onClick={() =>
-                      handleSave(["download.path", "download.quality", "download.convertToMkv"])
+                      handleSave([
+                        "download.path",
+                        "download.quality",
+                        "download.convertToMkv",
+                        "download.subtitleMode",
+                        "matching.audioVariant",
+                      ])
                     }
                     disabled={isSaving}
                   >

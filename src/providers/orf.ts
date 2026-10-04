@@ -263,6 +263,8 @@ export class OrfProvider extends BaseProvider {
       duration: result.duration,
       size: result.size,
       websiteUrl: result.url_website,
+      subtitleUrl: result.url_subtitle,
+      audioLanguage: result.audioLanguage,
       videoUrl: result.url_video,
       videoUrlLow: result.url_video_low || undefined,
       videoUrlHigh: result.url_video_hd || undefined,

@@ -1,3 +1,4 @@
+import { releaseLanguage } from "@/lib/media-metadata";
 import { getSetting } from "@/lib/settings";
 import { isHlsUrl } from "@/server/ytdlp";
 import type {
@@ -111,7 +112,7 @@ export abstract class BaseProvider implements ContentProvider {
     const sanitizedTitle = this.sanitizeForFilename(item.title);
     const year = new Date(item.timestamp * 1000).getFullYear();
 
-    const suffix = `.${year}.GERMAN.${quality}.WEB.h264-${this.id.toUpperCase()}`;
+    const suffix = `.${year}.${releaseLanguage(item.title)}.${quality}.WEB.h264-${this.id.toUpperCase()}`;
     const characters = Array.from(`${sanitizedTopic}.${sanitizedTitle}`);
     while (Buffer.byteLength(characters.join("") + suffix, "utf8") > 200) characters.pop();
     return characters.join("") + suffix;
@@ -152,6 +153,8 @@ export abstract class BaseProvider implements ContentProvider {
     videoUrl: string;
     videoUrlLow?: string;
     videoUrlHigh?: string;
+    subtitleUrl?: string;
+    audioLanguage?: string;
   }): ProviderContentItem {
     return {
       id: data.id,
@@ -164,6 +167,8 @@ export abstract class BaseProvider implements ContentProvider {
       duration: data.duration,
       size: data.size,
       websiteUrl: data.websiteUrl,
+      subtitleUrl: data.subtitleUrl,
+      audioLanguage: data.audioLanguage,
       videoUrls: {
         standard: data.videoUrl,
         low: data.videoUrlLow,

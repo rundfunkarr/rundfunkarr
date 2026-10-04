@@ -46,6 +46,9 @@ model Download {
   speed           BigInt    @default(0)
   filePath        String?
   error           String?
+  mediaMetadata   String?
+  warning         String?
+  subtitleArtifact String?   // JSON identity of the sidecar created by this download
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
 
@@ -55,6 +58,25 @@ model Download {
 model Config {
   key   String @id
   value String
+}
+
+model AuthConfig {
+  id                Int       @id @default(1)
+  enabled           Boolean   @default(false)
+  username          String    @default("")
+  passwordHash      String    @default("")
+  apiKey            String
+  revision          String
+  failedLogins      Int       @default(0)
+  loginBlockedUntil DateTime?
+}
+
+model AuthSession {
+  tokenHash String   @id
+  revision  String
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }
 
 model GeneratedRuleset {
