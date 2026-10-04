@@ -1,6 +1,7 @@
 import { beforeAll, afterAll, beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { createServer, type ServerResponse } from "node:http";
 import { readFile, rm } from "node:fs/promises";
+import { dirname } from "node:path";
 import * as fsp from "fs/promises";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
@@ -317,6 +318,67 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
       } finally {
         releaseMove();
         await processing;
+      }
+    }
+  );
+
+  it.each([
+    ["/api", true, getApi],
+    ["/api", false, getApi],
+    ["/api/download", true, getDownloadApi],
+    ["/api/download", false, getDownloadApi],
+  ] as const)(
+    "uses the completed file for history deletion via %s (delete files: %s)",
+    async (endpoint, delFiles, get) => {
+      const id = `history-finalizing-${endpoint === "/api" ? "root" : "download"}-${delFiles}`;
+      await job(id);
+      const actual = await vi.importActual<typeof import("fs/promises")>("fs/promises");
+      let releaseMove = () => {};
+      const gate = new Promise<void>((resolve) => {
+        releaseMove = resolve;
+      });
+      let publishedPath = "";
+      vi.mocked(fsp.rename).mockImplementationOnce(async (sourcePath, targetPath) => {
+        publishedPath = String(targetPath);
+        await gate;
+        await actual.rename(sourcePath, targetPath);
+      });
+      const abort = vi.spyOn(AbortController.prototype, "abort");
+      const processing = startDownloadProcessing();
+      let deletion: ReturnType<typeof get> | undefined;
+      try {
+        await vi.waitFor(() => expect(publishedPath).not.toBe(""));
+        expect(await prisma.download.findUnique({ where: { id } })).toMatchObject({
+          status: "downloading",
+          filePath: null,
+        });
+        deletion = get(
+          new NextRequest(
+            `http://localhost${endpoint}?mode=history&name=delete&value=${id}&del_files=${delFiles ? 1 : 0}`
+          )
+        );
+        // Keep publication blocked until the delete request has read the active
+        // record and requested cancellation. Completion then wins this race.
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledWith("cancel"));
+        releaseMove();
+        const response = await deletion;
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ status: true });
+        await processing;
+        expect(await prisma.download.findUnique({ where: { id } })).toBeNull();
+        if (delFiles) {
+          await expect(fsp.access(publishedPath)).rejects.toMatchObject({ code: "ENOENT" });
+          await expect(fsp.access(dirname(publishedPath))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        } else {
+          expect(await readFile(publishedPath)).toEqual(bytes);
+        }
+      } finally {
+        releaseMove();
+        await processing;
+        await deletion;
+        abort.mockRestore();
       }
     }
   );

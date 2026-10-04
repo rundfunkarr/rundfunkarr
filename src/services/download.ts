@@ -222,7 +222,7 @@ export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
 }
 
 export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promise<boolean> {
-  const download = await prisma.download.findUnique({
+  let download = await prisma.download.findUnique({
     where: { id: nzoId },
   });
 
@@ -233,6 +233,9 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
   if (["queued", "downloading", "converting", "paused"].includes(download.status)) {
     const { controlDownload } = await import("@/server/download-queue");
     await controlDownload(nzoId, "cancel");
+    // Completion can win the cancellation race and publish a new file path.
+    download = await prisma.download.findUnique({ where: { id: nzoId } });
+    if (!download) return false;
   }
 
   // Delete the file if requested

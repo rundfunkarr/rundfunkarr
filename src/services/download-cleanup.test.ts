@@ -3,14 +3,16 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
-const { findUnique, deleteDownload } = vi.hoisted(() => ({
+const { findUnique, deleteDownload, controlDownload } = vi.hoisted(() => ({
   findUnique: vi.fn(),
   deleteDownload: vi.fn(),
+  controlDownload: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   prisma: { download: { findUnique, delete: deleteDownload } },
 }));
+vi.mock("@/server/download-queue", () => ({ controlDownload }));
 
 import { deleteHistoryItem } from "./download";
 
@@ -25,8 +27,9 @@ describe("download history folder cleanup", () => {
     directory = path.join(root, "tv", downloadId);
     filePath = path.join(directory, "Video.mp4");
     await mkdir(directory, { recursive: true });
-    findUnique.mockResolvedValue({ id: downloadId, status: "completed", filePath });
+    findUnique.mockReset().mockResolvedValue({ id: downloadId, status: "completed", filePath });
     deleteDownload.mockReset().mockResolvedValue({});
+    controlDownload.mockReset().mockResolvedValue(false);
   });
 
   afterEach(async () => {
@@ -77,5 +80,18 @@ describe("download history folder cleanup", () => {
 
     await expect(readFile(filePath, "utf8")).resolves.toBe("video bytes");
     expect(deleteDownload).toHaveBeenCalledWith({ where: { id: downloadId } });
+  });
+
+  it("does not use stale file data if the record disappears during cancellation", async () => {
+    await writeFile(filePath, "preserved bytes");
+    findUnique
+      .mockResolvedValueOnce({ id: downloadId, status: "downloading", filePath })
+      .mockResolvedValueOnce(null);
+
+    await expect(deleteHistoryItem(downloadId, true)).resolves.toBe(false);
+
+    expect(controlDownload).toHaveBeenCalledWith(downloadId, "cancel");
+    expect(deleteDownload).not.toHaveBeenCalled();
+    await expect(readFile(filePath, "utf8")).resolves.toBe("preserved bytes");
   });
 });
