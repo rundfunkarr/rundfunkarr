@@ -1,3 +1,4 @@
+import { mediaMetadata, releaseLanguage } from "@/lib/media-metadata";
 import { Builder } from "xml2js";
 import { isStreamingUrl } from "@/lib/stream-url";
 import type {
@@ -243,13 +244,13 @@ function generateTitle(
   if (episodeType === "daily") {
     const aired = episode.aired ? new Date(episode.aired) : new Date();
     const dateStr = aired.toISOString().split("T")[0]; // yyyy-MM-dd
-    return `${info.showName}.${dateStr}.${episode.name}.GERMAN.${quality}.WEB.h264-MEDiATHEK`.replace(
+    return `${info.showName}.${dateStr}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
       / /g,
       "."
     );
   }
 
-  return `${info.showName}.S${getPaddedSeason(episode)}E${getPaddedEpisode(episode)}.${episode.name}.GERMAN.${quality}.WEB.h264-MEDiATHEK`.replace(
+  return `${info.showName}.S${getPaddedSeason(episode)}E${getPaddedEpisode(episode)}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
     / /g,
     "."
   );
@@ -271,7 +272,7 @@ function createRssItem(
   const encodedTitle = Buffer.from(formattedTitle).toString("base64");
   const encodedUrl = Buffer.from(url).toString("base64");
 
-  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
+  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}&metadata=${encodeURIComponent(JSON.stringify(mediaMetadata(info.item)))}`;
   const item = info.item;
 
   return {
@@ -443,12 +444,19 @@ function generateMovieAttributes(
   return attributes;
 }
 
-function generateMovieTitle(movieData: TmdbMovieData, quality: string): string {
+function generateMovieTitle(
+  movieData: TmdbMovieData,
+  quality: string,
+  sourceTitle: string
+): string {
   const year = movieData.releaseDate ? movieData.releaseDate.split("-")[0] : "";
   const title = movieData.germanTitle || movieData.title;
   const yearPart = year ? `.${year}` : "";
 
-  return `${title}${yearPart}.GERMAN.${quality}.WEB.h264-MEDiATHEK`.replace(/ /g, ".");
+  return `${title}${yearPart}.${releaseLanguage(sourceTitle)}.${quality}.WEB.h264-MEDiATHEK`.replace(
+    / /g,
+    "."
+  );
 }
 
 function createMovieRssItem(
@@ -461,13 +469,13 @@ function createMovieRssItem(
   url: string
 ): NewznabItem {
   const adjustedSize = Math.floor(item.size * sizeMultiplier);
-  const parsedTitle = generateMovieTitle(movieData, quality);
+  const parsedTitle = generateMovieTitle(movieData, quality, item.title);
   const formattedTitle = formatTitle(parsedTitle);
 
   const encodedTitle = Buffer.from(formattedTitle).toString("base64");
   const encodedUrl = Buffer.from(url).toString("base64");
 
-  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
+  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}&metadata=${encodeURIComponent(JSON.stringify(mediaMetadata(item)))}`;
 
   return {
     title: formattedTitle,
@@ -763,10 +771,10 @@ function createGenericRssItem(
     // Omit the episode-name segment when the pattern consumed the whole title
     // (e.g. "Staffel 2 Folge 3"), otherwise it duplicates the SxxExx info.
     rawTitle = parsed.episodeName
-      ? `${item.topic}.S${paddedSeason}E${paddedEpisode}.${parsed.episodeName}.GERMAN.${quality}.WEB.h264-MEDiATHEK`
-      : `${item.topic}.S${paddedSeason}E${paddedEpisode}.GERMAN.${quality}.WEB.h264-MEDiATHEK`;
+      ? `${item.topic}.S${paddedSeason}E${paddedEpisode}.${parsed.episodeName}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`
+      : `${item.topic}.S${paddedSeason}E${paddedEpisode}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
   } else {
-    rawTitle = `${item.topic}.${item.title}.GERMAN.${quality}.WEB.h264-MEDiATHEK`;
+    rawTitle = `${item.topic}.${item.title}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
   }
 
   const formattedTitle = formatTitle(rawTitle);
@@ -774,7 +782,7 @@ function createGenericRssItem(
   const encodedTitle = Buffer.from(formattedTitle).toString("base64");
   const encodedUrl = Buffer.from(url).toString("base64");
 
-  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
+  const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}&metadata=${encodeURIComponent(JSON.stringify(mediaMetadata(item)))}`;
 
   const attributes: NewznabAttribute[] = categoryValues.map((v) => ({
     name: "category",

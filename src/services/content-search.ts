@@ -1,3 +1,4 @@
+import { matchesAudioVariant } from "@/lib/media-metadata";
 import {
   queryMediathekView,
   type MediathekQueryField,
@@ -20,6 +21,7 @@ export async function queryContent(
   ]);
   const mvEnabled = mvSetting !== "false";
   const orfEnabled = orfSetting === "true" && hlsSetting === "true";
+  const variant = await getSetting("matching.audioVariant");
   const srfEnabled = await srfProvider.isEnabled();
 
   try {
@@ -53,6 +55,8 @@ export async function queryContent(
         duration: item.duration,
         size: item.size,
         url_website: item.websiteUrl,
+        url_subtitle: item.subtitleUrl,
+        audioLanguage: item.audioLanguage,
         url_video: item.videoUrls.standard,
         url_video_hd: item.videoUrls.high || "",
         url_video_low: item.videoUrls.low || "",
@@ -73,7 +77,9 @@ export async function queryContent(
       options.deduplicate === false
         ? items
         : [...new Map(items.map((item) => [item.url_video, item])).values()];
-    const sortedResults = results.sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp);
+    const sortedResults = results
+      .filter((item) => matchesAudioVariant(item.title, variant))
+      .sort((a, b) => b.filmlisteTimestamp - a.filmlisteTimestamp);
     // Each provider is already bounded. Preserve appended provider candidates
     // until callers finish matching and deduplicating their metadata records.
     return options.deduplicate === false ? sortedResults : sortedResults.slice(0, size);

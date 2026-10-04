@@ -1,3 +1,4 @@
+import { mediaMetadataSchema } from "@/lib/media-metadata";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -19,6 +20,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid base64 string" }, { status: 400 });
   }
 
+  let encodedMetadata = "";
+  if (searchParams.has("metadata")) {
+    try {
+      const metadata = mediaMetadataSchema.parse(JSON.parse(searchParams.get("metadata")!));
+      encodedMetadata = Buffer.from(`rundfunkarr-media:${JSON.stringify(metadata)}`).toString(
+        "base64"
+      );
+    } catch {
+      return NextResponse.json({ error: "Ungültige Medienmetadaten." }, { status: 400 });
+    }
+  }
+
   // Embed the still-base64-encoded values, not the decoded URL/title.
   // Real-world source URLs (confirmed live: ORF's own CDN naming, e.g.
   // ".../BOesterreich--6_..." ) can contain "--", which is illegal inside
@@ -34,6 +47,7 @@ export async function GET(request: NextRequest) {
 <!DOCTYPE nzb PUBLIC "-//newzBin//DTD NZB 1.0//EN" "http://www.newzbin.com/DTD/nzb/nzb-1.0.dtd">
 <!-- ${encodedTitle} -->
 <!-- ${encodedUrl} -->
+${encodedMetadata ? `<!-- ${encodedMetadata} -->` : ""}
 <nzb>
     <file post_id="1">
         <groups>

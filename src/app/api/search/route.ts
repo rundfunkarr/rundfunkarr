@@ -1,3 +1,4 @@
+import { matchesAudioVariant } from "@/lib/media-metadata";
 import { NextRequest, NextResponse } from "next/server";
 import { getCategoriesForTopics, CategoryType } from "@/services/category";
 import { getMinDurationSeconds, getSetting } from "@/lib/settings";
@@ -25,6 +26,8 @@ export interface SearchResult {
   url_video_hd: string;
   url_video_low: string;
   url_website: string;
+  url_subtitle?: string;
+  audioLanguage?: string;
   category?: CategoryType;
   providerId?: string;
 }
@@ -49,6 +52,8 @@ function providerItemToSearchResult(
     url_video_hd: item.videoUrls.high || item.videoUrls.standard,
     url_video_low: item.videoUrls.low || "",
     url_website: item.websiteUrl,
+    url_subtitle: item.subtitleUrl,
+    audioLanguage: item.audioLanguage,
     category,
     providerId: item.providerId,
   };
@@ -114,6 +119,8 @@ async function handleProviderSearch(
       errors = result.errors;
     }
 
+    const variant = await getSetting("matching.audioVariant");
+    items = items.filter((item) => matchesAudioVariant(item.title, variant));
     // Collect unique topics for category lookup
     const topics = [...new Set(items.map((item) => item.topic))] as string[];
     const categoryMap = await getCategoriesForTopics(topics);
@@ -186,6 +193,8 @@ async function handleDefaultSearch(
         url_video_hd: string;
         url_video_low: string;
         url_website: string;
+        url_subtitle?: string;
+        audioLanguage?: string;
       }) => ({
         id: `${item.channel}-${item.topic}-${item.title}-${item.filmlisteTimestamp}`,
         channel: item.channel,
@@ -199,6 +208,8 @@ async function handleDefaultSearch(
         url_video_hd: item.url_video_hd || item.url_video,
         url_video_low: item.url_video_low || "",
         url_website: item.url_website,
+        url_subtitle: item.url_subtitle,
+        audioLanguage: item.audioLanguage,
         category: categoryMap.get(item.topic),
       })
     );
