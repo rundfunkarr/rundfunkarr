@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { parseMediaMetadata, type MediaMetadata } from "@/lib/media-metadata";
 import { randomUUID } from "crypto";
+import type { HistoryPage } from "@/lib/history-pagination";
 
 /**
  * Format seconds remaining as SABnzbd's strict "H:MM:SS" timeleft format.
@@ -47,6 +48,9 @@ export interface SabnzbdQueue {
 
 export interface SabnzbdHistory {
   slots: HistoryItem[];
+  noofslots?: number;
+  start?: number;
+  limit?: number;
 }
 
 // Extract filename and URL from NZB content
@@ -183,12 +187,13 @@ export async function getQueue(): Promise<SabnzbdQueue> {
   return { slots };
 }
 
-export async function getHistory(): Promise<SabnzbdHistory> {
+export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
   const downloads = await prisma.download.findMany({
     where: {
       status: { in: ["completed", "failed"] },
     },
-    orderBy: { completedAt: "desc" },
+    orderBy: [{ completedAt: "desc" }, { id: "desc" }],
+    ...(page ? { skip: page.start, take: page.limit } : {}),
   });
 
   const slots: HistoryItem[] = downloads.map((d) => {
@@ -207,7 +212,11 @@ export async function getHistory(): Promise<SabnzbdHistory> {
     };
   });
 
-  return { slots };
+  if (!page) return { slots };
+  const noofslots = await prisma.download.count({
+    where: { status: { in: ["completed", "failed"] } },
+  });
+  return { slots, noofslots, ...page };
 }
 
 export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promise<boolean> {
