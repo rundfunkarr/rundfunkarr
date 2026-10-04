@@ -17,6 +17,7 @@ export interface QueryInfo {
 }
 
 export interface ApiResultItem {
+  timestamp?: number;
   channel: string;
   topic: string;
   title: string;
@@ -26,6 +27,8 @@ export interface ApiResultItem {
   size: number;
   url_website: string;
   url_video: string;
+  url_subtitle?: string;
+  audioLanguage?: string;
   url_video_low: string;
   url_video_hd: string;
 }

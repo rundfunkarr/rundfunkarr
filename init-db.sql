@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS Download (
     speed BIGINT DEFAULT 0,
     filePath TEXT,
     error TEXT,
+    mediaMetadata TEXT,
+    warning TEXT,
+    subtitleArtifact TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     completedAt DATETIME
 );
@@ -108,3 +111,19 @@ CREATE TABLE IF NOT EXISTS "SubscriptionMatch" (
 CREATE INDEX IF NOT EXISTS "SearchSubscription_paused_nextCheckAt_idx" ON "SearchSubscription"("paused","nextCheckAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "SubscriptionMatch_subscriptionId_sourceKey_key" ON "SubscriptionMatch"("subscriptionId","sourceKey");
 CREATE INDEX IF NOT EXISTS "SubscriptionMatch_subscriptionId_state_foundAt_idx" ON "SubscriptionMatch"("subscriptionId","state","foundAt");
+CREATE TABLE IF NOT EXISTS "AuthConfig" (
+    "id" INTEGER NOT NULL PRIMARY KEY DEFAULT 1,
+    "enabled" BOOLEAN NOT NULL DEFAULT false,
+    "username" TEXT NOT NULL DEFAULT '',
+    "passwordHash" TEXT NOT NULL DEFAULT '',
+    "apiKey" TEXT NOT NULL,
+    "revision" TEXT NOT NULL,
+    "failedLogins" INTEGER NOT NULL DEFAULT 0,
+    "loginBlockedUntil" DATETIME
+);
+CREATE TABLE IF NOT EXISTS "AuthSession" (
+    "tokenHash" TEXT NOT NULL PRIMARY KEY,
+    "revision" TEXT NOT NULL,
+    "expiresAt" DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "AuthSession_expiresAt_idx" ON "AuthSession"("expiresAt");

@@ -86,6 +86,7 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Copy database init script
 COPY init-db.sql /app/init-db.sql
+COPY scripts/reset-auth.mjs /app/scripts/reset-auth.mjs
 
 # Create directories for data and downloads
 # Symlink system FFmpeg and yt-dlp so the app finds them at expected locations
@@ -108,7 +109,7 @@ ENV DATABASE_URL="file:/app/prisma/data/rundfunkarr.db"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:6767/api/download?mode=version || exit 1
+    CMD wget -q --spider http://localhost:6767/api/health || exit 1
 
 # Start the application with entrypoint for PUID/PGID support
 ENTRYPOINT ["/entrypoint.sh"]

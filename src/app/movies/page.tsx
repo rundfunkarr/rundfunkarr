@@ -1,5 +1,6 @@
 "use client";
 
+import { mediaMetadataComment } from "@/lib/media-metadata";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,8 @@ interface SearchResult {
   url_video_hd: string;
   url_video_low: string;
   url_website: string;
+  url_subtitle?: string;
+  audioLanguage?: string;
 }
 
 type QualityOption = {
@@ -87,6 +90,7 @@ export default function MoviesPage() {
     <meta type="filename" filename="${fileName}.nzb"/>
   </head>
   <!-- ${url} -->
+  <!-- ${mediaMetadataComment(result)} -->
 </nzb>`;
 
     try {
