@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { queryContent } from "./content-search";
-import { getCategoriesForTopics } from "./category";
+import { getCachedCategoriesForTopics, getCategoriesForTopics } from "./category";
 import { getSetting } from "@/lib/settings";
 import { isStreamingUrl, withStreamQuality } from "@/lib/stream-url";
 import { mediaMetadata } from "@/lib/media-metadata";
@@ -61,7 +61,6 @@ export async function advancedSearch(filters: SearchFilters) {
   const items = await queryContent(queries, SEARCH_LIMIT, { sortBy: "timestamp", future: false });
   if (!items) throw new Error("Die Mediathek-Suche ist momentan nicht erreichbar.");
   const hls = (await getSetting("download.enableHLS")) === "true";
-  const categories = await getCategoriesForTopics([...new Set(items.map((x) => x.topic))]);
   const from = filters.from ? Date.parse(filters.from) / 1000 : -Infinity;
   const to = filters.to ? Date.parse(filters.to) / 1000 + 86400 : Infinity;
   const results: SearchResult[] = items.flatMap((item) => {
@@ -79,8 +78,10 @@ export async function advancedSearch(filters: SearchFilters) {
         !item.channel.toLocaleLowerCase("de").includes(filters.channel.toLocaleLowerCase("de")))
     )
       return [];
-    return [{ ...item, id: randomUUID(), timestamp, category: categories.get(item.topic) }];
+    return [{ ...item, id: randomUUID(), timestamp }];
   });
+  const categories = await getCachedCategoriesForTopics(results.map((item) => item.topic));
+  for (const item of results) item.category = categories.get(item.topic);
   results.sort((a, b) =>
     filters.sort === "title"
       ? a.title.localeCompare(b.title, "de")
@@ -120,13 +121,16 @@ export async function enqueueSelection(snapshotId: string, ids: string[], qualit
   if (!snapshot) return null;
   const items = ids.map((id) => snapshot.results.find((item) => item.id === id));
   if (items.some((item) => !item)) throw new Error("Die Auswahl gehört nicht zu dieser Suche.");
+  const selected = items as SearchResult[];
+  const categories = await getCategoriesForTopics(selected.map((item) => item.topic));
   const results: Array<{ id: string; downloadId?: string; error?: string }> = [];
-  for (const item of items as SearchResult[]) {
+  for (const item of selected) {
+    const category = categories.get(item.topic);
     try {
       const { id } = await addToQueue(
         resultVideoUrl(item, quality),
         safeTitle(`${item.topic} - ${item.title}`),
-        item.category === "movie" ? "movie" : item.category === "tv" ? "tv" : "default",
+        category === "movie" ? "movie" : category === "tv" ? "tv" : "default",
         mediaMetadata(item)
       );
       results.push({ id: item.id, downloadId: id });

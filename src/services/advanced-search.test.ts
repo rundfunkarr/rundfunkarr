@@ -18,7 +18,10 @@ const { queryContent, addToQueue, getSetting, getVideoInfo } = vi.hoisted(() => 
 }));
 vi.mock("./content-search", () => ({ queryContent }));
 vi.mock("./download", () => ({ addToQueue }));
-vi.mock("./category", () => ({ getCategoriesForTopics: async () => new Map([["Wissen", "tv"]]) }));
+vi.mock("./category", () => ({
+  getCachedCategoriesForTopics: async () => new Map([["Wissen", "tv"]]),
+  getCategoriesForTopics: async () => new Map([["Wissen", "tv"]]),
+}));
 vi.mock("@/lib/settings", () => ({ getSetting }));
 vi.mock("@/server/ytdlp", () => ({ getVideoInfo }));
 const item = (i: number, overrides = {}) => ({

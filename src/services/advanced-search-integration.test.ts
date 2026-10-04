@@ -3,11 +3,15 @@ import { NextRequest } from "next/server";
 import { GET } from "@/app/api/search/advanced/route";
 import { POST } from "@/app/api/search/batch/route";
 
-const { queryMediathekView, addToQueue, settings } = vi.hoisted(() => ({
-  queryMediathekView: vi.fn(),
-  addToQueue: vi.fn(),
-  settings: new Map<string, string>(),
-}));
+const { queryMediathekView, addToQueue, settings, findCategories, saveCategory, searchMulti } =
+  vi.hoisted(() => ({
+    queryMediathekView: vi.fn(),
+    addToQueue: vi.fn(),
+    settings: new Map<string, string>(),
+    findCategories: vi.fn(),
+    saveCategory: vi.fn(),
+    searchMulti: vi.fn(),
+  }));
 vi.mock("@/lib/mediathek-client", () => ({ queryMediathekView }));
 vi.mock("@/lib/settings", () => ({
   getSetting: async (key: string) => settings.get(key) ?? null,
@@ -15,9 +19,10 @@ vi.mock("@/lib/settings", () => ({
 vi.mock("@/providers/srf", () => ({
   srfProvider: { isEnabled: async () => false },
 }));
-vi.mock("./category", () => ({
-  getCategoriesForTopics: async () => new Map([["Wissen", "tv"]]),
+vi.mock("@/lib/db", () => ({
+  prisma: { topicCategory: { findMany: findCategories, upsert: saveCategory } },
 }));
+vi.mock("./tmdb", () => ({ searchMulti }));
 vi.mock("./download", () => ({ addToQueue }));
 
 const item = (i: number, title: string) => ({
@@ -42,6 +47,44 @@ beforeEach(() => {
   settings.clear();
   settings.set("matching.audioVariant", "all");
   addToQueue.mockResolvedValue({ id: "download" });
+  findCategories.mockResolvedValue([{ topic: "Wissen", category: "tv" }]);
+  saveCategory.mockResolvedValue({});
+  searchMulti.mockResolvedValue({ mediaType: "tv", tmdbId: 42 });
+});
+
+it("keeps cached category badges without querying TMDB until results are selected", async () => {
+  findCategories.mockResolvedValue([{ topic: "Topic 999", category: "movie" }]);
+  queryMediathekView.mockResolvedValue(
+    Array.from({ length: 1000 }, (_, i) => ({
+      ...item(i, `Film ${i}`),
+      topic: `Topic ${i === 997 ? 998 : i}`,
+    }))
+  );
+
+  const first = await (
+    await GET(new NextRequest("http://localhost/api/search/advanced?q=Film"))
+  ).json();
+  expect(first.total).toBe(1000);
+  expect(first.results[0].category).toBe("movie");
+  expect(first.results[1].category).toBeUndefined();
+  expect(searchMulti).not.toHaveBeenCalled();
+  expect(saveCategory).not.toHaveBeenCalled();
+
+  const selected = first.results.slice(0, 3);
+  const response = await POST(
+    new NextRequest("http://localhost/api/search/batch", {
+      method: "POST",
+      body: JSON.stringify({
+        snapshot: first.snapshot,
+        ids: selected.map((result: { id: string }) => result.id),
+        quality: "high",
+      }),
+    })
+  );
+  expect(response.status).toBe(200);
+  expect(searchMulti).toHaveBeenCalledExactlyOnceWith("Topic 998");
+  expect(saveCategory).toHaveBeenCalledTimes(1);
+  expect(addToQueue.mock.calls.map((call) => call[2])).toEqual(["movie", "tv", "tv"]);
 });
 
 it.each([
