@@ -218,7 +218,8 @@ export async function getHistory(
     return {
       nzo_id: d.id,
       name: d.title,
-      status: d.status === "completed" ? "Completed" : "Failed",
+      status:
+        d.status === "completed" ? "Completed" : d.status === "cancelled" ? "Cancelled" : "Failed",
       completed: d.completedAt ? Math.floor(d.completedAt.getTime() / 1000) : 0,
       category: d.category,
       // Sonarr accepts a single file. A shared category directory could

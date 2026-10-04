@@ -14,6 +14,8 @@ export function getStatusBadge(status: string) {
       return <Badge variant="secondary">Wartet</Badge>;
     case "completed":
       return <Badge className="bg-green-500">Abgeschlossen</Badge>;
+    case "cancelled":
+      return <Badge variant="outline">Abgebrochen</Badge>;
     case "failed":
       return <Badge variant="destructive">Fehlgeschlagen</Badge>;
     default:

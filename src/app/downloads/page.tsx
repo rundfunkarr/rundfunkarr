@@ -409,7 +409,7 @@ export default function DownloadsPage() {
                           <TableCell>{formatSize(item.bytes)}</TableCell>
                           <TableCell>
                             <div className="flex gap-1">
-                              {item.status.toLowerCase() === "failed" && (
+                              {["failed", "cancelled"].includes(item.status.toLowerCase()) && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
