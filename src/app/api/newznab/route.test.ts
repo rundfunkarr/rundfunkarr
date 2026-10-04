@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+vi.mock("@/lib/auth", () => ({
+  getAuthConfig: vi.fn().mockResolvedValue(null),
+  signNzbLinks: vi.fn(),
+}));
+
 const mediathekMocks = vi.hoisted(() => ({
   fetchSearchResultsById: vi.fn(),
   fetchSearchResultsByString: vi.fn(),

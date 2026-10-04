@@ -1,4 +1,5 @@
 "use client";
+import { SignOut } from "@/components/auth/sign-out";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -107,6 +108,7 @@ export function Sidebar({ className }: SidebarProps) {
           </div>
         ))}
       </nav>
+      <SignOut />
     </aside>
   );
 }

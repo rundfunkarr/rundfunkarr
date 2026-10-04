@@ -49,5 +49,6 @@ docker-compose*
 README.md
 *.md
 
-# Scripts (dev-only)
-scripts
+# Keep only the server-side authentication recovery command.
+scripts/*
+!scripts/reset-auth.mjs

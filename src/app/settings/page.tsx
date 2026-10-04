@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SecuritySettings } from "@/components/auth/security-settings";
 import { useSettings } from "@/contexts/settings-context";
 import { validateApiCredentials } from "@/lib/validate-api-credentials";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -232,6 +233,7 @@ export default function SettingsPage() {
 
             {/* General Tab */}
             <TabsContent value="general" className="space-y-4">
+              <SecuritySettings />
               <Card>
                 <CardHeader>
                   <CardTitle>Allgemeine Einstellungen</CardTitle>

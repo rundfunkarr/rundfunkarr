@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthConfig, signNzbLinks } from "@/lib/auth";
 import {
   fetchSearchResultsById,
   fetchSearchResultsByString,
@@ -17,6 +18,16 @@ import {
 } from "@/services/newznab";
 
 export async function GET(request: NextRequest) {
+  const response = await getResults(request);
+  const config = await getAuthConfig();
+  if (!config?.enabled || !response.headers.get("Content-Type")?.includes("xml")) return response;
+  return new NextResponse(signNzbLinks(await response.text(), config.apiKey), {
+    status: response.status,
+    headers: response.headers,
+  });
+}
+
+async function getResults(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
 
   const t = searchParams.get("t");
