@@ -37,12 +37,14 @@ export async function getCategoryForTopic(topic: string): Promise<CategoryType> 
 }
 
 /**
- * Get categories for multiple topics in parallel.
- * Returns a map of topic -> category.
+ * Read known categories without starting external lookups for a search result list.
  */
-export async function getCategoriesForTopics(topics: string[]): Promise<Map<string, CategoryType>> {
+export async function getCachedCategoriesForTopics(
+  topics: string[]
+): Promise<Map<string, CategoryType>> {
   const uniqueTopics = [...new Set(topics.filter(Boolean))];
   const categoryMap = new Map<string, CategoryType>();
+  if (!uniqueTopics.length) return categoryMap;
 
   // First, check all cached entries in one query
   const cachedEntries = await prisma.topicCategory.findMany({
@@ -54,6 +56,16 @@ export async function getCategoriesForTopics(topics: string[]): Promise<Map<stri
   for (const entry of cachedEntries) {
     categoryMap.set(entry.topic, entry.category as CategoryType);
   }
+
+  return categoryMap;
+}
+
+/**
+ * Get categories for multiple topics, resolving uncached topics through TMDB.
+ */
+export async function getCategoriesForTopics(topics: string[]): Promise<Map<string, CategoryType>> {
+  const uniqueTopics = [...new Set(topics.filter(Boolean))];
+  const categoryMap = await getCachedCategoriesForTopics(uniqueTopics);
 
   // Find topics that need TMDB lookup
   const uncachedTopics = uniqueTopics.filter((t) => !categoryMap.has(t));

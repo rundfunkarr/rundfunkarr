@@ -14,6 +14,8 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "download.path": "/downloads",
   "download.quality": "all",
   "download.convertToMkv": "true",
+  "download.subtitleMode": "off",
+  "matching.audioVariant": "all",
 
   // API Keys
   "api.tvdb.key": "",

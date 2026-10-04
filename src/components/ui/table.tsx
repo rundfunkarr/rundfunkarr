@@ -1,13 +1,47 @@
+"use client";
+
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
-      <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
-    </div>
-  )
+type TableProps = React.HTMLAttributes<HTMLTableElement> & { scrollLabel?: string };
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, scrollLabel, ...props }, ref) => {
+    const viewport = React.useRef<HTMLDivElement>(null);
+    const [overflows, setOverflows] = React.useState(false);
+    const measure = React.useCallback(() => {
+      const element = viewport.current;
+      if (!element) return;
+      setOverflows(element.scrollWidth > element.clientWidth + 1);
+    }, []);
+
+    React.useEffect(() => {
+      if (!scrollLabel || !viewport.current) return;
+      const observer = new ResizeObserver(measure);
+      observer.observe(viewport.current);
+      if (viewport.current.firstElementChild) observer.observe(viewport.current.firstElementChild);
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        observer.disconnect();
+        cancelAnimationFrame(frame);
+      };
+    }, [measure, scrollLabel]);
+
+    return (
+      <div className="min-w-0 max-w-full">
+        <div
+          ref={viewport}
+          role={overflows ? "region" : undefined}
+          aria-label={overflows ? scrollLabel : undefined}
+          tabIndex={overflows ? 0 : undefined}
+          className="table-scrollbar relative w-full overflow-x-auto overscroll-x-contain focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
+        </div>
+      </div>
+    );
+  }
 );
 Table.displayName = "Table";
 

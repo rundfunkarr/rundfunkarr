@@ -1,3 +1,4 @@
+import { processSubtitles } from "./subtitles";
 import { prisma } from "@/lib/db";
 import { isMkvConversionEnabled } from "@/lib/settings";
 import { downloadHlsStream } from "./ytdlp";
@@ -55,24 +56,34 @@ class Semaphore {
 const downloadSemaphore = new Semaphore(MAX_CONCURRENT_DOWNLOADS);
 let isProcessing = false;
 let processingPromise: Promise<void> | null = null;
+let processingRequested = false;
 
-export async function startDownloadProcessing(): Promise<void> {
-  if (isProcessing) {
-    return processingPromise || Promise.resolve();
-  }
+export function startDownloadProcessing(): Promise<void> {
+  processingRequested = true;
+  if (processingPromise) return processingPromise;
 
   isProcessing = true;
-  processingPromise = processQueue();
-  await processingPromise;
-  isProcessing = false;
-  processingPromise = null;
+  processingPromise = (async () => {
+    const skippedIds = new Set<string>();
+    try {
+      // Auch Anforderungen während der letzten, leeren Abfrage berücksichtigen.
+      do {
+        processingRequested = false;
+        await processQueue(skippedIds);
+      } while (processingRequested);
+    } finally {
+      isProcessing = false;
+      processingPromise = null;
+    }
+  })();
+  return processingPromise;
 }
 
-async function processQueue(): Promise<void> {
+async function processQueue(skippedIds: Set<string>): Promise<void> {
   while (true) {
     // Get next queued download
     const nextDownload = await prisma.download.findFirst({
-      where: { status: "queued" },
+      where: { status: "queued", ...(skippedIds.size ? { id: { notIn: [...skippedIds] } } : {}) },
       orderBy: { createdAt: "asc" },
     });
 
@@ -81,11 +92,19 @@ async function processQueue(): Promise<void> {
       break;
     }
 
-    // Start download in background (respecting semaphore)
-    processDownload(nextDownload.id).catch(console.error);
-
-    // Small delay to prevent tight loop
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Erst nach Abschluss den nächsten Auftrag auswählen. Sonst wird derselbe
+    // wartende Auftrag bei belegtem Semaphore immer wieder vorgemerkt.
+    try {
+      await processDownload(nextDownload.id);
+    } catch (error) {
+      // Wenn selbst der Fehlerstatus nicht gespeichert werden kann, den Auftrag
+      // in diesem Durchlauf überspringen und die übrige Warteschlange fortsetzen.
+      skippedIds.add(nextDownload.id);
+      console.error(
+        `[Download] Auftrag ${nextDownload.id} konnte nicht abgeschlossen werden:`,
+        error
+      );
+    }
   }
 }
 
@@ -205,6 +224,7 @@ async function processDownload(downloadId: string): Promise<void> {
       await moveIntoCategoryDir(outputPath, finalMkvPath, categoryDir);
 
       // Get file size
+      const { warning, artifact } = await processSubtitles(finalMkvPath, download.mediaMetadata);
       const stats = await fs.stat(finalMkvPath);
 
       // Calculate storage path (may be mapped differently)
@@ -220,6 +240,8 @@ async function processDownload(downloadId: string): Promise<void> {
         where: { id: downloadId },
         data: {
           status: "completed",
+          warning,
+          subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
           progress: 100,
           size: stats.size,
           filePath: storagePath,
@@ -297,6 +319,7 @@ async function processDownload(downloadId: string): Promise<void> {
       await fs.unlink(mp4Path).catch(() => {});
 
       // Get file size
+      const { warning, artifact } = await processSubtitles(finalMkvPath, download.mediaMetadata);
       const stats = await fs.stat(finalMkvPath);
 
       // Calculate storage path (may be mapped differently)
@@ -312,6 +335,8 @@ async function processDownload(downloadId: string): Promise<void> {
         where: { id: downloadId },
         data: {
           status: "completed",
+          warning,
+          subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
           progress: 100,
           size: stats.size,
           filePath: storagePath,
@@ -327,6 +352,7 @@ async function processDownload(downloadId: string): Promise<void> {
       const finalPath = path.join(categoryDir, `${download.title}${fileExtension}`);
       await moveIntoCategoryDir(mp4Path, finalPath, categoryDir);
 
+      const { warning, artifact } = await processSubtitles(finalPath, download.mediaMetadata);
       const stats = await fs.stat(finalPath);
 
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
@@ -338,6 +364,8 @@ async function processDownload(downloadId: string): Promise<void> {
         where: { id: downloadId },
         data: {
           status: "completed",
+          warning,
+          subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
           progress: 100,
           size: stats.size,
           filePath: storagePath,
@@ -355,13 +383,12 @@ async function processDownload(downloadId: string): Promise<void> {
   } finally {
     downloadSemaphore.release();
 
-    // Check if there are more items to process
-    const hasMore = await prisma.download.count({
-      where: { status: "queued" },
-    });
-
-    if (hasMore > 0 && !isProcessing) {
-      startDownloadProcessing().catch(console.error);
+    // Der aktive Queue-Lauf übernimmt die nächste Abfrage selbst.
+    if (!isProcessing) {
+      const hasMore = await prisma.download.count({
+        where: { status: "queued" },
+      });
+      if (hasMore > 0) startDownloadProcessing().catch(console.error);
     }
   }
 }
