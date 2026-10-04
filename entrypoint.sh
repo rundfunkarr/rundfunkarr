@@ -85,10 +85,15 @@ else
     fail "Database initialization failed. Check that /app/prisma/data is writable by UID $PUID/GID $PGID."
 fi
 
-# Bestehende Datenbanken behalten ihre Downloads beim Schema-Upgrade.
-for column in mediaMetadata warning subtitleArtifact; do
+# Preserve existing downloads when adding queue controls and subtitle metadata.
+for column in priority attempts nextRetryAt mediaMetadata warning subtitleArtifact; do
     if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT name FROM pragma_table_info('Download');" | grep -qx "$column"; then
-        su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE Download ADD COLUMN $column TEXT;"
+        case "$column" in
+            nextRetryAt) definition="DATETIME" ;;
+            priority|attempts) definition="INTEGER NOT NULL DEFAULT 0" ;;
+            *) definition="TEXT" ;;
+        esac
+        su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE Download ADD COLUMN $column $definition;"
     fi
 done
 
