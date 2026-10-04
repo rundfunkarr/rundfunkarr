@@ -7,7 +7,6 @@ const artifactSchema = z.object({
   path: z.string().min(1),
   device: identifier,
   inode: identifier,
-  birthtime: identifier,
   modified: identifier,
   size: identifier,
 });
@@ -17,25 +16,32 @@ function identity(stats: BigIntStats) {
   return {
     device: String(stats.dev),
     inode: String(stats.ino),
-    birthtime: String(stats.birthtimeNs),
     modified: String(stats.mtimeNs),
     size: String(stats.size),
   };
 }
 
-/** Publish a complete SRT atomically without replacing an existing sibling. */
+/** Publish a complete SRT without replacing an existing sibling. */
 export async function publishSubtitleSidecar(
   source: string,
   destination: string
 ): Promise<SubtitleArtifact> {
-  const stats = await fs.lstat(source, { bigint: true });
   try {
-    await fs.link(source, destination);
+    try {
+      await fs.link(source, destination);
+    } catch (error) {
+      if (!["EPERM", "ENOTSUP", "ENOSYS"].includes((error as NodeJS.ErrnoException).code || ""))
+        throw error;
+      // Some network/FUSE volumes cannot hardlink. The copy remains exclusive,
+      // but unlike the hardlink it is not an atomic publication.
+      await fs.copyFile(source, destination, fs.constants.COPYFILE_EXCL);
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST")
       throw new Error("Die vorhandene Untertiteldatei wurde nicht überschrieben.");
     throw error;
   }
+  const stats = await fs.lstat(destination, { bigint: true });
   return { path: destination, ...identity(stats) };
 }
 

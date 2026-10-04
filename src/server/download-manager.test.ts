@@ -20,6 +20,7 @@ const {
   ffmpegModuleLoaded,
   convertMp4ToMkv,
   downloadHlsStream,
+  fetchSubtitle,
 } = vi.hoisted(() => ({
   configFindUnique: vi.fn(),
   downloadCount: vi.fn(),
@@ -28,6 +29,7 @@ const {
   ffmpegModuleLoaded: vi.fn(),
   convertMp4ToMkv: vi.fn(),
   downloadHlsStream: vi.fn(),
+  fetchSubtitle: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -47,6 +49,7 @@ vi.mock("./ffmpeg", () => {
 });
 
 vi.mock("./ytdlp", () => ({ downloadHlsStream }));
+vi.mock("./subtitle-fetch", () => ({ fetchSubtitle }));
 
 import { clearSettingsCache } from "@/lib/settings";
 import { processDownload } from "./download-manager";
@@ -115,6 +118,7 @@ beforeEach(async () => {
   downloadFindUnique.mockReset();
   downloadUpdate.mockReset();
   convertMp4ToMkv.mockReset();
+  fetchSubtitle.mockReset().mockResolvedValue("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n");
 
   testRoot = await mkdtemp(path.join(tmpdir(), "rundfunkarr-download-manager-"));
   vi.stubEnv("DOWNLOAD_TEMP_PATH", path.join(testRoot, "incomplete"));
@@ -216,9 +220,7 @@ describe("processDownload", () => {
       });
       vi.stubGlobal(
         "fetch",
-        vi.fn(async (url: string) => {
-          if (url === "https://example.com/subtitles.vtt")
-            return new Response("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n");
+        vi.fn(async () => {
           return new Response(mediaBytes, {
             status: 200,
             headers: { "content-length": String(mediaBytes.byteLength) },

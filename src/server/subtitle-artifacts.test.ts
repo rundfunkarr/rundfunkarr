@@ -14,13 +14,16 @@ import { PassThrough } from "node:stream";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const { getSetting, findUnique, deleteDownload, spawn, ffmpegAvailable } = vi.hoisted(() => ({
-  getSetting: vi.fn(),
-  findUnique: vi.fn(),
-  deleteDownload: vi.fn(),
-  spawn: vi.fn(),
-  ffmpegAvailable: vi.fn(),
-}));
+const { getSetting, findUnique, deleteDownload, spawn, ffmpegAvailable, fetchSubtitle } =
+  vi.hoisted(() => ({
+    getSetting: vi.fn(),
+    findUnique: vi.fn(),
+    deleteDownload: vi.fn(),
+    spawn: vi.fn(),
+    ffmpegAvailable: vi.fn(),
+    fetchSubtitle: vi.fn(),
+  }));
+vi.mock("./subtitle-fetch", () => ({ fetchSubtitle }));
 vi.mock("@/lib/settings", () => ({ getSetting }));
 vi.mock("@/lib/db", () => ({
   prisma: { download: { findUnique, delete: deleteDownload } },
@@ -45,10 +48,7 @@ beforeEach(async () => {
   await writeFile(video, "completed video");
   getSetting.mockResolvedValue("sidecar");
   ffmpegAvailable.mockResolvedValue(false);
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => new Response("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n"))
-  );
+  fetchSubtitle.mockReset().mockResolvedValue("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n");
 });
 
 afterEach(async () => {
@@ -62,7 +62,7 @@ describe("subtitle artifact ownership", () => {
     async (filename) => {
       const unrelated = path.join(directory, filename);
       await writeFile(unrelated, "unrelated file");
-      vi.mocked(fetch).mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
+      fetchSubtitle.mockRejectedValueOnce(new Error("Untertitelabruf fehlgeschlagen (HTTP 503)."));
 
       await processSubtitles(video, metadata);
 

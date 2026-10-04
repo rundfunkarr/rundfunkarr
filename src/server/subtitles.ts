@@ -2,6 +2,7 @@ import { parseStringPromise, processors } from "xml2js";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import path from "node:path";
+import { fetchSubtitle } from "./subtitle-fetch";
 import { getSetting } from "@/lib/settings";
 import { parseMediaMetadata } from "@/lib/media-metadata";
 import { publishSubtitleSidecar, type SubtitleArtifact } from "./subtitle-artifact";
@@ -91,27 +92,6 @@ export async function subtitleToSrt(source: string): Promise<string> {
   return cues
     .map((cue, i) => `${i + 1}\n${timestamp(cue.start)} --> ${timestamp(cue.end)}\n${cue.text}\n`)
     .join("\n");
-}
-
-async function fetchSubtitle(url: string): Promise<string> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
-  if (!response.ok || !response.body)
-    throw new Error(`Untertitelabruf fehlgeschlagen (HTTP ${response.status}).`);
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 5 * 1024 * 1024) throw new Error("Die Untertiteldatei ist größer als 5 MiB.");
-      chunks.push(value);
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-  return Buffer.concat(chunks).toString("utf8");
 }
 
 async function embed(video: string, subtitle: string, output: string): Promise<void> {
