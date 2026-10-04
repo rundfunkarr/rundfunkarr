@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { parseMediaMetadata, type MediaMetadata } from "@/lib/media-metadata";
 import { randomUUID } from "crypto";
 import * as path from "path";
 import type { HistoryPage } from "@/lib/history-pagination";
@@ -43,6 +44,7 @@ export interface HistoryItem {
   storage: string;
   bytes: number;
   fail_message: string;
+  warning?: string;
 }
 
 export interface SabnzbdQueue {
@@ -66,7 +68,7 @@ const COMMENT_REGEX = /<!--([\s\S]*?)-->/g;
 export function parseNzbContent(
   nzbContent: string,
   uploadedFileName?: string
-): { fileName: string; url: string } | null {
+): { fileName: string; url: string; metadata?: MediaMetadata } | null {
   const fileName = uploadedFileName
     ? uploadedFileName.replace(/\.nzb$/i, "")
     : nzbContent.match(FILE_NAME_REGEX)?.[1];
@@ -75,11 +77,12 @@ export function parseNzbContent(
   }
 
   let url: string | null = null;
+  let metadata: MediaMetadata = {};
   for (const match of nzbContent.matchAll(COMMENT_REGEX)) {
     const comment = match[1].trim();
     if (/^https?:\/\/\S+$/.test(comment)) {
-      url = comment;
-      break;
+      url ||= comment;
+      continue;
     }
     if (!/^[A-Za-z0-9+/=]+$/.test(comment)) {
       continue;
@@ -91,8 +94,9 @@ export function parseNzbContent(
       continue;
     }
     if (/^https?:\/\/\S+$/.test(decoded)) {
-      url = decoded;
-      break;
+      url ||= decoded;
+    } else if (decoded.startsWith("rundfunkarr-media:")) {
+      metadata = parseMediaMetadata(decoded.slice("rundfunkarr-media:".length));
     }
   }
 
@@ -103,13 +107,15 @@ export function parseNzbContent(
   return {
     fileName,
     url,
+    ...(Object.keys(metadata).length ? { metadata } : {}),
   };
 }
 
 export async function addToQueue(
   url: string,
   title: string,
-  category: string
+  category: string,
+  metadata?: MediaMetadata
 ): Promise<{ id: string }> {
   const download = await prisma.download.create({
     data: {
@@ -117,6 +123,9 @@ export async function addToQueue(
       title,
       url,
       category,
+      ...(metadata && Object.keys(metadata).length
+        ? { mediaMetadata: JSON.stringify(metadata) }
+        : {}),
       status: "queued",
       progress: 0,
     },
@@ -211,6 +220,7 @@ export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
       storage: d.filePath || "",
       bytes: Number(d.size),
       fail_message: d.error || "",
+      ...(d.warning ? { warning: d.warning } : {}),
     };
   });
 
@@ -243,6 +253,8 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
     try {
       const fs = await import("fs/promises");
       await fs.unlink(download.filePath).catch(() => {});
+      const { deleteSubtitleSidecar } = await import("@/server/subtitle-artifact");
+      await deleteSubtitleSidecar(download.subtitleArtifact);
       const directory = path.dirname(download.filePath);
       // Legacy downloads use shared category folders, which must remain intact.
       if (path.basename(directory) === download.id) {
@@ -277,7 +289,12 @@ export async function retryDownload(nzoId: string): Promise<{ id: string } | nul
   });
 
   // Re-add to queue
-  return addToQueue(download.url, download.title, download.category);
+  return addToQueue(
+    download.url,
+    download.title,
+    download.category,
+    parseMediaMetadata(download.mediaMetadata)
+  );
 }
 
 export async function getConfigResponse(): Promise<object> {

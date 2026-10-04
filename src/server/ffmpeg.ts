@@ -200,8 +200,7 @@ export async function convertMp4ToMkv(
     // -i input: input file
     // -map 0:v -map 0:a: copy video and audio streams
     // -c copy: stream copy (no re-encoding)
-    // -metadata:s:v:0 language=ger: set German language for video
-    // -metadata:s:a:0 language=ger: set German language for audio
+    // Vorhandene Sprachangaben der Quelle bleiben erhalten.
     const args = [
       "-i",
       mp4Path,
@@ -211,10 +210,6 @@ export async function convertMp4ToMkv(
       "0:a",
       "-c",
       "copy",
-      "-metadata:s:v:0",
-      "language=ger",
-      "-metadata:s:a:0",
-      "language=ger",
       "-y", // Overwrite output
       mkvPath,
     ];

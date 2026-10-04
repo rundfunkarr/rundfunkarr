@@ -49,6 +49,9 @@ model Download {
   priority        Int       @default(0)
   attempts        Int       @default(0)
   nextRetryAt     DateTime?
+  mediaMetadata   String?
+  warning         String?
+  subtitleArtifact String?   // JSON identity of the sidecar created by this download
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
 

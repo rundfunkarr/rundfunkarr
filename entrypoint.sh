@@ -85,12 +85,13 @@ else
     fail "Database initialization failed. Check that /app/prisma/data is writable by UID $PUID/GID $PGID."
 fi
 
-# Bestehende Aufträge bleiben beim Erweitern der Warteschlange erhalten.
-for column in priority attempts nextRetryAt; do
+# Preserve existing downloads when adding queue controls and subtitle metadata.
+for column in priority attempts nextRetryAt mediaMetadata warning subtitleArtifact; do
     if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT name FROM pragma_table_info('Download');" | grep -qx "$column"; then
         case "$column" in
             nextRetryAt) definition="DATETIME" ;;
-            *) definition="INTEGER NOT NULL DEFAULT 0" ;;
+            priority|attempts) definition="INTEGER NOT NULL DEFAULT 0" ;;
+            *) definition="TEXT" ;;
         esac
         su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE Download ADD COLUMN $column $definition;"
     fi

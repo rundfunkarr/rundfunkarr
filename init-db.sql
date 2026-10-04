@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS Download (
     priority INTEGER NOT NULL DEFAULT 0,
     attempts INTEGER NOT NULL DEFAULT 0,
     nextRetryAt DATETIME,
+    mediaMetadata TEXT,
+    warning TEXT,
+    subtitleArtifact TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     completedAt DATETIME
 );

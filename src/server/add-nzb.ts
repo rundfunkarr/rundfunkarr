@@ -46,7 +46,7 @@ export async function addNzb(request: NextRequest, sabnzbd = false) {
     // Preserve the client category: Sonarr filters queue/history by exact
     // match, including the empty category. Folder defaults belong on disk.
     const category = params.get("cat") ?? "";
-    const item = await addToQueue(parsed.url, parsed.fileName, category);
+    const item = await addToQueue(parsed.url, parsed.fileName, category, parsed.metadata);
     return NextResponse.json({ status: true, nzo_ids: [item.id] });
   } catch (error) {
     console.error("Error adding NZB:", error);

@@ -1,5 +1,6 @@
 "use client";
 
+import { mediaMetadataComment } from "@/lib/media-metadata";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ interface SearchResult {
   url_video: string;
   url_video_hd: string;
   url_website: string;
+  url_subtitle?: string;
+  audioLanguage?: string;
   category?: "movie" | "tv" | "unknown";
 }
 
@@ -64,6 +67,7 @@ export default function SearchPage() {
     <meta type="filename" filename="${fileName}.nzb"/>
   </head>
   <!-- ${result.url_video_hd || result.url_video} -->
+  <!-- ${mediaMetadataComment(result)} -->
 </nzb>`;
 
     // Use category for download folder: movie -> /movie, tv -> /tv
@@ -153,7 +157,7 @@ export default function SearchPage() {
                         result.title.includes("Hörfassung")) && (
                         <Badge className="text-xs bg-blue-600">AD</Badge>
                       )}
-                      {result.title.includes("Untertitel") && (
+                      {(result.url_subtitle || result.title.includes("Untertitel")) && (
                         <Badge className="text-xs bg-green-600">UT</Badge>
                       )}
                     </div>

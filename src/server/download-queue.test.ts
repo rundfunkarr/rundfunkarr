@@ -15,12 +15,14 @@ import {
   recoverDownloads,
 } from "./download-queue";
 import { processDownload } from "./download-manager";
+import { deleteHistoryItem, retryDownload } from "@/services/download";
 
-const { testDir } = await vi.hoisted(async () => {
+const { testDir, fetchSubtitle } = await vi.hoisted(async () => {
   const { mkdtemp } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
-  return { testDir: await mkdtemp(`${tmpdir()}/rundfunkarr-queue-`) };
+  return { testDir: await mkdtemp(`${tmpdir()}/rundfunkarr-queue-`), fetchSubtitle: vi.fn() };
 });
+vi.mock("./subtitle-fetch", () => ({ fetchSubtitle }));
 vi.mock("fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs/promises")>();
   return { ...actual, rename: vi.fn(actual.rename) };
@@ -37,6 +39,11 @@ vi.mock("@/lib/db", async () => {
 });
 
 const bytes = Buffer.from([1, 2, 3, 4]);
+const subtitleText = "WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n";
+const mediaMetadata = JSON.stringify({
+  subtitleUrl: "https://example.org/subtitles.vtt",
+  audioLanguage: "eng",
+});
 let requests: string[] = [];
 const blocked = new Set<string>();
 const pending = new Set<ServerResponse>();
@@ -84,6 +91,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   vi.clearAllMocks();
+  fetchSubtitle.mockReset().mockResolvedValue(subtitleText);
   requests = [];
   blocked.clear();
   maximum = 0;
@@ -114,11 +122,16 @@ afterAll(async () => {
 const job = (
   id: string,
   route = `/${id}.mp4`,
-  options: { priority?: number; status?: string } = {}
+  options: { priority?: number; status?: string; mediaMetadata?: string } = {}
 ) =>
   prisma.download.create({
     data: { id, title: "Gleicher Titel", url: base + route, category: "tv", ...options },
   });
+
+async function enableSubtitles() {
+  await prisma.config.create({ data: { key: "download.subtitleMode", value: "sidecar" } });
+  clearSettingsCache();
+}
 
 describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
   it.each([
@@ -236,9 +249,10 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
   });
 
   it("begrenzt Parallelität, beachtet Priorität und trennt gleichnamige Dateien", async () => {
-    await job("a");
-    await job("b", "/b.mp4", { priority: 10 });
-    await job("c");
+    await enableSubtitles();
+    await job("a", undefined, { mediaMetadata });
+    await job("b", "/b.mp4", { priority: 10, mediaMetadata });
+    await job("c", undefined, { mediaMetadata });
     blocked.add("/a.mp4");
     blocked.add("/b.mp4");
     const processing = startDownloadProcessing();
@@ -253,10 +267,23 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     expect(finished.every((entry) => entry.status === "completed")).toBe(true);
     expect(new Set(finished.map((entry) => entry.filePath)).size).toBe(3);
     for (const entry of finished) expect(await readFile(entry.filePath!)).toEqual(bytes);
+    const artifacts = finished.map((entry) => JSON.parse(entry.subtitleArtifact!));
+    expect(new Set(artifacts.map((artifact) => artifact.path)).size).toBe(3);
+    for (const artifact of artifacts)
+      expect(await readFile(artifact.path, "utf8")).toContain("Subtitle");
+    await deleteHistoryItem("a", true);
+    await expect(fsp.access(`${testDir}/downloads/tv/a`)).rejects.toMatchObject({ code: "ENOENT" });
+    for (const entry of finished.filter((entry) => entry.id !== "a")) {
+      expect(await readFile(entry.filePath!)).toEqual(bytes);
+      expect(await readFile(JSON.parse(entry.subtitleArtifact!).path, "utf8")).toContain(
+        "Subtitle"
+      );
+    }
   });
 
   it("stoppt einen laufenden Download beim Pausieren und startet ihn beim Fortsetzen erneut", async () => {
-    await job("pause");
+    await enableSubtitles();
+    await job("pause", undefined, { mediaMetadata });
     blocked.add("/pause.mp4");
     const processing = startDownloadProcessing();
     await vi.waitFor(async () =>
@@ -266,6 +293,7 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     await processing;
     expect((await prisma.download.findUnique({ where: { id: "pause" } }))?.status).toBe("paused");
     expect(requests).toHaveLength(1);
+    expect(fetchSubtitle).not.toHaveBeenCalled();
     blocked.clear();
     await controlDownload("pause", "resume");
     await startDownloadProcessing();
@@ -274,6 +302,12 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
       attempts: 1,
     });
     expect(requests).toHaveLength(2);
+    const finished = await prisma.download.findUniqueOrThrow({ where: { id: "pause" } });
+    expect(finished.mediaMetadata).toBe(mediaMetadata);
+    expect(await readFile(JSON.parse(finished.subtitleArtifact!).path, "utf8")).toContain(
+      "Subtitle"
+    );
+    expect(fetchSubtitle).toHaveBeenCalledExactlyOnceWith("https://example.org/subtitles.vtt");
   });
 
   it("beendet aktive Aufträge beim Abbrechen ohne eine fertige Datei zu melden", async () => {
@@ -322,32 +356,50 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     }
   );
 
-  it.each([
-    ["/api", true, getApi],
-    ["/api", false, getApi],
-    ["/api/download", true, getDownloadApi],
-    ["/api/download", false, getDownloadApi],
-  ] as const)(
-    "uses the completed file for history deletion via %s (delete files: %s)",
-    async (endpoint, delFiles, get) => {
-      const id = `history-finalizing-${endpoint === "/api" ? "root" : "download"}-${delFiles}`;
-      await job(id);
+  it.each(
+    (
+      [
+        ["/api", true, getApi],
+        ["/api", false, getApi],
+        ["/api/download", true, getDownloadApi],
+        ["/api/download", false, getDownloadApi],
+      ] as const
+    ).flatMap(([endpoint, delFiles, get]) =>
+      ["move", "subtitles"].map((stage) => ({ endpoint, delFiles, get, stage }))
+    )
+  )(
+    "deletes settled video/subtitle files via $endpoint during $stage (delete files: $delFiles)",
+    async ({ endpoint, delFiles, get, stage }) => {
+      const id = `history-finalizing-${endpoint === "/api" ? "root" : "download"}-${delFiles}-${stage}`;
+      await enableSubtitles();
+      await job(id, undefined, { mediaMetadata });
       const actual = await vi.importActual<typeof import("fs/promises")>("fs/promises");
       let releaseMove = () => {};
       const gate = new Promise<void>((resolve) => {
         releaseMove = resolve;
       });
       let publishedPath = "";
+      let finalizationBlocked = false;
       vi.mocked(fsp.rename).mockImplementationOnce(async (sourcePath, targetPath) => {
         publishedPath = String(targetPath);
-        await gate;
+        if (stage === "move") {
+          finalizationBlocked = true;
+          await gate;
+        }
         await actual.rename(sourcePath, targetPath);
+      });
+      fetchSubtitle.mockImplementationOnce(async () => {
+        if (stage === "subtitles") {
+          finalizationBlocked = true;
+          await gate;
+        }
+        return subtitleText;
       });
       const abort = vi.spyOn(AbortController.prototype, "abort");
       const processing = startDownloadProcessing();
       let deletion: ReturnType<typeof get> | undefined;
       try {
-        await vi.waitFor(() => expect(publishedPath).not.toBe(""));
+        await vi.waitFor(() => expect(finalizationBlocked).toBe(true));
         expect(await prisma.download.findUnique({ where: { id } })).toMatchObject({
           status: "downloading",
           filePath: null,
@@ -366,13 +418,16 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
         expect(await response.json()).toEqual({ status: true });
         await processing;
         expect(await prisma.download.findUnique({ where: { id } })).toBeNull();
+        const sidecarPath = publishedPath.replace(/\.mp4$/, ".srt");
         if (delFiles) {
           await expect(fsp.access(publishedPath)).rejects.toMatchObject({ code: "ENOENT" });
+          await expect(fsp.access(sidecarPath)).rejects.toMatchObject({ code: "ENOENT" });
           await expect(fsp.access(dirname(publishedPath))).rejects.toMatchObject({
             code: "ENOENT",
           });
         } else {
           expect(await readFile(publishedPath)).toEqual(bytes);
+          expect(await readFile(sidecarPath, "utf8")).toContain("Subtitle");
         }
       } finally {
         releaseMove();
@@ -383,8 +438,71 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     }
   );
 
+  it.each(["pause", "cancel"] as const)(
+    "reports completed output when %s arrives during subtitle finalization",
+    async (action) => {
+      const id = `subtitle-finalizing-${action}`;
+      await enableSubtitles();
+      await job(id, undefined, { mediaMetadata });
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let started = false;
+      fetchSubtitle.mockImplementationOnce(async () => {
+        started = true;
+        await gate;
+        return subtitleText;
+      });
+      const abort = vi.spyOn(AbortController.prototype, "abort");
+      const processing = startDownloadProcessing();
+      let controlled: Promise<boolean> | undefined;
+      try {
+        await vi.waitFor(() => expect(started).toBe(true));
+        controlled = controlDownload(id, action);
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledWith(action));
+        release();
+        expect(await controlled).toBe(false);
+        await processing;
+        const finished = await prisma.download.findUniqueOrThrow({
+          where: { id },
+        });
+        expect(finished.status).toBe("completed");
+        expect(finished.warning).toBeNull();
+        expect(await readFile(finished.filePath!)).toEqual(bytes);
+        expect(await readFile(JSON.parse(finished.subtitleArtifact!).path, "utf8")).toContain(
+          "Subtitle"
+        );
+      } finally {
+        release();
+        await processing;
+        await controlled;
+        abort.mockRestore();
+      }
+    }
+  );
+
+  it.each(["failed", "cancelled"])(
+    "preserves subtitle metadata when retrying a %s download",
+    async (status) => {
+      await enableSubtitles();
+      await job("manual-retry", undefined, { status, mediaMetadata });
+      const retried = await retryDownload("manual-retry");
+      expect(retried).not.toBeNull();
+      await startDownloadProcessing();
+      const finished = await prisma.download.findUniqueOrThrow({ where: { id: retried!.id } });
+      expect(finished.status).toBe("completed");
+      expect(finished.mediaMetadata).toBe(mediaMetadata);
+      expect(await readFile(JSON.parse(finished.subtitleArtifact!).path, "utf8")).toContain(
+        "Subtitle"
+      );
+      expect(await prisma.download.findUnique({ where: { id: "manual-retry" } })).toBeNull();
+    }
+  );
+
   it("plant HTTP 503 erneut ein, begrenzt Versuche und wiederholt HTTP 404 nicht", async () => {
-    await job("retry", "/retry.mp4");
+    await enableSubtitles();
+    await job("retry", "/retry.mp4", { mediaMetadata });
     await job("exhausted", "/unavailable.mp4");
     await job("missing", "/missing.mp4");
     await startDownloadProcessing();
@@ -392,6 +510,8 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     expect(retry.status).toBe("queued");
     expect(retry.attempts).toBe(1);
     expect(retry.nextRetryAt!.getTime()).toBeGreaterThan(Date.now() + 25000);
+    expect(retry.mediaMetadata).toBe(mediaMetadata);
+    expect(fetchSubtitle).not.toHaveBeenCalled();
     expect(await prisma.download.findUnique({ where: { id: "missing" } })).toMatchObject({
       status: "failed",
       attempts: 1,
@@ -405,6 +525,8 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     expect(await prisma.download.findUnique({ where: { id: "retry" } })).toMatchObject({
       status: "completed",
       attempts: 2,
+      mediaMetadata,
+      subtitleArtifact: expect.any(String),
     });
     expect(await prisma.download.findUnique({ where: { id: "exhausted" } })).toMatchObject({
       status: "failed",
