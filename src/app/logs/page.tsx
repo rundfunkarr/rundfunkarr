@@ -24,6 +24,90 @@ function CheckResult({ check }: { check: Diagnostic }) {
   );
 }
 export default function LogsPage() {
+  const [adminKey, setAdminKey] = useState("");
+  const [input, setInput] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [error, setError] = useState("");
+  const lock = useCallback((message = "") => {
+    setAdminKey("");
+    setInput("");
+    setError(message);
+  }, []);
+
+  async function unlock() {
+    setUnlocking(true);
+    setError("");
+    try {
+      const response = await fetch("/api/logs", {
+        headers: { "X-RundfunkArr-Admin-Key": input },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Freischalten fehlgeschlagen.");
+      }
+      setAdminKey(input);
+      setInput("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Freischalten fehlgeschlagen.");
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  if (adminKey) return <ProtectedLogs adminKey={adminKey} onLock={lock} />;
+  return (
+    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 min-w-0">
+      <h1 className="text-2xl font-bold">Diagnose & Protokoll</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Admin-Zugriff</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void unlock();
+            }}
+            className="space-y-4 max-w-lg"
+          >
+            <p className="text-sm text-muted-foreground">
+              Gib den im Server konfigurierten Admin-Schlüssel ein. Er bleibt nur bis zum Sperren,
+              Verlassen oder Neuladen dieser Seite im Speicher.
+            </p>
+            <label className="text-sm flex flex-col gap-1">
+              Admin-Schlüssel
+              <Input
+                type="password"
+                required
+                autoComplete="off"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                disabled={unlocking}
+              />
+            </label>
+            <Button type="submit" disabled={unlocking}>
+              {unlocking ? "Wird geprüft…" : "Freischalten"}
+            </Button>
+            {error && (
+              <p role="alert" className="text-sm text-red-500">
+                {error}
+              </p>
+            )}
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ProtectedLogs({
+  adminKey,
+  onLock,
+}: {
+  adminKey: string;
+  onLock: (message?: string) => void;
+}) {
   const [entries, setEntries] = useState<LogEntry[]>([]),
     [checks, setChecks] = useState<Diagnostic[]>([]),
     [connection, setConnection] = useState<Diagnostic | null>(null);
@@ -37,58 +121,88 @@ export default function LogsPage() {
     [url, setUrl] = useState(""),
     [apiKey, setApiKey] = useState("");
   const sequence = useRef(0);
-  const params = new URLSearchParams({ level, q: query });
+  const session = useRef(new AbortController());
+  useEffect(() => {
+    const controller = new AbortController();
+    session.current = controller;
+    return () => controller.abort();
+  }, []);
+  const lock = useCallback(
+    (message?: string) => {
+      session.current.abort();
+      onLock(message);
+    },
+    [onLock]
+  );
+  const adminFetch = useCallback(
+    async (path: string, init?: RequestInit) => {
+      const signal = session.current.signal;
+      const headers = new Headers(init?.headers);
+      headers.set("X-RundfunkArr-Admin-Key", adminKey);
+      const response = await fetch(path, { ...init, headers, signal, cache: "no-store" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        const message = data?.error || "Die Anfrage ist fehlgeschlagen.";
+        if (!signal.aborted && (response.status === 401 || response.status === 503)) lock(message);
+        throw new Error(message);
+      }
+      return response;
+    },
+    [adminKey, lock]
+  );
   const load = useCallback(async () => {
+    const signal = session.current.signal;
     const id = ++sequence.current;
     try {
-      const response = await fetch(`/api/logs?${new URLSearchParams({ level, q: query })}`);
-      if (!response.ok) throw new Error();
+      const response = await adminFetch(`/api/logs?${new URLSearchParams({ level, q: query })}`);
       const data = await response.json();
-      if (id === sequence.current) {
+      if (!signal.aborted && id === sequence.current) {
         setEntries(data.entries);
         setError("");
       }
     } catch {
-      if (id === sequence.current) setError("Das Protokoll konnte nicht geladen werden.");
+      if (!signal.aborted && id === sequence.current)
+        setError("Das Protokoll konnte nicht geladen werden.");
     }
-  }, [level, query]);
+  }, [level, query, adminFetch]);
   useEffect(() => {
     void load();
-    if (!automatic) return;
-    const timer = setInterval(() => void load(), 5000);
+    const timer = automatic ? setInterval(() => void load(), 5000) : undefined;
     return () => {
       clearInterval(timer);
       sequence.current++;
     };
   }, [load, automatic]);
   async function diagnose() {
+    const signal = session.current.signal;
     setDiagnosing(true);
     setError("");
     try {
-      const response = await fetch("/api/diagnostics");
+      const response = await adminFetch("/api/diagnostics");
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setChecks(data.checks);
+      if (!signal.aborted) setChecks(data.checks);
     } catch {
-      setError("Die Systemdiagnose ist fehlgeschlagen.");
+      if (!signal.aborted) setError("Die Systemdiagnose ist fehlgeschlagen.");
     } finally {
-      setDiagnosing(false);
+      if (!signal.aborted) setDiagnosing(false);
     }
   }
   async function testConnection() {
+    const signal = session.current.signal;
     setTesting(true);
     setConnection(null);
     try {
-      const response = await fetch("/api/diagnostics", {
+      const response = await adminFetch("/api/diagnostics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind, url, apiKey }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
+      if (signal.aborted) return;
       setConnection(data.check);
       setApiKey("");
     } catch (e) {
+      if (signal.aborted) return;
       setConnection({
         id: kind,
         label: kind === "sonarr" ? "Sonarr" : "Radarr",
@@ -96,7 +210,25 @@ export default function LogsPage() {
         message: e instanceof Error ? e.message : "Verbindungstest fehlgeschlagen.",
       });
     } finally {
-      setTesting(false);
+      if (!signal.aborted) setTesting(false);
+    }
+  }
+  async function exportLogs() {
+    const signal = session.current.signal;
+    try {
+      const response = await adminFetch(
+        `/api/logs?${new URLSearchParams({ level, q: query, format: "text" })}`
+      );
+      const blob = await response.blob();
+      if (signal.aborted) return;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "rundfunkarr-protokoll.txt";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    } catch {
+      if (!signal.aborted) setError("Das Protokoll konnte nicht exportiert werden.");
     }
   }
   return (
@@ -106,7 +238,15 @@ export default function LogsPage() {
         <p className="text-sm text-muted-foreground">
           Verbindungen prüfen und Fehler nachvollziehen
         </p>
+        <Button className="mt-3" variant="outline" onClick={() => lock()}>
+          Zugriff sperren
+        </Button>
       </div>
+      {error && (
+        <p role="alert" className="text-sm text-red-500">
+          {error}
+        </p>
+      )}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Systemdiagnose</CardTitle>
@@ -215,9 +355,9 @@ export default function LogsPage() {
             <Button variant="outline" onClick={() => void load()}>
               Aktualisieren
             </Button>
-            <a className="text-sm underline py-2" href={`/api/logs?${params}&format=text`} download>
+            <Button variant="outline" onClick={() => void exportLogs()}>
               Text exportieren
-            </a>
+            </Button>
           </div>
           <label className="flex gap-2 text-sm items-center">
             <input
@@ -227,11 +367,6 @@ export default function LogsPage() {
             />
             Alle fünf Sekunden aktualisieren
           </label>
-          {error && (
-            <p role="alert" className="text-sm text-red-500">
-              {error}
-            </p>
-          )}
           <p className="text-xs text-muted-foreground">{entries.length} sichtbare Einträge</p>
           <div className="space-y-2 min-w-0 max-h-[40rem] overflow-y-auto">
             {entries.map((entry) => (

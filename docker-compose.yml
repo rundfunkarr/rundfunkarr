@@ -9,6 +9,7 @@ services:
       - DOWNLOAD_FOLDER_PATH=/downloads
       - DOWNLOAD_FOLDER_PATH_MAPPING=/downloads/completed  # Path mapping for Sonarr/Radarr
       - DATABASE_URL=file:/app/prisma/data/rundfunkarr.db
+      - DIAGNOSTICS_ADMIN_KEY=${DIAGNOSTICS_ADMIN_KEY:-}
     volumes:
       - ./data:/app/prisma/data          # Database persistence
       - ./downloads:/app/downloads        # Temporary download folder

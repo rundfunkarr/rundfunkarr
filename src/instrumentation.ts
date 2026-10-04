@@ -5,8 +5,13 @@ export async function register() {
       const { installLogger, rememberLogSecret } = await import("@/lib/logger");
       const { prisma } = await import("@/lib/db");
       const { maskSetting } = await import("@/lib/settings-redaction");
-      for (const item of await prisma.config.findMany()) {
-        if (maskSetting(item.key, item.value) !== item.value) rememberLogSecret(item.value);
+      try {
+        for (const item of await prisma.config.findMany()) {
+          if (maskSetting(item.key, item.value) !== item.value) rememberLogSecret(item.value);
+        }
+      } catch {
+        // Optional preload: still install the logger and mask runtime credentials.
+        // Required settings/database initialization below retains its own errors.
       }
       for (const [key, value] of Object.entries(process.env)) {
         if (/KEY|TOKEN|SECRET|PASSWORD|PIN/.test(key)) rememberLogSecret(value);

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { systemDiagnostics, testArrConnection } from "@/server/diagnostics";
-export async function GET() {
+import { requireDiagnosticsAdmin } from "@/lib/diagnostics-auth";
+export async function GET(request: NextRequest) {
+  const denied = requireDiagnosticsAdmin(request);
+  if (denied) return denied;
   try {
     return NextResponse.json(
       { checks: await systemDiagnostics() },
@@ -20,6 +23,8 @@ const schema = z.object({
   apiKey: z.string().trim().min(1).max(500),
 });
 export async function POST(request: NextRequest) {
+  const denied = requireDiagnosticsAdmin(request);
+  if (denied) return denied;
   const input = schema.safeParse(await request.json().catch(() => null));
   if (!input.success)
     return NextResponse.json(

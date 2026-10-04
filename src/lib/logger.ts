@@ -27,8 +27,19 @@ export function rememberLogSecret(value: unknown) {
 }
 export function redactLog(text: string): string {
   let result = text;
-  for (const secret of [...state.secrets].sort((a, b) => b.length - a.length))
-    result = result.split(secret).join("[vertraulich]");
+  const credentialKeys =
+    "authorization|api[_-]?key|admin[_-]?key|access[_-]?token|refresh[_-]?token|consumer[_-]?secret|password|passwd|secret|token|pin";
+  for (const secret of [...state.secrets].sort((a, b) => b.length - a.length)) {
+    if (secret.length >= 6) result = result.split(secret).join("[vertraulich]");
+    else {
+      // Short PINs must not erase timestamps, ports, status codes or item counts.
+      const literal = secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      result = result.replace(
+        new RegExp(`(\\b(?:${credentialKeys})["']?\\s+["']?)${literal}(?=$|[\\s"',;}])`, "gi"),
+        "$1[vertraulich]"
+      );
+    }
+  }
   result = result.replace(/(?:https?|socks4a?|socks5h?):\/\/[^\s<>"']+/gi, (value) => {
     try {
       const url = new URL(value);
@@ -45,7 +56,7 @@ export function redactLog(text: string): string {
   });
   result = result.replace(/\b(Bearer|Basic)\s+[A-Za-z0-9+/_=.:-]+/gi, "$1 [vertraulich]");
   result = result.replace(
-    /((?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|consumer[_-]?secret|password|passwd|secret|token|pin)["']?\s*[:=]\s*)(?:["'][^"']*["']|[^\s,;}]+)/gi,
+    new RegExp(`((?:${credentialKeys})["']?\\s*[:=]\\s*)(?:["'][^"']*["']|[^\\s,;}]+)`, "gi"),
     "$1[vertraulich]"
   );
   return result;

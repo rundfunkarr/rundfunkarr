@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readLogs } from "@/lib/logger";
+import { requireDiagnosticsAdmin } from "@/lib/diagnostics-auth";
 export async function GET(request: NextRequest) {
+  const denied = requireDiagnosticsAdmin(request);
+  if (denied) return denied;
   const params = request.nextUrl.searchParams;
   const level = params.get("level") || "all";
   if (!["all", "info", "warn", "error", "debug"].includes(level))
