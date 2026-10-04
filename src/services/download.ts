@@ -199,10 +199,16 @@ export async function getQueue(): Promise<SabnzbdQueue> {
   return { slots, paused: (await getSetting("download.paused")) === "true" };
 }
 
-export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
+export async function getHistory(
+  page?: HistoryPage,
+  includeCancelled = false
+): Promise<SabnzbdHistory> {
+  const statuses = includeCancelled
+    ? ["completed", "failed", "cancelled"]
+    : ["completed", "failed"];
   const downloads = await prisma.download.findMany({
     where: {
-      status: { in: ["completed", "failed", "cancelled"] },
+      status: { in: statuses },
     },
     orderBy: [{ completedAt: "desc" }, { id: "desc" }],
     ...(page ? { skip: page.start, take: page.limit } : {}),
@@ -226,7 +232,7 @@ export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
 
   if (!page) return { slots };
   const noofslots = await prisma.download.count({
-    where: { status: { in: ["completed", "failed", "cancelled"] } },
+    where: { status: { in: statuses } },
   });
   return { slots, noofslots, ...page };
 }

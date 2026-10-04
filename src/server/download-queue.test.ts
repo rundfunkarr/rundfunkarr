@@ -135,9 +135,9 @@ async function enableSubtitles() {
 
 describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
   it.each([
-    ["/api", getApi],
-    ["/api/download", getDownloadApi],
-  ])("zählt abgebrochene Downloads in den Historienseiten von %s mit", async (path, get) => {
+    ["/api", getApi, ["failed", "completed"]],
+    ["/api/download", getDownloadApi, ["failed", "completed", "cancelled"]],
+  ] as const)("liefert die passenden Historieneinträge für %s", async (path, get, expectedIds) => {
     await prisma.download.createMany({
       data: ["completed", "failed", "cancelled", "queued", "paused"].map((status) => ({
         id: status,
@@ -157,13 +157,18 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     expect(second.status).toBe(200);
     const firstPage = (await first.json()).history;
     const secondPage = (await second.json()).history;
-    expect(firstPage.noofslots).toBe(3);
-    expect(secondPage.noofslots).toBe(3);
+    expect(firstPage.noofslots).toBe(expectedIds.length);
+    expect(secondPage.noofslots).toBe(expectedIds.length);
     expect(firstPage.slots).toHaveLength(2);
-    expect(secondPage.slots).toHaveLength(1);
+    expect(secondPage.slots).toHaveLength(expectedIds.length - 2);
     expect(
       [...firstPage.slots, ...secondPage.slots].map((item: { nzo_id: string }) => item.nzo_id)
-    ).toEqual(["failed", "completed", "cancelled"]);
+    ).toEqual(expectedIds);
+
+    const unpaged = await get(new NextRequest(`http://localhost${path}?mode=history`));
+    const history = (await unpaged.json()).history;
+    expect(history.slots.map((item: { nzo_id: string }) => item.nzo_id)).toEqual(expectedIds);
+    expect(history).not.toHaveProperty("noofslots");
   });
 
   it("verarbeitet bei Parallelität eins jeden Auftrag einmal und benötigt keine Zählabfrage", async () => {

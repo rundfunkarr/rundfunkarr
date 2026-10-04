@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       } catch (error) {
         return NextResponse.json({ error: (error as Error).message }, { status: 400 });
       }
-      const history = page ? await getHistory(page) : await getHistory();
+      const history = await getHistory(page, true);
       return NextResponse.json({ history });
     }
 

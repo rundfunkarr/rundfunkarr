@@ -108,8 +108,8 @@ export default function DownloadsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...extra }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Die Aktion ist fehlgeschlagen.");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Die Aktion ist fehlgeschlagen.");
       setRefreshVersion((version) => version + 1);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Die Aktion ist fehlgeschlagen.");
@@ -238,7 +238,7 @@ export default function DownloadsPage() {
             </Button>
             <p className="text-sm text-muted-foreground" role="status">
               {options.paused
-                ? "Neue Aufträge warten. Laufende Downloads werden beendet."
+                ? "Neue Aufträge warten. Laufende Downloads werden noch abgeschlossen."
                 : "Neue Aufträge starten nach ihrer Priorität."}
             </p>
           </div>
