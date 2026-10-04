@@ -46,6 +46,9 @@ model Download {
   speed           BigInt    @default(0)
   filePath        String?
   error           String?
+  priority        Int       @default(0)
+  attempts        Int       @default(0)
+  nextRetryAt     DateTime?
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
 

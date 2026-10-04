@@ -1,3 +1,4 @@
+import { cancelProcessOnAbort, cancellableProcessOptions } from "./process-cancellation";
 import { spawn } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -178,7 +179,8 @@ export interface ConversionResult {
 export async function convertMp4ToMkv(
   mp4Path: string,
   mkvPath: string,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  signal?: AbortSignal
 ): Promise<ConversionResult> {
   // Ensure FFmpeg exists
   const ffmpegExists = await ensureFfmpegExists();
@@ -218,7 +220,10 @@ export async function convertMp4ToMkv(
     ];
 
     console.log(`[FFmpeg] Starting conversion: ${mp4Path} -> ${mkvPath}`);
-    const proc = spawn(FFMPEG_PATH, args);
+    const proc = spawn(FFMPEG_PATH, args, cancellableProcessOptions);
+    const stopCancellation = cancelProcessOnAbort(proc, signal);
+    proc.once("close", stopCancellation);
+    proc.once("error", stopCancellation);
 
     let stderr = "";
 
@@ -281,7 +286,8 @@ export async function convertMp4ToMkv(
 export async function mergeVideoAudio(
   videoPath: string,
   audioPath: string,
-  outputPath: string
+  outputPath: string,
+  signal?: AbortSignal
 ): Promise<ConversionResult> {
   const ffmpegExists = await ensureFfmpegExists();
   if (!ffmpegExists) {
@@ -305,7 +311,10 @@ export async function mergeVideoAudio(
     ];
 
     console.log(`[FFmpeg] Muxing video+audio: ${videoPath} + ${audioPath} -> ${outputPath}`);
-    const proc = spawn(FFMPEG_PATH, args);
+    const proc = spawn(FFMPEG_PATH, args, cancellableProcessOptions);
+    const stopCancellation = cancelProcessOnAbort(proc, signal);
+    proc.once("close", stopCancellation);
+    proc.once("error", stopCancellation);
 
     let stderr = "";
 

@@ -85,6 +85,17 @@ else
     fail "Database initialization failed. Check that /app/prisma/data is writable by UID $PUID/GID $PGID."
 fi
 
+# Bestehende Aufträge bleiben beim Erweitern der Warteschlange erhalten.
+for column in priority attempts nextRetryAt; do
+    if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT name FROM pragma_table_info('Download');" | grep -qx "$column"; then
+        case "$column" in
+            nextRetryAt) definition="DATETIME" ;;
+            *) definition="INTEGER NOT NULL DEFAULT 0" ;;
+        esac
+        su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE Download ADD COLUMN $column $definition;"
+    fi
+done
+
 MISSING_TABLES=""
 for table in TvdbSeries TvdbEpisode Download Config GeneratedRuleset TopicCategory; do
     if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$table';" | grep -q 1; then
