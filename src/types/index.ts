@@ -17,6 +17,7 @@ export interface QueryInfo {
 }
 
 export interface ApiResultItem {
+  timestamp?: number;
   channel: string;
   topic: string;
   title: string;
