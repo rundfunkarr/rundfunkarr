@@ -43,8 +43,8 @@ export default function LogsPage() {
         cache: "no-store",
       });
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Freischalten fehlgeschlagen.");
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "Freischalten fehlgeschlagen.");
       }
       setAdminKey(input);
       setInput("");
