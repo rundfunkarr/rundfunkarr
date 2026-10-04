@@ -4,6 +4,7 @@ import { queryContent } from "./content-search";
 import { getCategoriesForTopics } from "./category";
 import { getSetting } from "@/lib/settings";
 import { isStreamingUrl, withStreamQuality } from "@/lib/stream-url";
+import { mediaMetadata } from "@/lib/media-metadata";
 import type { SearchResult } from "@/app/api/search/route";
 import { addToQueue } from "./download";
 
@@ -125,7 +126,8 @@ export async function enqueueSelection(snapshotId: string, ids: string[], qualit
       const { id } = await addToQueue(
         resultVideoUrl(item, quality),
         safeTitle(`${item.topic} - ${item.title}`),
-        item.category === "movie" ? "movie" : item.category === "tv" ? "tv" : "default"
+        item.category === "movie" ? "movie" : item.category === "tv" ? "tv" : "default",
+        mediaMetadata(item)
       );
       results.push({ id: item.id, downloadId: id });
     } catch {

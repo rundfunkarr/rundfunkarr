@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
+import { parseMediaMetadata, type MediaMetadata } from "@/lib/media-metadata";
 import { randomUUID } from "crypto";
+import type { HistoryPage } from "@/lib/history-pagination";
 
 /**
  * Format seconds remaining as SABnzbd's strict "H:MM:SS" timeleft format.
@@ -37,6 +39,7 @@ export interface HistoryItem {
   storage: string;
   bytes: number;
   fail_message: string;
+  warning?: string;
 }
 
 export interface SabnzbdQueue {
@@ -45,6 +48,9 @@ export interface SabnzbdQueue {
 
 export interface SabnzbdHistory {
   slots: HistoryItem[];
+  noofslots?: number;
+  start?: number;
+  limit?: number;
 }
 
 // Extract filename and URL from NZB content
@@ -56,7 +62,7 @@ const COMMENT_REGEX = /<!--([\s\S]*?)-->/g;
 export function parseNzbContent(
   nzbContent: string,
   uploadedFileName?: string
-): { fileName: string; url: string } | null {
+): { fileName: string; url: string; metadata?: MediaMetadata } | null {
   const fileName = uploadedFileName
     ? uploadedFileName.replace(/\.nzb$/i, "")
     : nzbContent.match(FILE_NAME_REGEX)?.[1];
@@ -65,11 +71,12 @@ export function parseNzbContent(
   }
 
   let url: string | null = null;
+  let metadata: MediaMetadata = {};
   for (const match of nzbContent.matchAll(COMMENT_REGEX)) {
     const comment = match[1].trim();
     if (/^https?:\/\/\S+$/.test(comment)) {
-      url = comment;
-      break;
+      url ||= comment;
+      continue;
     }
     if (!/^[A-Za-z0-9+/=]+$/.test(comment)) {
       continue;
@@ -81,8 +88,9 @@ export function parseNzbContent(
       continue;
     }
     if (/^https?:\/\/\S+$/.test(decoded)) {
-      url = decoded;
-      break;
+      url ||= decoded;
+    } else if (decoded.startsWith("rundfunkarr-media:")) {
+      metadata = parseMediaMetadata(decoded.slice("rundfunkarr-media:".length));
     }
   }
 
@@ -93,13 +101,15 @@ export function parseNzbContent(
   return {
     fileName,
     url,
+    ...(Object.keys(metadata).length ? { metadata } : {}),
   };
 }
 
 export async function addToQueue(
   url: string,
   title: string,
-  category: string
+  category: string,
+  metadata?: MediaMetadata
 ): Promise<{ id: string }> {
   const download = await prisma.download.create({
     data: {
@@ -107,6 +117,9 @@ export async function addToQueue(
       title,
       url,
       category,
+      ...(metadata && Object.keys(metadata).length
+        ? { mediaMetadata: JSON.stringify(metadata) }
+        : {}),
       status: "queued",
       progress: 0,
     },
@@ -174,12 +187,13 @@ export async function getQueue(): Promise<SabnzbdQueue> {
   return { slots };
 }
 
-export async function getHistory(): Promise<SabnzbdHistory> {
+export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
   const downloads = await prisma.download.findMany({
     where: {
       status: { in: ["completed", "failed"] },
     },
-    orderBy: { completedAt: "desc" },
+    orderBy: [{ completedAt: "desc" }, { id: "desc" }],
+    ...(page ? { skip: page.start, take: page.limit } : {}),
   });
 
   const slots: HistoryItem[] = downloads.map((d) => {
@@ -194,10 +208,15 @@ export async function getHistory(): Promise<SabnzbdHistory> {
       storage: d.filePath || "",
       bytes: Number(d.size),
       fail_message: d.error || "",
+      ...(d.warning ? { warning: d.warning } : {}),
     };
   });
 
-  return { slots };
+  if (!page) return { slots };
+  const noofslots = await prisma.download.count({
+    where: { status: { in: ["completed", "failed"] } },
+  });
+  return { slots, noofslots, ...page };
 }
 
 export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promise<boolean> {
@@ -213,7 +232,9 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
   if (delFiles && download.filePath) {
     try {
       const fs = await import("fs/promises");
-      await fs.unlink(download.filePath);
+      await fs.unlink(download.filePath).catch(() => {});
+      const { deleteSubtitleSidecar } = await import("@/server/subtitle-artifact");
+      await deleteSubtitleSidecar(download.subtitleArtifact);
     } catch {
       // File might not exist, ignore error
     }
@@ -241,7 +262,12 @@ export async function retryDownload(nzoId: string): Promise<{ id: string } | nul
   });
 
   // Re-add to queue
-  return addToQueue(download.url, download.title, download.category);
+  return addToQueue(
+    download.url,
+    download.title,
+    download.category,
+    parseMediaMetadata(download.mediaMetadata)
+  );
 }
 
 export async function getConfigResponse(): Promise<object> {

@@ -116,7 +116,12 @@ it("übernimmt nur gewählte Treffer, Qualität und Kategorie und meldet Teilfeh
   );
   expect(rows?.filter((x) => x.error)).toHaveLength(1);
   expect(rows?.filter((x) => x.downloadId)).toHaveLength(1);
-  expect(addToQueue).toHaveBeenCalledWith("https://example.org/2.mp4", "Wissen - Sendung 2", "tv");
+  expect(addToQueue).toHaveBeenCalledWith(
+    "https://example.org/2.mp4",
+    "Wissen - Sendung 2",
+    "tv",
+    {}
+  );
   await expect(enqueueSelection(result.id, ["fremd"], "high")).rejects.toThrow();
 });
 it("weist doppelte Auswahlen zurück, bevor Downloads entstehen", async () => {

@@ -369,6 +369,22 @@ export default function SearchPage() {
                       <span className="text-sm text-muted-foreground break-words">
                         {result.topic}
                       </span>
+                      {result.category === "movie" && (
+                        <Badge className="text-xs bg-violet-600">Film</Badge>
+                      )}
+                      {result.category === "tv" && (
+                        <Badge className="text-xs bg-sky-600">Serie</Badge>
+                      )}
+                      {result.title.includes("Gebärdensprache") && (
+                        <Badge className="text-xs bg-purple-600">DGS</Badge>
+                      )}
+                      {(result.title.includes("Audiodeskription") ||
+                        result.title.includes("Hörfassung")) && (
+                        <Badge className="text-xs bg-blue-600">AD</Badge>
+                      )}
+                      {(result.url_subtitle || result.title.includes("Untertitel")) && (
+                        <Badge className="text-xs bg-green-600">UT</Badge>
+                      )}
                     </div>
                     <h2 className="font-medium mt-1 break-words">{result.title}</h2>
                     {result.description && (

@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS Download (
     speed BIGINT DEFAULT 0,
     filePath TEXT,
     error TEXT,
+    mediaMetadata TEXT,
+    warning TEXT,
+    subtitleArtifact TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     completedAt DATETIME
 );
