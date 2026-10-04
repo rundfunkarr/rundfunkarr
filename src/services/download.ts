@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { parseMediaMetadata, type MediaMetadata } from "@/lib/media-metadata";
 import { randomUUID } from "crypto";
+import * as path from "path";
 import type { HistoryPage } from "@/lib/history-pagination";
 
 /**
@@ -28,6 +29,10 @@ export interface QueueItem {
   mb: string;
   mbleft: string;
   speed: string;
+  priority: string;
+  priorityValue: number;
+  attempts: number;
+  nextRetryAt: string | null;
 }
 
 export interface HistoryItem {
@@ -44,6 +49,7 @@ export interface HistoryItem {
 
 export interface SabnzbdQueue {
   slots: QueueItem[];
+  paused: boolean;
 }
 
 export interface SabnzbdHistory {
@@ -147,15 +153,16 @@ function triggerDownloadProcessing(): void {
 export async function getQueue(): Promise<SabnzbdQueue> {
   const downloads = await prisma.download.findMany({
     where: {
-      status: { in: ["queued", "downloading", "converting"] },
+      status: { in: ["queued", "downloading", "converting", "paused"] },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
   });
 
   const slots: QueueItem[] = downloads.map((d) => {
     let statusText = "Queued";
     if (d.status === "downloading") statusText = "Downloading";
     else if (d.status === "converting") statusText = "Extracting";
+    else if (d.status === "paused") statusText = "Paused";
 
     // Convert BigInt to Number for arithmetic operations
     const totalSizeNum = Number(d.totalSize);
@@ -173,6 +180,10 @@ export async function getQueue(): Promise<SabnzbdQueue> {
 
     return {
       nzo_id: d.id,
+      priority: d.priority > 0 ? "High" : d.priority < 0 ? "Low" : "Normal",
+      priorityValue: d.priority || 0,
+      attempts: d.attempts,
+      nextRetryAt: d.nextRetryAt?.toISOString() || null,
       filename: d.title,
       status: statusText,
       percentage: d.progress.toString(),
@@ -184,13 +195,20 @@ export async function getQueue(): Promise<SabnzbdQueue> {
     };
   });
 
-  return { slots };
+  const { getSetting } = await import("@/lib/settings");
+  return { slots, paused: (await getSetting("download.paused")) === "true" };
 }
 
-export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
+export async function getHistory(
+  page?: HistoryPage,
+  includeCancelled = false
+): Promise<SabnzbdHistory> {
+  const statuses = includeCancelled
+    ? ["completed", "failed", "cancelled"]
+    : ["completed", "failed"];
   const downloads = await prisma.download.findMany({
     where: {
-      status: { in: ["completed", "failed"] },
+      status: { in: statuses },
     },
     orderBy: [{ completedAt: "desc" }, { id: "desc" }],
     ...(page ? { skip: page.start, take: page.limit } : {}),
@@ -200,7 +218,8 @@ export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
     return {
       nzo_id: d.id,
       name: d.title,
-      status: d.status === "completed" ? "Completed" : "Failed",
+      status:
+        d.status === "completed" ? "Completed" : d.status === "cancelled" ? "Cancelled" : "Failed",
       completed: d.completedAt ? Math.floor(d.completedAt.getTime() / 1000) : 0,
       category: d.category,
       // Sonarr accepts a single file. A shared category directory could
@@ -214,18 +233,26 @@ export async function getHistory(page?: HistoryPage): Promise<SabnzbdHistory> {
 
   if (!page) return { slots };
   const noofslots = await prisma.download.count({
-    where: { status: { in: ["completed", "failed"] } },
+    where: { status: { in: statuses } },
   });
   return { slots, noofslots, ...page };
 }
 
 export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promise<boolean> {
-  const download = await prisma.download.findUnique({
+  let download = await prisma.download.findUnique({
     where: { id: nzoId },
   });
 
   if (!download) {
     return false;
+  }
+
+  if (["queued", "downloading", "converting", "paused"].includes(download.status)) {
+    const { controlDownload } = await import("@/server/download-queue");
+    await controlDownload(nzoId, "cancel");
+    // Completion can win the cancellation race and publish a new file path.
+    download = await prisma.download.findUnique({ where: { id: nzoId } });
+    if (!download) return false;
   }
 
   // Delete the file if requested
@@ -235,6 +262,11 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
       await fs.unlink(download.filePath).catch(() => {});
       const { deleteSubtitleSidecar } = await import("@/server/subtitle-artifact");
       await deleteSubtitleSidecar(download.subtitleArtifact);
+      const directory = path.dirname(download.filePath);
+      // Legacy downloads use shared category folders, which must remain intact.
+      if (path.basename(directory) === download.id) {
+        await fs.rmdir(directory).catch(() => {});
+      }
     } catch {
       // File might not exist, ignore error
     }
@@ -255,6 +287,8 @@ export async function retryDownload(nzoId: string): Promise<{ id: string } | nul
   if (!download) {
     return null;
   }
+
+  if (!["failed", "cancelled"].includes(download.status)) return null;
 
   // Delete the old entry
   await prisma.download.delete({

@@ -171,7 +171,10 @@ try {
     });
     assert.equal(historyItem.status, "Completed");
     assert.equal(historyItem.category, category);
-    assert.equal(historyItem.storage, `${root}/downloads/${category || "default"}/${title}.mp4`);
+    assert.equal(
+      historyItem.storage,
+      `${root}/downloads/${category || "default"}/${id}/${title}.mp4`
+    );
     assert.deepEqual(await readFile(historyItem.storage), fixtures.get(`/${height}.mp4`));
     assert.equal((await db.download.findUnique({ where: { id } })).category, category);
     const finishedQueue = await (await request("/api?mode=queue")).json();

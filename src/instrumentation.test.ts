@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   rememberLogSecret: vi.fn(),
   initSettingsFromEnv: vi.fn(),
   initCacheTTL: vi.fn(),
+  recoverDownloads: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: { config: { findMany: mocks.findMany } } }));
@@ -16,6 +17,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 vi.mock("@/lib/env-settings", () => ({ initSettingsFromEnv: mocks.initSettingsFromEnv }));
 vi.mock("@/lib/cache", () => ({ initCacheTTL: mocks.initCacheTTL }));
+vi.mock("@/server/download-queue", () => ({ recoverDownloads: mocks.recoverDownloads }));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -24,6 +26,7 @@ beforeEach(() => {
   mocks.findMany.mockResolvedValue([]);
   mocks.initSettingsFromEnv.mockResolvedValue(0);
   mocks.initCacheTTL.mockResolvedValue(undefined);
+  mocks.recoverDownloads.mockResolvedValue(undefined);
   vi.spyOn(console, "log").mockImplementation(() => {});
 });
 
@@ -42,6 +45,7 @@ it("installs logging and initializes settings/cache when optional secret preload
   expect(mocks.rememberLogSecret).toHaveBeenCalledWith("runtime-sensitive-key");
   expect(mocks.initSettingsFromEnv).toHaveBeenCalledOnce();
   expect(mocks.initCacheTTL).toHaveBeenCalledOnce();
+  expect(mocks.recoverDownloads).toHaveBeenCalledOnce();
 });
 
 it("preloads stored credentials while leaving ordinary setting values visible", async () => {
@@ -67,6 +71,7 @@ it("continues to report failures from required settings initialization", async (
 
   expect(mocks.installLogger).toHaveBeenCalledOnce();
   expect(mocks.initCacheTTL).not.toHaveBeenCalled();
+  expect(mocks.recoverDownloads).not.toHaveBeenCalled();
 });
 
 it("does not preload credentials or wrap console output during a production build", async () => {
@@ -77,4 +82,5 @@ it("does not preload credentials or wrap console output during a production buil
   expect(mocks.findMany).not.toHaveBeenCalled();
   expect(mocks.rememberLogSecret).not.toHaveBeenCalled();
   expect(mocks.installLogger).not.toHaveBeenCalled();
+  expect(mocks.recoverDownloads).not.toHaveBeenCalled();
 });

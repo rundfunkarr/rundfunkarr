@@ -26,5 +26,9 @@ export async function register() {
     const { initCacheTTL } = await import("@/lib/cache");
     await initCacheTTL();
     console.log("Cache TTL initialized from database");
+    if (process.env.NEXT_PHASE !== "phase-production-build") {
+      const { recoverDownloads } = await import("@/server/download-queue");
+      await recoverDownloads();
+    }
   }
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as fsp from "fs/promises";
-import { access, mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 
 // Everything stays the real implementation; only `rename` is wrapped in a
 // vi.fn so a single test can inject a failure into its first call (ESM module
@@ -16,7 +16,6 @@ const {
   configFindUnique,
   downloadCount,
   downloadFindUnique,
-  downloadFindFirst,
   downloadUpdate,
   ffmpegModuleLoaded,
   convertMp4ToMkv,
@@ -26,7 +25,6 @@ const {
   configFindUnique: vi.fn(),
   downloadCount: vi.fn(),
   downloadFindUnique: vi.fn(),
-  downloadFindFirst: vi.fn(),
   downloadUpdate: vi.fn(),
   ffmpegModuleLoaded: vi.fn(),
   convertMp4ToMkv: vi.fn(),
@@ -40,8 +38,8 @@ vi.mock("@/lib/db", () => ({
     download: {
       count: downloadCount,
       findUnique: downloadFindUnique,
-      findFirst: downloadFindFirst,
       update: downloadUpdate,
+      updateMany: vi.fn(async () => ({ count: 1 })),
     },
   },
 }));
@@ -55,7 +53,7 @@ vi.mock("./ytdlp", () => ({ downloadHlsStream }));
 vi.mock("./subtitle-fetch", () => ({ fetchSubtitle }));
 
 import { clearSettingsCache } from "@/lib/settings";
-import { processDownload, startDownloadProcessing } from "./download-manager";
+import { processDownload } from "./download-manager";
 
 let testRoot: string;
 
@@ -98,16 +96,20 @@ it.each([
       expect.stringContaining(`Rundschau.${container}`),
       expect.any(Function),
       container,
-      480
+      480,
+      expect.any(AbortSignal)
     );
     expect(
-      await readFile(path.join(testRoot, category || "default", `Rundschau.${container}`), "utf8")
+      await readFile(
+        path.join(testRoot, category || "default", "hls", `Rundschau.${container}`),
+        "utf8"
+      )
     ).toBe("media");
     expect(downloadUpdate).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: "completed",
-          filePath: `/mapped/downloads/${category || "default"}/Rundschau.${container}`,
+          filePath: `/mapped/downloads/${category || "default"}/hls/Rundschau.${container}`,
         }),
       })
     );
@@ -119,7 +121,6 @@ beforeEach(async () => {
   configFindUnique.mockReset();
   downloadCount.mockReset();
   downloadFindUnique.mockReset();
-  downloadFindFirst.mockReset();
   downloadUpdate.mockReset();
   convertMp4ToMkv.mockReset();
   fetchSubtitle.mockReset().mockResolvedValue("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n");
@@ -172,15 +173,17 @@ describe("processDownload", () => {
 
       expect(ffmpegModuleLoaded).not.toHaveBeenCalled();
       expect(convertMp4ToMkv).not.toHaveBeenCalled();
-      await expect(readFile(path.join(testRoot, categoryFolder, `${title}.mp4`))).resolves.toEqual(
-        Buffer.from(mediaBytes)
-      );
-      await expect(access(path.join(testRoot, categoryFolder, `${title}.mkv`))).rejects.toThrow();
+      await expect(
+        readFile(path.join(testRoot, categoryFolder, "download-1", `${title}.mp4`))
+      ).resolves.toEqual(Buffer.from(mediaBytes));
+      await expect(
+        access(path.join(testRoot, categoryFolder, "download-1", `${title}.mkv`))
+      ).rejects.toThrow();
       expect(downloadUpdate).toHaveBeenCalledWith({
         where: { id: "download-1" },
         data: expect.objectContaining({
           status: "completed",
-          filePath: path.join("/mapped/downloads", categoryFolder, `${title}.mp4`),
+          filePath: path.join("/mapped/downloads", categoryFolder, "download-1", `${title}.mp4`),
         }),
       });
     }
@@ -236,14 +239,14 @@ describe("processDownload", () => {
       await processDownload("subtitle-settings");
 
       await expect(
-        readFile(path.join(testRoot, "sonarr", `${title}.${extension}`))
+        readFile(path.join(testRoot, "sonarr", "subtitle-settings", `${title}.${extension}`))
       ).resolves.toEqual(Buffer.from(mediaBytes));
       expect(downloadUpdate).toHaveBeenLastCalledWith({
         where: { id: "subtitle-settings" },
         data: expect.objectContaining({
           status: "completed",
           warning: settingFailure ? expect.stringContaining("Untertitel") : null,
-          filePath: `/mapped/downloads/sonarr/${title}.${extension}`,
+          filePath: `/mapped/downloads/sonarr/subtitle-settings/${title}.${extension}`,
         }),
       });
       expect(downloadUpdate).not.toHaveBeenCalledWith(
@@ -253,7 +256,9 @@ describe("processDownload", () => {
       if (settingFailure) expect(artifact).toBeNull();
       else {
         const record = JSON.parse(artifact);
-        expect(record.path).toBe(path.join(testRoot, "sonarr", `${title}.srt`));
+        expect(record.path).toBe(
+          path.join(testRoot, "sonarr", "subtitle-settings", `${title}.srt`)
+        );
         await expect(readFile(record.path, "utf8")).resolves.toContain("Subtitle");
       }
     }
@@ -263,7 +268,7 @@ describe("processDownload", () => {
     const mediaBytes = new Uint8Array([5, 6, 7, 8]);
     const title = "Show.S01E02";
     const category = "sonarr";
-    const categoryDir = path.join(testRoot, category);
+    const categoryDir = path.join(testRoot, category, "download-2");
 
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
       if (where.key === "download.path") return Promise.resolve({ value: testRoot });
@@ -308,7 +313,7 @@ describe("processDownload", () => {
     const mkvBytes = new Uint8Array([13, 14, 15, 16]);
     const title = "Show.S01E03";
     const category = "sonarr";
-    const categoryDir = path.join(testRoot, category);
+    const categoryDir = path.join(testRoot, category, "download-3");
 
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
       if (where.key === "download.path") return Promise.resolve({ value: testRoot });
@@ -350,7 +355,7 @@ describe("processDownload", () => {
       where: { id: "download-3" },
       data: expect.objectContaining({
         status: "completed",
-        filePath: path.join("/mapped/downloads", category, `${title}.mkv`),
+        filePath: path.join("/mapped/downloads", category, "download-3", `${title}.mkv`),
       }),
     });
   });
@@ -363,7 +368,7 @@ describe("processDownload", () => {
     const mediaBytes = new Uint8Array([17, 18, 19, 20]);
     const title = "Show.S01E04";
     const category = "sonarr";
-    const categoryDir = path.join(testRoot, category);
+    const categoryDir = path.join(testRoot, category, "download-4");
 
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
       if (where.key === "download.path") return Promise.resolve({ value: testRoot });
@@ -405,6 +410,93 @@ describe("processDownload", () => {
       data: expect.objectContaining({ status: "completed" }),
     });
   });
+});
+
+describe("completed download folders", () => {
+  const downloadId = "folder-cleanup";
+
+  beforeEach(() => {
+    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
+      Promise.resolve(
+        where.key === "download.path"
+          ? { value: testRoot }
+          : where.key === "download.convertToMkv"
+            ? { value: "false" }
+            : null
+      )
+    );
+    downloadFindUnique.mockResolvedValue({
+      id: downloadId,
+      title: "Video",
+      category: "tv",
+      status: "queued",
+      attempts: 1,
+      url: "https://example.com/video.mp4",
+    });
+    downloadUpdate.mockResolvedValue({});
+  });
+
+  it.each([
+    ["pause", "paused"],
+    ["cancel", "cancelled"],
+    ["retry", "queued"],
+    ["failure", "failed"],
+  ])("does not create a completed folder for %s", async (outcome, status) => {
+    const directory = path.join(testRoot, "tv", downloadId);
+    const controller = new AbortController();
+    let directoryExistsDuringTransfer = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        directoryExistsDuringTransfer = await access(directory).then(
+          () => true,
+          () => false
+        );
+        if (outcome === "pause" || outcome === "cancel") {
+          controller.abort(outcome);
+          throw new Error("Transfer stopped");
+        }
+        return new Response(null, { status: outcome === "retry" ? 503 : 404 });
+      })
+    );
+
+    await processDownload(downloadId, controller.signal);
+
+    expect(directoryExistsDuringTransfer).toBe(false);
+    await expect(access(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(path.join(testRoot, "incomplete", downloadId))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(downloadUpdate).toHaveBeenLastCalledWith({
+      where: { id: downloadId },
+      data: expect.objectContaining({ status }),
+    });
+  });
+
+  it.each([false, true])(
+    "cleans up a failed move without removing unrelated files (existing file: %s)",
+    async (existingFile) => {
+      const directory = path.join(testRoot, "tv", downloadId);
+      const otherFile = path.join(directory, "keep.txt");
+      if (existingFile) {
+        await mkdir(directory, { recursive: true });
+        await writeFile(otherFile, "unrelated bytes");
+      }
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("video bytes")));
+      vi.mocked(fsp.rename).mockRejectedValueOnce(
+        Object.assign(new Error("move failed"), { code: "EACCES" })
+      );
+
+      await processDownload(downloadId);
+
+      if (existingFile) await expect(readFile(otherFile, "utf8")).resolves.toBe("unrelated bytes");
+      else await expect(access(directory)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(downloadUpdate).toHaveBeenLastCalledWith({
+        where: { id: downloadId },
+        data: expect.objectContaining({ status: "failed" }),
+      });
+    }
+  );
 });
 
 it.each(["network error", "stall"])("removes partial files after a %s", async (failure) => {
@@ -449,135 +541,13 @@ it.each(["network error", "stall"])("removes partial files after a %s", async (f
     if (failure === "stall") await vi.advanceTimersByTimeAsync(60001);
     else source.error(new Error("connection lost"));
     await done;
-    await expect(access(path.join(testRoot, "incomplete", "Partial.mp4"))).rejects.toThrow();
+    await expect(
+      access(path.join(testRoot, "incomplete", "failed-transfer", "Partial.mp4"))
+    ).rejects.toThrow();
     expect(downloadUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
     );
   } finally {
     vi.useRealTimers();
   }
-});
-
-describe("Warteschlangensteuerung", () => {
-  it("setzt die übrige Queue fort, wenn auch das Speichern des Fehlerstatus scheitert", async () => {
-    configFindUnique.mockImplementation(async ({ where }) =>
-      where.key === "download.path" ? { value: testRoot } : null
-    );
-    const jobs = ["defekt", "bereit"].map((id) => ({
-      id,
-      title: id,
-      category: "tv",
-      status: "queued",
-      url: `https://example.org/${id}.m3u8`,
-    }));
-    downloadFindFirst.mockImplementation(
-      async ({ where }) =>
-        jobs.find((job) => job.status === "queued" && !where.id?.notIn.includes(job.id)) ?? null
-    );
-    downloadFindUnique.mockImplementation(async ({ where }) =>
-      jobs.find((job) => job.id === where.id)
-    );
-    downloadUpdate.mockImplementation(async ({ where, data }) => {
-      if (where.id === "defekt") throw new Error("Schreibfehler");
-      return Object.assign(jobs.find((job) => job.id === where.id)!, data);
-    });
-    downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
-      await writeFile(output, "media");
-      return { success: true, outputPath: output };
-    });
-    await expect(startDownloadProcessing()).resolves.toBeUndefined();
-    expect(jobs.map((job) => job.status)).toEqual(["queued", "completed"]);
-    expect(downloadFindFirst).toHaveBeenCalledTimes(3);
-    expect(downloadHlsStream).toHaveBeenCalledTimes(1);
-  });
-
-  it("plant während eines laufenden Downloads keine weiteren Startaufrufe ein", async () => {
-    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
-      Promise.resolve(where.key === "download.path" ? { value: testRoot } : null)
-    );
-    const jobs = new Map([
-      [
-        "eins",
-        {
-          id: "eins",
-          title: "Eins",
-          category: "tv",
-          status: "queued",
-          url: "https://example.com/eins.m3u8",
-        },
-      ],
-      [
-        "zwei",
-        {
-          id: "zwei",
-          title: "Zwei",
-          category: "tv",
-          status: "queued",
-          url: "https://example.com/zwei.m3u8",
-        },
-      ],
-    ]);
-    downloadFindFirst.mockImplementation(
-      async () => [...jobs.values()].find((job) => job.status === "queued") ?? null
-    );
-    downloadFindUnique.mockImplementation(async ({ where }) => jobs.get(where.id));
-    downloadUpdate.mockImplementation(async ({ where, data }) =>
-      Object.assign(jobs.get(where.id)!, data)
-    );
-    downloadCount.mockRejectedValue(new Error("Zusätzliche Zählabfrage nicht erreichbar"));
-    let unblock!: () => void;
-    let started!: () => void;
-    const firstStarted = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    const blocked = new Promise<void>((resolve) => {
-      unblock = resolve;
-    });
-    downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
-      if (output.includes("Eins")) {
-        started();
-        await blocked;
-      }
-      await writeFile(output, "media");
-      return { success: true, outputPath: output };
-    });
-    const processing = startDownloadProcessing();
-    await firstStarted;
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-      expect(downloadFindFirst).toHaveBeenCalledTimes(1);
-      expect(downloadHlsStream).toHaveBeenCalledTimes(1);
-      expect(startDownloadProcessing()).toBe(processing);
-    } finally {
-      unblock();
-      await processing;
-    }
-    expect(downloadHlsStream).toHaveBeenCalledTimes(2);
-    expect(downloadCount).not.toHaveBeenCalled();
-    expect([...jobs.values()].map((job) => job.status)).toEqual(["completed", "completed"]);
-  });
-
-  it("kann nach einem Datenbankfehler erneut gestartet werden", async () => {
-    downloadFindFirst.mockRejectedValueOnce(new Error("Datenbank vorübergehend nicht erreichbar"));
-    await expect(startDownloadProcessing()).rejects.toThrow("Datenbank");
-    downloadFindFirst.mockResolvedValue(null);
-    await expect(startDownloadProcessing()).resolves.toBeUndefined();
-    expect(downloadFindFirst).toHaveBeenCalledTimes(2);
-  });
-
-  it("berücksichtigt einen Auftrag, der während der letzten leeren Abfrage eingeht", async () => {
-    let unblock!: (value: null) => void;
-    downloadFindFirst.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          unblock = resolve;
-        })
-    );
-    downloadFindFirst.mockResolvedValue(null);
-    const processing = startDownloadProcessing();
-    startDownloadProcessing();
-    unblock(null);
-    await processing;
-    expect(downloadFindFirst).toHaveBeenCalledTimes(2);
-  });
 });
