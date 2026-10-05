@@ -1,3 +1,4 @@
+import { rememberLogSecret } from "@/lib/logger";
 import { clearTokenCache as clearSrfTokenCache } from "@/services/srgssr-api";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
@@ -71,6 +72,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    for (const [key, value] of Object.entries(
+      body?.key ? { [body.key]: body.value } : body || {}
+    )) {
+      if (typeof value === "string" && maskSetting(key, value) !== value) rememberLogSecret(value);
+    }
 
     // Handle single key-value pair
     if (body.key && body.value !== undefined) {
