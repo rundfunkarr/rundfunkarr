@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   initSettingsFromEnv: vi.fn(),
   initCacheTTL: vi.fn(),
   recoverDownloads: vi.fn(),
+  startSubscriptionScheduler: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: { config: { findMany: mocks.findMany } } }));
@@ -18,6 +19,9 @@ vi.mock("@/lib/logger", () => ({
 vi.mock("@/lib/env-settings", () => ({ initSettingsFromEnv: mocks.initSettingsFromEnv }));
 vi.mock("@/lib/cache", () => ({ initCacheTTL: mocks.initCacheTTL }));
 vi.mock("@/server/download-queue", () => ({ recoverDownloads: mocks.recoverDownloads }));
+vi.mock("@/server/subscriptions", () => ({
+  startSubscriptionScheduler: mocks.startSubscriptionScheduler,
+}));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -46,6 +50,7 @@ it("installs logging and initializes settings/cache when optional secret preload
   expect(mocks.initSettingsFromEnv).toHaveBeenCalledOnce();
   expect(mocks.initCacheTTL).toHaveBeenCalledOnce();
   expect(mocks.recoverDownloads).toHaveBeenCalledOnce();
+  expect(mocks.startSubscriptionScheduler).toHaveBeenCalledOnce();
 });
 
 it("preloads stored credentials while leaving ordinary setting values visible", async () => {
@@ -72,6 +77,7 @@ it("continues to report failures from required settings initialization", async (
   expect(mocks.installLogger).toHaveBeenCalledOnce();
   expect(mocks.initCacheTTL).not.toHaveBeenCalled();
   expect(mocks.recoverDownloads).not.toHaveBeenCalled();
+  expect(mocks.startSubscriptionScheduler).not.toHaveBeenCalled();
 });
 
 it("does not preload credentials or wrap console output during a production build", async () => {
@@ -83,4 +89,5 @@ it("does not preload credentials or wrap console output during a production buil
   expect(mocks.rememberLogSecret).not.toHaveBeenCalled();
   expect(mocks.installLogger).not.toHaveBeenCalled();
   expect(mocks.recoverDownloads).not.toHaveBeenCalled();
+  expect(mocks.startSubscriptionScheduler).not.toHaveBeenCalled();
 });

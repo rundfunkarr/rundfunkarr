@@ -29,6 +29,8 @@ export async function register() {
     if (process.env.NEXT_PHASE !== "phase-production-build") {
       const { recoverDownloads } = await import("@/server/download-queue");
       await recoverDownloads();
+      const { startSubscriptionScheduler } = await import("@/server/subscriptions");
+      startSubscriptionScheduler();
     }
   }
 }
