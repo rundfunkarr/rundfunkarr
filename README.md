@@ -131,6 +131,7 @@ npm start
 | `TVDB_API_KEY` | TVDB-API-Key zum Initialisieren der Einstellungen | leer |
 | `TVDB_PIN` | Optionaler TVDB-PIN für Subscriber-Keys | leer |
 | `TMDB_API_KEY` | TMDB-API-Key zum Initialisieren der Einstellungen | leer |
+| `DIAGNOSTICS_ADMIN_KEY` | Admin-Schlüssel für Diagnose, Verbindungstest und Protokoll einschließlich Export; mindestens 32 Zeichen | leer (Zugriff gesperrt) |
 
 Beim Serverstart werden nichtleere Werte aus `TVDB_API_KEY`, `TVDB_PIN`,
 `TMDB_API_KEY` und `DOWNLOAD_FOLDER_PATH` in fehlende oder leere
@@ -139,6 +140,29 @@ Bei lokalen Installationen können die Variablen in `.env` stehen; Docker benöt
 sie unter `environment` oder über `env_file`. Nach Änderungen ist ein Neustart
 nötig. Im Build werden keine Werte übernommen. Gespeicherte API-Zugangsdaten
 werden in der Settings-API maskiert; die Verbindungstests prüfen sie serverseitig.
+
+### Diagnose und Protokoll schützen
+
+Einen zufälligen Admin-Schlüssel mit `openssl rand -hex 32` erzeugen, als
+`DIAGNOSTICS_ADMIN_KEY` in der Serverumgebung setzen und den Server neu starten.
+Die mitgelieferte Compose-Datei übernimmt den Wert aus `.env`. Ohne gültige
+Konfiguration bleiben `/api/logs` und `/api/diagnostics` gesperrt.
+
+Auf **Diagnose & Protokoll** den Schlüssel eingeben. Die Seite behält ihn nur im
+Arbeitsspeicher, bis sie gesperrt, verlassen oder neu geladen wird. Auch der
+Textexport verlangt den Schlüssel. Direkte API-Aufrufe verwenden den Header
+`X-RundfunkArr-Admin-Key`; der Schlüssel gehört nicht in die URL. Außerhalb eines
+vertrauenswürdigen Netzes HTTPS verwenden.
+
+Freigeschaltete Administratoren können interne Sonarr-/Radarr-Adressen testen,
+auch Docker-Hostnamen und Loopback-Adressen. Weiterleitungen werden abgelehnt;
+der Admin-Schlüssel wird nicht an die Zielanwendung gesendet. Dieser Schutz gilt
+nur für Diagnose und Protokoll, nicht für die übrige Anwendung.
+
+Bei aktivierter Anmeldung ist zusätzlich eine gültige Browser-Sitzung erforderlich.
+Direkte schreibende API-Aufrufe benötigen außerdem einen passenden `Origin`-Header.
+Der Integrationsschlüssel für Sonarr/Radarr ersetzt weder die Sitzung noch den
+Diagnose-Schlüssel.
 
 ### Optionale Anmeldung
 
