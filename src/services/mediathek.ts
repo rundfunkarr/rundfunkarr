@@ -875,7 +875,7 @@ export async function fetchSearchResultsByString(
   // non-empty q to keep the previous (matched-only) behavior for those queries.
   const hasTextQuery = !!trimmedQ;
   const genericItems: NewznabItem[] = hasTextQuery
-    ? unmatchedItems.flatMap((item) => generateGenericRssItems(item, quality))
+    ? unmatchedItems.flatMap((item) => generateGenericRssItems(item, quality, stripSeriesUmlauts))
     : [];
 
   const allItems = [...newznabItems, ...genericItems];

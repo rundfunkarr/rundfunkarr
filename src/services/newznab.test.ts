@@ -188,6 +188,12 @@ describe("generateRssItems", () => {
 
     expect(item.title).toBe("Loewenzahn.S42E03.Spass.GERMAN.1080p.WEB.h264-MEDiATHEK");
   });
+
+  it("keeps other accents in the series name", () => {
+    const [item] = generateRssItems({ ...info, showName: "Pokémon" }, "best", true);
+
+    expect(item.title).toMatch(/^Pokémon\.S42E03\./);
+  });
 });
 
 describe("generateFakeNzb", () => {
@@ -277,6 +283,12 @@ describe("generateGenericRssItems", () => {
     url_video_low: "https://example.com/video_480.mp4",
     url_video_hd: "https://example.com/video_1080.mp4",
   };
+
+  it("writes topic umlauts as plain vowels when the setting is on", () => {
+    const [item] = generateGenericRssItems({ ...baseItem, topic: "Löwenzahn" }, "720p", true);
+
+    expect(item.title).toMatch(/^Lowenzahn\./);
+  });
 
   it("URL-encodes Base64 plus characters in generated download links", () => {
     const url = "https://example.org/~~~";

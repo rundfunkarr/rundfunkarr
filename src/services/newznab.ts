@@ -335,13 +335,20 @@ function createRssItems(
 
 export type QualityPreference = "all" | "best" | "1080p" | "720p" | "480p";
 
+function stripUmlauts(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/([aouAOU])\u0308/g, "$1")
+    .normalize("NFC");
+}
+
 export function generateRssItems(
   info: MatchedEpisodeInfo,
   qualityPreference: QualityPreference = "all",
   stripSeriesUmlauts = false
 ): NewznabItem[] {
   if (stripSeriesUmlauts) {
-    info = { ...info, showName: info.showName.normalize("NFD").replace(/[\u0300-\u036f]/g, "") };
+    info = { ...info, showName: stripUmlauts(info.showName) };
   }
 
   const items: NewznabItem[] = [];
@@ -603,8 +610,13 @@ export function generateMovieRssItems(
  */
 export function generateGenericRssItems(
   item: ApiResultItem,
-  qualityPreference: QualityPreference = "all"
+  qualityPreference: QualityPreference = "all",
+  stripSeriesUmlauts = false
 ): NewznabItem[] {
+  if (stripSeriesUmlauts) {
+    item = { ...item, topic: stripUmlauts(item.topic) };
+  }
+
   const items: NewznabItem[] = [];
   const baseCategories = ["5000"];
 
