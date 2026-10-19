@@ -1,6 +1,6 @@
 import { isStreamingUrl } from "@/lib/stream-url";
 import { mediathekCache } from "@/lib/cache";
-import { getMinDurationSeconds, getSetting } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting, isSeriesUmlautStrippingEnabled } from "@/lib/settings";
 import { runRulesetRegex } from "@/server/ruleset-regex";
 import { queryContent } from "./content-search";
 import { getShowInfoByTvdbId } from "./shows";
@@ -57,10 +57,6 @@ async function getQualityPreference(): Promise<QualityPreference> {
     return setting as QualityPreference;
   }
   return "all"; // Default to all qualities
-}
-
-async function shouldStripSeriesUmlauts(): Promise<boolean> {
-  return (await getSetting("newznab.normalizeSeriesNamesForSonarr")) === "true";
 }
 
 // Keywords that are always skipped (trailers, outtakes, etc.)
@@ -696,10 +692,12 @@ export async function fetchSearchResultsById(
   limit: number,
   offset: number
 ): Promise<string> {
-  const quality = await getQualityPreference();
-  const minDuration = await getMinDurationSeconds();
-  const matchingSettings = await getMatchingSettings();
-  const stripSeriesUmlauts = await shouldStripSeriesUmlauts();
+  const [quality, minDuration, matchingSettings, stripSeriesUmlauts] = await Promise.all([
+    getQualityPreference(),
+    getMinDurationSeconds(),
+    getMatchingSettings(),
+    isSeriesUmlautStrippingEnabled(),
+  ]);
   const searchQuery = tvdbData.germanName || tvdbData.name;
   await ensureRulesetsLoaded();
   const rulesetSnapshot = new Map(
@@ -725,7 +723,7 @@ export async function fetchSearchResultsById(
     `[Mediathek] fetchSearchResultsById: tvdbId=${tvdbData.id}, name="${tvdbData.name}", germanName="${tvdbData.germanName}", season=${season}, episode=${episodeNumber}, quality=${quality}, minDuration=${minDuration}`
   );
 
-  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${stripSeriesUmlauts}_${JSON.stringify(searchQueries)}_${JSON.stringify([...rulesetSnapshot])}`;
+  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${JSON.stringify(searchQueries)}_${JSON.stringify([...rulesetSnapshot])}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -828,11 +826,13 @@ export async function fetchSearchResultsByString(
   // Normalize once: a whitespace-only q is treated as no query everywhere
   // (API query, cache keys, and generic gating) so behavior stays consistent.
   const trimmedQ = q?.trim() || null;
-  const quality = await getQualityPreference();
-  const minDuration = await getMinDurationSeconds();
-  const matchingSettings = await getMatchingSettings();
-  const stripSeriesUmlauts = await shouldStripSeriesUmlauts();
-  const cacheKey = `q_${trimmedQ ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${stripSeriesUmlauts}`;
+  const [quality, minDuration, matchingSettings, stripSeriesUmlauts] = await Promise.all([
+    getQualityPreference(),
+    getMinDurationSeconds(),
+    getMatchingSettings(),
+    isSeriesUmlautStrippingEnabled(),
+  ]);
+  const cacheKey = `q_${trimmedQ ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached) {
@@ -886,11 +886,13 @@ export async function fetchSearchResultsByString(
 }
 
 export async function fetchSearchResultsForRssSync(limit: number, offset: number): Promise<string> {
-  const quality = await getQualityPreference();
-  const minDuration = await getMinDurationSeconds();
-  const matchingSettings = await getMatchingSettings();
-  const stripSeriesUmlauts = await shouldStripSeriesUmlauts();
-  const cacheKey = `rss_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${stripSeriesUmlauts}`;
+  const [quality, minDuration, matchingSettings, stripSeriesUmlauts] = await Promise.all([
+    getQualityPreference(),
+    getMinDurationSeconds(),
+    getMatchingSettings(),
+    isSeriesUmlautStrippingEnabled(),
+  ]);
+  const cacheKey = `rss_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached) {

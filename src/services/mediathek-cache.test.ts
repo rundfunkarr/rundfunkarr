@@ -14,6 +14,7 @@ vi.mock("@/lib/fetch-retry", () => ({ fetchWithRetry: vi.fn() }));
 vi.mock("@/lib/settings", () => ({
   getSetting: vi.fn(async () => null),
   getMinDurationSeconds: vi.fn(async () => 300),
+  isSeriesUmlautStrippingEnabled: vi.fn(async () => false),
 }));
 vi.mock("./rulesets", () => ({
   ensureRulesetsLoaded: vi.fn(),

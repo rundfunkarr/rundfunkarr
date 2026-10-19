@@ -15,6 +15,7 @@ const { settings } = vi.hoisted(() => ({ settings: new Map<string, string>() }))
 vi.mock("@/lib/settings", () => ({
   getSetting: vi.fn(async (key: string) => settings.get(key) ?? null),
   getMinDurationSeconds: vi.fn(async () => 300),
+  isSeriesUmlautStrippingEnabled: vi.fn(async () => false),
 }));
 vi.mock("@/services/category", () => ({ getCategoriesForTopics: vi.fn(async () => new Map()) }));
 vi.mock("@/lib/mediathek-client", () => ({ queryMediathekView: vi.fn(async () => []) }));

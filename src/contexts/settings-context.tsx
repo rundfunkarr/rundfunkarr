@@ -18,7 +18,7 @@ interface Settings {
   "matching.strategy": string;
   "matching.threshold": string;
   "matching.minDuration": string;
-  "newznab.normalizeSeriesNamesForSonarr": string;
+  "matching.normalizeSeriesNamesForSonarr": string;
 
   // Cache
   "cache.ttl.search": string;

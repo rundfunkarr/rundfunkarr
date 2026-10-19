@@ -84,6 +84,10 @@ export async function isMkvConversionEnabled(): Promise<boolean> {
   return (await getSetting("download.convertToMkv")) !== "false";
 }
 
+export async function isSeriesUmlautStrippingEnabled(): Promise<boolean> {
+  return (await getSetting("matching.normalizeSeriesNamesForSonarr")) === "true";
+}
+
 export function clearSettingsCache(): void {
   settingsCache.clear();
 }

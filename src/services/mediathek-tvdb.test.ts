@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mediathekCache } from "@/lib/cache";
 import { fetchWithRetry } from "@/lib/fetch-retry";
-import { getSetting } from "@/lib/settings";
+import { getSetting, isSeriesUmlautStrippingEnabled } from "@/lib/settings";
 import { MatchingStrategy, type ApiResultItem, type Ruleset, type TvdbData } from "@/types";
 import { fetchSearchResultsById } from "./mediathek";
 import {
@@ -16,6 +16,7 @@ vi.mock("@/lib/fetch-retry", () => ({ fetchWithRetry: vi.fn() }));
 vi.mock("@/lib/settings", () => ({
   getSetting: vi.fn(async () => null),
   getMinDurationSeconds: vi.fn(async () => 300),
+  isSeriesUmlautStrippingEnabled: vi.fn(async () => false),
 }));
 vi.mock("./shows", () => ({ getShowInfoByTvdbId: vi.fn() }));
 vi.mock("./rulesets", () => ({
@@ -356,4 +357,16 @@ it("uses a ruleset registered by a concurrent search after discovery captured an
   const xml = await fetchSearchResultsById(show, "14", "7", 100, 0);
   expect(xml).toContain("S14E07");
   expect(xml).toContain("climate.mp4");
+});
+
+it("strips series name umlauts in release titles when the setting is on", async () => {
+  vi.mocked(getShowInfoByTvdbId).mockResolvedValue({ ...show, name: "Checker Töbi" });
+  mockSearch({ "Checker Reportagen": [item()] });
+
+  vi.mocked(isSeriesUmlautStrippingEnabled).mockResolvedValueOnce(false);
+  expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).toContain("Checker.Toebi.S14E07");
+
+  mediathekCache.clear();
+  vi.mocked(isSeriesUmlautStrippingEnabled).mockResolvedValueOnce(true);
+  expect(await fetchSearchResultsById(show, "14", "7", 100, 0)).toContain("Checker.Tobi.S14E07");
 });

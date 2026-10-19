@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "matching.strategy": "fuzzy",
   "matching.threshold": "0.7",
   "matching.minDuration": "300",
-  "newznab.normalizeSeriesNamesForSonarr": "false",
+  "matching.normalizeSeriesNamesForSonarr": "false",
 
   // MediathekView search source: "mediathekviewweb" or "local"
   "mediathek.source": "mediathekviewweb",

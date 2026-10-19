@@ -684,10 +684,10 @@ export default function SettingsPage() {
                     </span>
                     <input
                       type="checkbox"
-                      checked={getFieldValue("newznab.normalizeSeriesNamesForSonarr") === "true"}
+                      checked={getFieldValue("matching.normalizeSeriesNamesForSonarr") === "true"}
                       onChange={(e) =>
                         setFieldValue(
-                          "newznab.normalizeSeriesNamesForSonarr",
+                          "matching.normalizeSeriesNamesForSonarr",
                           String(e.target.checked)
                         )
                       }
@@ -700,7 +700,7 @@ export default function SettingsPage() {
                         "matching.strategy",
                         "matching.threshold",
                         "matching.minDuration",
-                        "newznab.normalizeSeriesNamesForSonarr",
+                        "matching.normalizeSeriesNamesForSonarr",
                       ])
                     }
                     disabled={isSaving}
