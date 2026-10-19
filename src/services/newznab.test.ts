@@ -6,12 +6,13 @@ import {
   convertItemsToRss,
   generateFakeNzb,
   getCapabilitiesXml,
+  generateRssItems,
   generateGenericRssItems,
   getValidationRss,
   isMovieCategoryRequest,
   parseNewznabCategoryIds,
 } from "./newznab";
-import type { NewznabItem, ApiResultItem } from "@/types";
+import type { NewznabItem, ApiResultItem, MatchedEpisodeInfo } from "@/types";
 
 describe("generateAttributes", () => {
   it("should generate category attributes", () => {
@@ -146,6 +147,46 @@ describe("Newznab validation categories", () => {
     expect(xml).toContain('name="category" value="2040"');
     expect(xml).toContain('name="category" value="2000"');
     expect(xml).not.toContain('name="category" value="5000"');
+  });
+});
+
+describe("generateRssItems", () => {
+  const info: MatchedEpisodeInfo = {
+    showName: "Löwenzahn",
+    matchedTitle: "Spaß",
+    tvdbId: 12345,
+    episode: {
+      name: "Spaß",
+      aired: null,
+      runtime: 25,
+      seasonNumber: 42,
+      episodeNumber: 3,
+    },
+    item: {
+      channel: "ZDF",
+      topic: "Löwenzahn",
+      title: "Spaß",
+      description: "",
+      filmlisteTimestamp: 1700000000,
+      duration: 1500,
+      size: 1_000_000,
+      url_website: "https://example.com/video",
+      url_video: "",
+      url_video_low: "",
+      url_video_hd: "https://example.com/video_1080.mp4",
+    },
+  };
+
+  it("writes series name umlauts as plain vowels but still turns ß into ss", () => {
+    const [item] = generateRssItems(info, "best", true);
+
+    expect(item.title).toBe("Lowenzahn.S42E03.Spass.GERMAN.1080p.WEB.h264-MEDiATHEK");
+  });
+
+  it("writes umlauts as oe when the setting is off", () => {
+    const [item] = generateRssItems(info, "best", false);
+
+    expect(item.title).toBe("Loewenzahn.S42E03.Spass.GERMAN.1080p.WEB.h264-MEDiATHEK");
   });
 });
 

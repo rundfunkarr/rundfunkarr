@@ -59,6 +59,10 @@ async function getQualityPreference(): Promise<QualityPreference> {
   return "all"; // Default to all qualities
 }
 
+async function shouldStripSeriesUmlauts(): Promise<boolean> {
+  return (await getSetting("newznab.normalizeSeriesNamesForSonarr")) === "true";
+}
+
 // Keywords that are always skipped (trailers, outtakes, etc.)
 const SKIP_KEYWORDS = ["Trailer", "Outtakes:", "(klare Sprache)"];
 
@@ -695,6 +699,7 @@ export async function fetchSearchResultsById(
   const quality = await getQualityPreference();
   const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
+  const stripSeriesUmlauts = await shouldStripSeriesUmlauts();
   const searchQuery = tvdbData.germanName || tvdbData.name;
   await ensureRulesetsLoaded();
   const rulesetSnapshot = new Map(
@@ -720,7 +725,7 @@ export async function fetchSearchResultsById(
     `[Mediathek] fetchSearchResultsById: tvdbId=${tvdbData.id}, name="${tvdbData.name}", germanName="${tvdbData.germanName}", season=${season}, episode=${episodeNumber}, quality=${quality}, minDuration=${minDuration}`
   );
 
-  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${JSON.stringify(searchQueries)}_${JSON.stringify([...rulesetSnapshot])}`;
+  const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${stripSeriesUmlauts}_${JSON.stringify(searchQueries)}_${JSON.stringify([...rulesetSnapshot])}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
@@ -804,7 +809,7 @@ export async function fetchSearchResultsById(
     return true;
   });
   const newznabItems: NewznabItem[] = uniqueEpisodes.flatMap((info) =>
-    generateRssItems(info, quality)
+    generateRssItems(info, quality, stripSeriesUmlauts)
   );
   console.log(`[Mediathek] Generated ${newznabItems.length} Newznab items (quality: ${quality})`);
 
@@ -826,7 +831,8 @@ export async function fetchSearchResultsByString(
   const quality = await getQualityPreference();
   const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
-  const cacheKey = `q_${trimmedQ ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
+  const stripSeriesUmlauts = await shouldStripSeriesUmlauts();
+  const cacheKey = `q_${trimmedQ ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${stripSeriesUmlauts}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached) {
@@ -860,7 +866,7 @@ export async function fetchSearchResultsByString(
 
   const { matchedEpisodes, unmatchedItems } = await applyRulesetFilters(results);
   const newznabItems: NewznabItem[] = matchedEpisodes.flatMap((info) =>
-    generateRssItems(info, quality)
+    generateRssItems(info, quality, stripSeriesUmlauts)
   );
 
   // Generic (no-ruleset) results are only meaningful for an actual text search.
@@ -883,7 +889,8 @@ export async function fetchSearchResultsForRssSync(limit: number, offset: number
   const quality = await getQualityPreference();
   const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
-  const cacheKey = `rss_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
+  const stripSeriesUmlauts = await shouldStripSeriesUmlauts();
+  const cacheKey = `rss_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${stripSeriesUmlauts}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached) {
@@ -906,7 +913,7 @@ export async function fetchSearchResultsForRssSync(limit: number, offset: number
 
   const { matchedEpisodes } = await applyRulesetFilters(results);
   const newznabItems: NewznabItem[] = matchedEpisodes.flatMap((info) =>
-    generateRssItems(info, quality)
+    generateRssItems(info, quality, stripSeriesUmlauts)
   );
   const response = convertItemsToRss(newznabItems, limit, offset);
 

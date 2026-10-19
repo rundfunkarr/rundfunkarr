@@ -672,12 +672,35 @@ export default function SettingsPage() {
                       Ignoriere Videos kürzer als diese Dauer
                     </p>
                   </div>
+                  <label className="flex items-center justify-between gap-4 rounded-md border border-input p-3">
+                    <span>
+                      <span className="block text-sm font-medium">
+                        Seriennamen für Sonarr normalisieren
+                      </span>
+                      <span className="block text-xs text-muted-foreground mt-1">
+                        Schreibt Umlaute in Seriennamen ohne e (ö → o statt oe), damit Sonarr
+                        Releases von Serien wie Löwenzahn zuordnen kann.
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={getFieldValue("newznab.normalizeSeriesNamesForSonarr") === "true"}
+                      onChange={(e) =>
+                        setFieldValue(
+                          "newznab.normalizeSeriesNamesForSonarr",
+                          String(e.target.checked)
+                        )
+                      }
+                      className="h-4 w-4 shrink-0 accent-primary"
+                    />
+                  </label>
                   <Button
                     onClick={() =>
                       handleSave([
                         "matching.strategy",
                         "matching.threshold",
                         "matching.minDuration",
+                        "newznab.normalizeSeriesNamesForSonarr",
                       ])
                     }
                     disabled={isSaving}

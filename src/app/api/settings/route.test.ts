@@ -41,6 +41,11 @@ function post(body: unknown) {
   );
 }
 
+it("keeps oe for series name umlauts by default", async () => {
+  const all = await (await GET(new NextRequest("http://localhost/api/settings"))).json();
+  expect(all["newznab.normalizeSeriesNamesForSonarr"]).toBe("false");
+});
+
 it("masks both SRF credentials in bulk and single-setting responses", async () => {
   const all = await (await GET(new NextRequest("http://localhost/api/settings"))).json();
   expect(JSON.stringify(all)).not.toContain("private-");

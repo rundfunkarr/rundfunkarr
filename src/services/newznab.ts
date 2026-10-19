@@ -337,8 +337,13 @@ export type QualityPreference = "all" | "best" | "1080p" | "720p" | "480p";
 
 export function generateRssItems(
   info: MatchedEpisodeInfo,
-  qualityPreference: QualityPreference = "all"
+  qualityPreference: QualityPreference = "all",
+  stripSeriesUmlauts = false
 ): NewznabItem[] {
+  if (stripSeriesUmlauts) {
+    info = { ...info, showName: info.showName.normalize("NFD").replace(/[\u0300-\u036f]/g, "") };
+  }
+
   const items: NewznabItem[] = [];
   const baseCategories = ["5000", "2000"];
 
