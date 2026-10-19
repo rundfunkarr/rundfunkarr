@@ -226,6 +226,13 @@ function formatTitle(title: string): string {
   return formatted;
 }
 
+function stripUmlauts(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/([aouAOU])\u0308/g, "$1")
+    .normalize("NFC");
+}
+
 function getPaddedSeason(episode: TvdbEpisode): string {
   return episode.seasonNumber.toString().padStart(2, "0");
 }
@@ -237,20 +244,23 @@ function getPaddedEpisode(episode: TvdbEpisode): string {
 function generateTitle(
   info: MatchedEpisodeInfo,
   quality: string,
-  episodeType: EpisodeType
+  episodeType: EpisodeType,
+  stripSeriesUmlauts: boolean
 ): string {
   const episode = info.episode;
+  // Sonarr folds "ö" to "o" when matching series names, so "Loewenzahn" would miss "Löwenzahn".
+  const showName = stripSeriesUmlauts ? stripUmlauts(info.showName) : info.showName;
 
   if (episodeType === "daily") {
     const aired = episode.aired ? new Date(episode.aired) : new Date();
     const dateStr = aired.toISOString().split("T")[0]; // yyyy-MM-dd
-    return `${info.showName}.${dateStr}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
+    return `${showName}.${dateStr}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
       / /g,
       "."
     );
   }
 
-  return `${info.showName}.S${getPaddedSeason(episode)}E${getPaddedEpisode(episode)}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
+  return `${showName}.S${getPaddedSeason(episode)}E${getPaddedEpisode(episode)}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
     / /g,
     "."
   );
@@ -263,10 +273,11 @@ function createRssItem(
   category: string,
   categoryValues: string[],
   url: string,
-  episodeType: EpisodeType
+  episodeType: EpisodeType,
+  stripSeriesUmlauts: boolean
 ): NewznabItem {
   const adjustedSize = Math.floor(info.item.size * sizeMultiplier);
-  const parsedTitle = generateTitle(info, quality, episodeType);
+  const parsedTitle = generateTitle(info, quality, episodeType, stripSeriesUmlauts);
   const formattedTitle = formatTitle(parsedTitle);
 
   const encodedTitle = Buffer.from(formattedTitle).toString("base64");
@@ -301,7 +312,8 @@ function createRssItems(
   sizeMultiplier: number,
   category: string,
   categoryValues: string[],
-  url: string
+  url: string,
+  stripSeriesUmlauts: boolean
 ): NewznabItem[] {
   const items: NewznabItem[] = [
     createRssItem(
@@ -311,7 +323,8 @@ function createRssItems(
       category,
       categoryValues,
       url,
-      "standard" as EpisodeType
+      "standard" as EpisodeType,
+      stripSeriesUmlauts
     ),
   ];
 
@@ -325,7 +338,8 @@ function createRssItems(
         category,
         categoryValues,
         url,
-        "daily" as EpisodeType
+        "daily" as EpisodeType,
+        stripSeriesUmlauts
       )
     );
   }
@@ -337,7 +351,8 @@ export type QualityPreference = "all" | "best" | "1080p" | "720p" | "480p";
 
 export function generateRssItems(
   info: MatchedEpisodeInfo,
-  qualityPreference: QualityPreference = "all"
+  qualityPreference: QualityPreference = "all",
+  stripSeriesUmlauts = false
 ): NewznabItem[] {
   const items: NewznabItem[] = [];
   const baseCategories = ["5000", "2000"];
@@ -386,7 +401,8 @@ export function generateRssItems(
         1.6,
         "TV > HD",
         [...baseCategories, "5040", "2040"],
-        info.item.url_video_hd
+        info.item.url_video_hd,
+        stripSeriesUmlauts
       )
     );
   }
@@ -399,7 +415,8 @@ export function generateRssItems(
         1.0,
         "TV > HD",
         [...baseCategories, "5040", "2040"],
-        info.item.url_video
+        info.item.url_video,
+        stripSeriesUmlauts
       )
     );
   }
@@ -412,7 +429,8 @@ export function generateRssItems(
         0.4,
         "TV > SD",
         [...baseCategories, "5030", "2030"],
-        info.item.url_video_low
+        info.item.url_video_low,
+        stripSeriesUmlauts
       )
     );
   }
@@ -598,7 +616,8 @@ export function generateMovieRssItems(
  */
 export function generateGenericRssItems(
   item: ApiResultItem,
-  qualityPreference: QualityPreference = "all"
+  qualityPreference: QualityPreference = "all",
+  stripSeriesUmlauts = false
 ): NewznabItem[] {
   const items: NewznabItem[] = [];
   const baseCategories = ["5000"];
@@ -645,7 +664,8 @@ export function generateGenericRssItems(
         1.6,
         "TV > HD",
         [...baseCategories, "5040"],
-        item.url_video_hd
+        item.url_video_hd,
+        stripSeriesUmlauts
       )
     );
   }
@@ -658,7 +678,8 @@ export function generateGenericRssItems(
         1.0,
         "TV > HD",
         [...baseCategories, "5040"],
-        item.url_video
+        item.url_video,
+        stripSeriesUmlauts
       )
     );
   }
@@ -671,7 +692,8 @@ export function generateGenericRssItems(
         0.4,
         "TV > SD",
         [...baseCategories, "5030"],
-        item.url_video_low
+        item.url_video_low,
+        stripSeriesUmlauts
       )
     );
   }
@@ -757,9 +779,11 @@ function createGenericRssItem(
   sizeMultiplier: number,
   category: string,
   categoryValues: string[],
-  url: string
+  url: string,
+  stripSeriesUmlauts: boolean
 ): NewznabItem {
   const adjustedSize = Math.floor(item.size * sizeMultiplier);
+  const topic = stripSeriesUmlauts ? stripUmlauts(item.topic) : item.topic;
 
   const parsed = parseEpisodeFromTitle(item.title);
   let rawTitle: string;
@@ -771,10 +795,10 @@ function createGenericRssItem(
     // Omit the episode-name segment when the pattern consumed the whole title
     // (e.g. "Staffel 2 Folge 3"), otherwise it duplicates the SxxExx info.
     rawTitle = parsed.episodeName
-      ? `${item.topic}.S${paddedSeason}E${paddedEpisode}.${parsed.episodeName}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`
-      : `${item.topic}.S${paddedSeason}E${paddedEpisode}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
+      ? `${topic}.S${paddedSeason}E${paddedEpisode}.${parsed.episodeName}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`
+      : `${topic}.S${paddedSeason}E${paddedEpisode}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
   } else {
-    rawTitle = `${item.topic}.${item.title}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
+    rawTitle = `${topic}.${item.title}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
   }
 
   const formattedTitle = formatTitle(rawTitle);

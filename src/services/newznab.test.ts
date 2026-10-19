@@ -6,12 +6,13 @@ import {
   convertItemsToRss,
   generateFakeNzb,
   getCapabilitiesXml,
+  generateRssItems,
   generateGenericRssItems,
   getValidationRss,
   isMovieCategoryRequest,
   parseNewznabCategoryIds,
 } from "./newznab";
-import type { NewznabItem, ApiResultItem } from "@/types";
+import type { NewznabItem, ApiResultItem, MatchedEpisodeInfo } from "@/types";
 
 describe("generateAttributes", () => {
   it("should generate category attributes", () => {
@@ -149,6 +150,52 @@ describe("Newznab validation categories", () => {
   });
 });
 
+describe("generateRssItems", () => {
+  const info: MatchedEpisodeInfo = {
+    showName: "Löwenzahn",
+    matchedTitle: "Spaß",
+    tvdbId: 12345,
+    episode: {
+      name: "Spaß",
+      aired: null,
+      runtime: 25,
+      seasonNumber: 42,
+      episodeNumber: 3,
+    },
+    item: {
+      channel: "ZDF",
+      topic: "Löwenzahn",
+      title: "Spaß",
+      description: "",
+      filmlisteTimestamp: 1700000000,
+      duration: 1500,
+      size: 1_000_000,
+      url_website: "https://example.com/video",
+      url_video: "",
+      url_video_low: "",
+      url_video_hd: "https://example.com/video_1080.mp4",
+    },
+  };
+
+  it("writes series name umlauts as plain vowels but still turns ß into ss", () => {
+    const [item] = generateRssItems(info, "best", true);
+
+    expect(item.title).toBe("Lowenzahn.S42E03.Spass.GERMAN.1080p.WEB.h264-MEDiATHEK");
+  });
+
+  it("writes umlauts as oe when the setting is off", () => {
+    const [item] = generateRssItems(info, "best", false);
+
+    expect(item.title).toBe("Loewenzahn.S42E03.Spass.GERMAN.1080p.WEB.h264-MEDiATHEK");
+  });
+
+  it("keeps other accents in the series name", () => {
+    const [item] = generateRssItems({ ...info, showName: "Pokémon" }, "best", true);
+
+    expect(item.title).toMatch(/^Pokémon\.S42E03\./);
+  });
+});
+
 describe("generateFakeNzb", () => {
   it("should generate valid NZB XML", () => {
     const nzb = generateFakeNzb("http://example.com/video.mp4", "Test.Show.S01E01");
@@ -236,6 +283,12 @@ describe("generateGenericRssItems", () => {
     url_video_low: "https://example.com/video_480.mp4",
     url_video_hd: "https://example.com/video_1080.mp4",
   };
+
+  it("writes topic umlauts as plain vowels when the setting is on", () => {
+    const [item] = generateGenericRssItems({ ...baseItem, topic: "Löwenzahn" }, "720p", true);
+
+    expect(item.title).toMatch(/^Lowenzahn\./);
+  });
 
   it("URL-encodes Base64 plus characters in generated download links", () => {
     const url = "https://example.org/~~~";

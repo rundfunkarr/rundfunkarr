@@ -18,6 +18,7 @@ interface Settings {
   "matching.strategy": string;
   "matching.threshold": string;
   "matching.minDuration": string;
+  "matching.normalizeSeriesNamesForSonarr": string;
 
   // Cache
   "cache.ttl.search": string;

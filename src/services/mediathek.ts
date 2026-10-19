@@ -1,6 +1,6 @@
 import { isStreamingUrl } from "@/lib/stream-url";
 import { mediathekCache } from "@/lib/cache";
-import { getMinDurationSeconds, getSetting } from "@/lib/settings";
+import { getMinDurationSeconds, getSetting, isSeriesUmlautStrippingEnabled } from "@/lib/settings";
 import { runRulesetRegex } from "@/server/ruleset-regex";
 import { queryContent } from "./content-search";
 import { getShowInfoByTvdbId } from "./shows";
@@ -692,9 +692,12 @@ export async function fetchSearchResultsById(
   limit: number,
   offset: number
 ): Promise<string> {
-  const quality = await getQualityPreference();
-  const minDuration = await getMinDurationSeconds();
-  const matchingSettings = await getMatchingSettings();
+  const [quality, minDuration, matchingSettings, stripSeriesUmlauts] = await Promise.all([
+    getQualityPreference(),
+    getMinDurationSeconds(),
+    getMatchingSettings(),
+    isSeriesUmlautStrippingEnabled(),
+  ]);
   const searchQuery = tvdbData.germanName || tvdbData.name;
   await ensureRulesetsLoaded();
   const rulesetSnapshot = new Map(
@@ -804,7 +807,7 @@ export async function fetchSearchResultsById(
     return true;
   });
   const newznabItems: NewznabItem[] = uniqueEpisodes.flatMap((info) =>
-    generateRssItems(info, quality)
+    generateRssItems(info, quality, stripSeriesUmlauts)
   );
   console.log(`[Mediathek] Generated ${newznabItems.length} Newznab items (quality: ${quality})`);
 
@@ -823,9 +826,12 @@ export async function fetchSearchResultsByString(
   // Normalize once: a whitespace-only q is treated as no query everywhere
   // (API query, cache keys, and generic gating) so behavior stays consistent.
   const trimmedQ = q?.trim() || null;
-  const quality = await getQualityPreference();
-  const minDuration = await getMinDurationSeconds();
-  const matchingSettings = await getMatchingSettings();
+  const [quality, minDuration, matchingSettings, stripSeriesUmlauts] = await Promise.all([
+    getQualityPreference(),
+    getMinDurationSeconds(),
+    getMatchingSettings(),
+    isSeriesUmlautStrippingEnabled(),
+  ]);
   const cacheKey = `q_${trimmedQ ?? "null"}_${season ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
   const cached = mediathekCache.get(cacheKey);
@@ -860,7 +866,7 @@ export async function fetchSearchResultsByString(
 
   const { matchedEpisodes, unmatchedItems } = await applyRulesetFilters(results);
   const newznabItems: NewznabItem[] = matchedEpisodes.flatMap((info) =>
-    generateRssItems(info, quality)
+    generateRssItems(info, quality, stripSeriesUmlauts)
   );
 
   // Generic (no-ruleset) results are only meaningful for an actual text search.
@@ -869,7 +875,7 @@ export async function fetchSearchResultsByString(
   // non-empty q to keep the previous (matched-only) behavior for those queries.
   const hasTextQuery = !!trimmedQ;
   const genericItems: NewznabItem[] = hasTextQuery
-    ? unmatchedItems.flatMap((item) => generateGenericRssItems(item, quality))
+    ? unmatchedItems.flatMap((item) => generateGenericRssItems(item, quality, stripSeriesUmlauts))
     : [];
 
   const allItems = [...newznabItems, ...genericItems];
@@ -880,9 +886,12 @@ export async function fetchSearchResultsByString(
 }
 
 export async function fetchSearchResultsForRssSync(limit: number, offset: number): Promise<string> {
-  const quality = await getQualityPreference();
-  const minDuration = await getMinDurationSeconds();
-  const matchingSettings = await getMatchingSettings();
+  const [quality, minDuration, matchingSettings, stripSeriesUmlauts] = await Promise.all([
+    getQualityPreference(),
+    getMinDurationSeconds(),
+    getMatchingSettings(),
+    isSeriesUmlautStrippingEnabled(),
+  ]);
   const cacheKey = `rss_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}`;
 
   const cached = mediathekCache.get(cacheKey);
@@ -906,7 +915,7 @@ export async function fetchSearchResultsForRssSync(limit: number, offset: number
 
   const { matchedEpisodes } = await applyRulesetFilters(results);
   const newznabItems: NewznabItem[] = matchedEpisodes.flatMap((info) =>
-    generateRssItems(info, quality)
+    generateRssItems(info, quality, stripSeriesUmlauts)
   );
   const response = convertItemsToRss(newznabItems, limit, offset);
 

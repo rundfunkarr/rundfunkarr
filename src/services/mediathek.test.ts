@@ -6,6 +6,7 @@ vi.mock("@/lib/settings", () => ({
   // null -> defaults kick in: quality "all", minDuration 300s, fuzzy/0.7
   getSetting: vi.fn().mockResolvedValue(null),
   getMinDurationSeconds: vi.fn().mockResolvedValue(300),
+  isSeriesUmlautStrippingEnabled: vi.fn().mockResolvedValue(false),
 }));
 vi.mock("@/lib/cache", () => ({
   mediathekCache: { get: vi.fn().mockReturnValue(undefined), set: vi.fn() },
