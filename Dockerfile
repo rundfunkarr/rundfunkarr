@@ -18,6 +18,14 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Version label for the UI, set by the image workflow: the release version for tags
+# ("1.4.0"), otherwise the channel ("main", "nightly", "pr-71") plus commit. Without
+# these build args the UI shows the package.json version.
+ARG APP_VERSION=""
+ARG APP_COMMIT=""
+ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION \
+    NEXT_PUBLIC_APP_COMMIT=$APP_COMMIT
+
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build

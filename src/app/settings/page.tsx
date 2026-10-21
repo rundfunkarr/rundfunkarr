@@ -5,6 +5,7 @@ import { SecuritySettings } from "@/components/auth/security-settings";
 import { FilmlisteIndexSettings } from "@/components/settings/filmliste-index-settings";
 import { PostProcessSettings } from "@/components/settings/post-process-settings";
 import { useSettings } from "@/contexts/settings-context";
+import { appVersion } from "@/lib/app-version";
 import { validateApiCredentials } from "@/lib/validate-api-credentials";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -40,7 +41,6 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import packageJson from "../../../package.json";
 
 // Helper functions
 function formatBytes(bytes: number): string {
@@ -824,7 +824,7 @@ export default function SettingsPage() {
               <section>
                 <h4 className="mb-3 text-sm font-medium">Versionen</h4>
                 <dl className="grid grid-cols-2 gap-4 md:grid-cols-5">
-                  <Stat label="RundfunkArr">{packageJson.version}</Stat>
+                  <Stat label="RundfunkArr">{appVersion}</Stat>
                   <Stat label="Node.js">{systemInfo?.version.node || "…"}</Stat>
                   <Stat label="FFmpeg">
                     {systemInfo?.version.ffmpeg ? (
