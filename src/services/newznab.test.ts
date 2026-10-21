@@ -7,6 +7,7 @@ import {
   generateFakeNzb,
   getCapabilitiesXml,
   generateRssItems,
+  generateMovieRssItems,
   generateGenericRssItems,
   getValidationRss,
   isMovieCategoryRequest,
@@ -314,7 +315,7 @@ describe("generateGenericRssItems", () => {
     const items = generateGenericRssItems(baseItem, "best");
 
     expect(items).toHaveLength(1);
-    expect(items[0].guid.value).toBe("https://example.com/video#1080p");
+    expect(items[0].guid.value).toBe("https://example.com/video_1080.mp4#1080p");
   });
 
   it("parses Folge N titles into season/episode attributes", () => {
@@ -381,6 +382,102 @@ describe("generateGenericRssItems - edge cases", () => {
     const items = generateGenericRssItems(only720, "all");
 
     expect(items).toHaveLength(1);
-    expect(items[0].guid.value).toBe("https://example.com/video#720p");
+    expect(items[0].guid.value).toBe("https://example.com/video_720.mp4#720p");
+  });
+});
+
+describe("regular and audio description versions on one website", () => {
+  // Both versions share url_website, as in issue #63 (Dampfnudelblues on 3sat).
+  const regular: ApiResultItem = {
+    channel: "3Sat",
+    topic: "Dampfnudelblues",
+    title: "Dampfnudelblues. Ein Eberhoferkrimi",
+    description: "",
+    filmlisteTimestamp: 1700000000,
+    duration: 5400,
+    size: 1_000_000_000,
+    url_website: "https://www.3sat.de/film/dampfnudelblues-100.html",
+    url_video: "https://example.com/dampfnudelblues_a1a2_3360k.mp4",
+    url_video_low: "https://example.com/dampfnudelblues_a1a2_808k.mp4",
+    url_video_hd: "https://example.com/dampfnudelblues_a1a2_6660k.mp4",
+  };
+  const described: ApiResultItem = {
+    ...regular,
+    title: "Dampfnudelblues. Ein Eberhoferkrimi (Audiodeskription)",
+    url_video: "https://example.com/dampfnudelblues_a3a4_3360k.mp4",
+    url_video_low: "https://example.com/dampfnudelblues_a3a4_808k.mp4",
+    url_video_hd: "https://example.com/dampfnudelblues_a3a4_6660k.mp4",
+  };
+  const guids = (items: NewznabItem[]) => items.map((item) => item.guid.value);
+  const expectDistinctReleases = (a: NewznabItem[], b: NewznabItem[]) => {
+    const all = [...guids(a), ...guids(b)];
+    expect(new Set(all).size).toBe(all.length);
+    expect(a.map((item) => item.title)).not.toEqual(b.map((item) => item.title));
+  };
+
+  it("gives movie releases distinct GUIDs and marks audio description", () => {
+    const movie = {
+      tmdbId: 209232,
+      imdbId: null,
+      title: "Dampfnudelblues",
+      germanTitle: "Dampfnudelblues",
+      runtime: 90,
+      releaseDate: "2013-08-01",
+    };
+    const match = { score: 100, titleMatch: "exact" as const, durationDiff: 0 };
+    const a = generateMovieRssItems({ ...match, item: regular }, movie);
+    const b = generateMovieRssItems({ ...match, item: described }, movie);
+
+    expectDistinctReleases(a, b);
+    expect(a[0].title).toBe("Dampfnudelblues.2013.GERMAN.1080p.WEB.h264-MEDiATHEK");
+    expect(b[0].title).toBe("Dampfnudelblues.2013.GERMAN.AD.1080p.WEB.h264-MEDiATHEK");
+    expect(b[0].guid.value).toBe("https://example.com/dampfnudelblues_a3a4_6660k.mp4#movie-1080p");
+  });
+
+  it("gives episode releases distinct GUIDs and marks audio description", () => {
+    const info = (item: ApiResultItem): MatchedEpisodeInfo => ({
+      showName: "Eberhofer",
+      matchedTitle: "Dampfnudelblues",
+      tvdbId: 1,
+      episode: {
+        name: "Dampfnudelblues",
+        aired: null,
+        runtime: 90,
+        seasonNumber: 1,
+        episodeNumber: 2,
+      },
+      item,
+    });
+    const a = generateRssItems(info(regular));
+    const b = generateRssItems(info(described));
+
+    expect(a).toHaveLength(3);
+    expectDistinctReleases(a, b);
+    expect(b[0].title).toBe("Eberhofer.S01E02.Dampfnudelblues.GERMAN.AD.1080p.WEB.h264-MEDiATHEK");
+  });
+
+  it("keeps standard and daily releases of one video apart", () => {
+    const daily = generateRssItems({
+      showName: "Tagesschau",
+      matchedTitle: "",
+      tvdbId: 1,
+      episode: {
+        name: "20 Uhr",
+        aired: new Date("2024-03-01"),
+        runtime: 15,
+        seasonNumber: 2024,
+        episodeNumber: 61,
+      },
+      item: { ...regular, url_video: "", url_video_low: "" },
+    });
+
+    expect(guids(daily)).toEqual([
+      "https://example.com/dampfnudelblues_a1a2_6660k.mp4#1080p-d",
+      "https://example.com/dampfnudelblues_a1a2_6660k.mp4#1080p",
+    ]);
+  });
+
+  it("gives generic releases distinct GUIDs", () => {
+    expectDistinctReleases(generateGenericRssItems(regular), generateGenericRssItems(described));
   });
 });

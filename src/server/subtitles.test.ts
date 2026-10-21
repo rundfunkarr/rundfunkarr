@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { subtitleToSrt } from "./subtitles";
-import { mediaMetadataComment, matchesAudioVariant, releaseLanguage } from "@/lib/media-metadata";
+import { mediaMetadataComment, matchesAudioVariant, releaseAudioTag } from "@/lib/media-metadata";
 import { parseNzbContent } from "@/services/download";
 
 describe("Untertitel", () => {
@@ -61,7 +61,9 @@ describe("Fassungen und NZB-Metadaten", () => {
     ).toEqual({ fileName: "Test", url: "https://example.org/video.mp4" });
   });
   it("kennzeichnet Originalfassungen ohne eine erfundene Sprache", () => {
-    expect(releaseLanguage("Die Reise (OmU)")).toBe("ORIGINAL");
+    expect(releaseAudioTag("Die Reise (OmU)")).toBe("ORIGINAL");
+    expect(releaseAudioTag("Die Reise (Audiodeskription)")).toBe("GERMAN.AD");
+    expect(releaseAudioTag("Die Reise")).toBe("GERMAN");
     expect(matchesAudioVariant("Die Reise (Originalversion)", "original")).toBe(true);
     expect(matchesAudioVariant("Die Reise (Hörfassung)", "standard")).toBe(false);
     expect(matchesAudioVariant("Die Reise (Audiodeskription)", "description")).toBe(true);
