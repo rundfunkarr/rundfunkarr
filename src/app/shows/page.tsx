@@ -10,9 +10,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Page, PageHeader } from "@/components/shared/page";
+import { EmptyState } from "@/components/shared/empty-state";
 import { RefreshCw, Search, Tv, ExternalLink } from "lucide-react";
 
 interface Show {
@@ -74,102 +75,97 @@ export default function ShowsPage() {
   }, [searchQuery, shows]);
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Shows</h1>
-          <p className="text-muted-foreground text-sm">Gecachte TV-Serien aus TVDB</p>
-        </div>
-        <Button variant="outline" onClick={fetchShows}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Aktualisieren
-        </Button>
-      </div>
+    <Page>
+      <PageHeader
+        title="Serien"
+        description="Serien, die Sonarr angefragt hat, mit ihren Metadaten aus TVDB."
+        actions={
+          <Button variant="outline" size="sm" onClick={fetchShows}>
+            <RefreshCw />
+            Aktualisieren
+          </Button>
+        }
+      />
 
-      {/* Search */}
       <Card>
-        <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2">
+            <Tv className="size-4 text-muted-foreground" />
+            {filteredShows.length} {filteredShows.length === 1 ? "Serie" : "Serien"}
+          </CardTitle>
+          <label className="relative w-full sm:w-72">
+            <span className="sr-only">Serien durchsuchen</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Shows durchsuchen..."
+              placeholder="Serien durchsuchen…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-9"
             />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Shows Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Tv className="w-5 h-5" />
-            {filteredShows.length} Shows
-          </CardTitle>
+          </label>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground text-center py-8">Laden...</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">Wird geladen…</p>
           ) : filteredShows.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              {shows.length === 0
-                ? "Keine Shows im Cache. Shows werden automatisch gecacht wenn Sonarr nach ihnen sucht."
-                : "Keine Shows gefunden für diese Suche."}
-            </p>
+            <EmptyState
+              icon={Tv}
+              title={shows.length === 0 ? "Noch keine Serien im Cache" : "Keine Serien gefunden"}
+              description={
+                shows.length === 0
+                  ? "Serien werden automatisch zwischengespeichert, sobald Sonarr nach ihnen sucht."
+                  : "Für diese Suche gibt es keine passende Serie."
+              }
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>TVDB ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Deutscher Name</TableHead>
-                    <TableHead>Episoden</TableHead>
-                    <TableHead>Erstausstrahlung</TableHead>
-                    <TableHead className="w-20">Links</TableHead>
+            <Table scrollLabel="Serien" className="min-w-[48rem]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>TVDB-ID</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Deutscher Name</TableHead>
+                  <TableHead className="text-right">Episoden</TableHead>
+                  <TableHead>Erstausstrahlung</TableHead>
+                  <TableHead className="w-20">Links</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredShows.map((show) => (
+                  <TableRow key={show.id}>
+                    <TableCell className="tabular font-mono text-xs text-muted-foreground">
+                      {show.id}
+                    </TableCell>
+                    <TableCell className="font-medium">{show.name}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {show.germanName || "–"}
+                    </TableCell>
+                    <TableCell className="tabular text-right">{show._count.episodes}</TableCell>
+                    <TableCell className="tabular text-muted-foreground">
+                      {show.firstAired
+                        ? new Date(show.firstAired).toLocaleDateString("de-DE")
+                        : "–"}
+                    </TableCell>
+                    <TableCell>
+                      {show.slug ? (
+                        <a
+                          href={`https://thetvdb.com/series/${show.slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                        >
+                          TVDB <ExternalLink className="size-3" />
+                        </a>
+                      ) : (
+                        "–"
+                      )}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredShows.map((show) => (
-                    <TableRow key={show.id}>
-                      <TableCell>
-                        <Badge variant="outline">{show.id}</Badge>
-                      </TableCell>
-                      <TableCell className="font-medium">{show.name}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {show.germanName || "-"}
-                      </TableCell>
-                      <TableCell>{show._count.episodes}</TableCell>
-                      <TableCell>
-                        {show.firstAired
-                          ? new Date(show.firstAired).toLocaleDateString("de-DE")
-                          : "-"}
-                      </TableCell>
-                      <TableCell>
-                        {show.slug ? (
-                          <a
-                            href={`https://thetvdb.com/series/${show.slug}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline inline-flex items-center gap-1"
-                          >
-                            TVDB <ExternalLink className="w-3 h-3" />
-                          </a>
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
-    </div>
+    </Page>
   );
 }

@@ -1,8 +1,12 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
 
 export function LoginForm({ returnTo }: { returnTo: string }) {
   const [username, setUsername] = useState("");
@@ -36,63 +40,68 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
     }
   }
   return (
-    <main className="min-h-screen grid place-items-center p-4 bg-background">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">RundfunkArr</p>
-          <CardTitle className="text-2xl">Anmelden</CardTitle>
-          <CardDescription>Mit deinem Administratorkonto fortfahren.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submit();
-            }}
-          >
-            <label className="text-sm flex flex-col gap-1">
-              Benutzername
-              <Input
-                autoComplete="username"
-                required
-                maxLength={64}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <label className="text-sm flex flex-col gap-1">
-              Passwort
-              <Input
-                type="password"
-                autoComplete="current-password"
-                required
-                maxLength={256}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              30 Tage angemeldet bleiben
-            </label>
-            {error && (
-              <p role="alert" className="text-sm text-red-500">
-                {error}
-              </p>
-            )}
-            <Button className="w-full" type="submit" disabled={busy}>
-              {busy ? "Wird angemeldet…" : "Anmelden"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+    <main className="grid min-h-dvh place-items-center bg-background p-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex items-center justify-center gap-3">
+          <Image src="/logo.svg" alt="" width={40} height={40} className="size-10 rounded-xl" />
+          <span className="text-lg font-semibold tracking-tight">RundfunkArr</span>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Anmelden</CardTitle>
+            <CardDescription>Mit deinem Administratorkonto fortfahren.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit();
+              }}
+            >
+              <Field label="Benutzername">
+                {(id) => (
+                  <Input
+                    id={id}
+                    autoComplete="username"
+                    required
+                    maxLength={64}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={busy}
+                  />
+                )}
+              </Field>
+              <Field label="Passwort">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    maxLength={256}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={busy}
+                  />
+                )}
+              </Field>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  disabled={busy}
+                />
+                30 Tage angemeldet bleiben
+              </label>
+              {error && <Notice tone="danger">{error}</Notice>}
+              <Button className="w-full" type="submit" disabled={busy}>
+                {busy ? "Wird angemeldet…" : "Anmelden"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

@@ -9,6 +9,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Page } from "@/components/shared/page";
+import { Field } from "@/components/shared/field";
+import { cn } from "@/lib/utils";
 import {
   Tv,
   FolderOpen,
@@ -31,6 +34,124 @@ const STEPS = [
   { id: "arr", title: "*arr Setup" },
   { id: "done", title: "Fertig" },
 ];
+
+const APPS = [
+  {
+    id: "sonarr",
+    name: "Sonarr",
+    indexerPath: "Sonarr → Settings → Indexers",
+    indexerType: "Newznab",
+    clientPath: "Sonarr → Settings → Download Clients",
+    categoryLabel: "Category",
+    category: "sonarr",
+    note: null,
+  },
+  {
+    id: "radarr",
+    name: "Radarr",
+    indexerPath: "Radarr → Settings → Indexers",
+    indexerType: "Newznab",
+    clientPath: "Radarr → Settings → Download Clients",
+    categoryLabel: "Category",
+    category: "radarr",
+    note: null,
+  },
+  {
+    id: "prowlarr",
+    name: "Prowlarr",
+    indexerPath: "Prowlarr → Indexers",
+    indexerType: "Generic Newznab",
+    clientPath: "Prowlarr → Settings → Download Clients",
+    categoryLabel: "Default Category",
+    category: "sonarr",
+    note: "Prowlarr synchronisiert den Indexer automatisch zu deinen anderen *arr Apps. Den Download-Client synchronisiert Prowlarr nicht. Richte RundfunkArr dafür zusätzlich direkt in Sonarr und Radarr ein. Der Download-Client hier ist nur für manuelle Downloads aus Prowlarr gedacht.",
+  },
+];
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={copied ? `${label} kopiert` : `${label} kopieren`}
+      title={copied ? "Kopiert" : "Kopieren"}
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+    >
+      {copied ? <Check className="text-ok" /> : <Copy />}
+    </Button>
+  );
+}
+
+function ValueRow({
+  label,
+  value,
+  copyable,
+}: {
+  label: string;
+  value: string;
+  copyable?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1">
+      <span className="shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex min-w-0 items-center gap-1">
+        <code className="truncate rounded-md bg-background px-2 py-1 font-mono text-xs">
+          {value}
+        </code>
+        {copyable && <CopyButton value={value} label={label} />}
+      </span>
+    </div>
+  );
+}
+
+function ValueBlock({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-lg bg-muted px-3 py-2">{children}</div>;
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <h3 className="eyebrow pt-1">{children}</h3>;
+}
+
+function StepHeading({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof Tv;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Icon className="size-5" />
+      </span>
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function ResultBadge({ value, unset }: { value: boolean | null; unset: string }) {
+  if (value === null) return <Badge variant="outline">{unset}</Badge>;
+  return value ? (
+    <Badge variant="ok">
+      <Check /> OK
+    </Badge>
+  ) : (
+    <Badge variant="danger">
+      <X /> Fehler
+    </Badge>
+  );
+}
 
 export default function SetupPage() {
   const router = useRouter();
@@ -123,67 +244,91 @@ export default function SetupPage() {
     router.push("/");
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const host = typeof window !== "undefined" ? window.location.hostname : "localhost";
+  const port = typeof window !== "undefined" ? window.location.port || "3000" : "3000";
 
-  const getBaseUrl = () => {
-    if (typeof window !== "undefined") {
-      return window.location.origin;
-    }
-    return "http://localhost:3000";
-  };
+  const navigation = (back: number, next?: () => void, extra?: React.ReactNode) => (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-5">
+      <Button variant="outline" onClick={() => setCurrentStep(back)}>
+        <ArrowLeft />
+        Zurück
+      </Button>
+      <div className="flex gap-2">
+        {extra}
+        {next && (
+          <Button onClick={next}>
+            Weiter
+            <ArrowRight />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-3xl mx-auto">
-      {/* Progress Steps */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          {STEPS.map((step, index) => (
-            <div key={step.id} className="flex items-center">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  index < currentStep
-                    ? "bg-primary text-primary-foreground"
-                    : index === currentStep
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {index < currentStep ? <Check className="w-4 h-4" /> : index + 1}
-              </div>
-              {index < STEPS.length - 1 && (
-                <div
-                  className={`h-0.5 w-8 sm:w-16 mx-1 ${
-                    index < currentStep ? "bg-primary" : "bg-muted"
-                  }`}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-        <p className="text-center text-sm text-muted-foreground">
+    <Page width="compact">
+      <nav aria-label="Einrichtungsschritte" className="pt-2">
+        <ol className="flex items-start">
+          {STEPS.map((step, index) => {
+            const state = index < currentStep ? "done" : index === currentStep ? "current" : "todo";
+            return (
+              <li key={step.id} className="flex flex-1 items-start last:flex-none">
+                <div className="flex flex-col items-center gap-1.5">
+                  <span
+                    aria-current={state === "current" ? "step" : undefined}
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-full border text-sm font-medium transition-colors",
+                      state === "done" && "border-primary/40 bg-primary/15 text-primary",
+                      state === "current" && "border-primary bg-primary text-primary-foreground",
+                      state === "todo" && "border-border text-muted-foreground"
+                    )}
+                  >
+                    {state === "done" ? <Check className="size-4" /> : index + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      "hidden whitespace-nowrap text-xs sm:block",
+                      state === "current" ? "font-medium" : "text-muted-foreground"
+                    )}
+                  >
+                    {step.title}
+                  </span>
+                </div>
+                {index < STEPS.length - 1 && (
+                  <div
+                    aria-hidden
+                    className={cn(
+                      "mx-2 mt-4 h-px flex-1",
+                      index < currentStep ? "bg-primary" : "bg-border"
+                    )}
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        <p className="mt-3 text-center text-xs text-muted-foreground sm:hidden">
           Schritt {currentStep + 1} von {STEPS.length}: {STEPS[currentStep].title}
         </p>
-      </div>
+      </nav>
 
-      {/* Step Content */}
       <Card>
         <CardContent className="p-6">
           {/* Step 1: Welcome */}
           {currentStep === 0 && (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Tv className="w-8 h-8 text-primary" />
-              </div>
-              <h2 className="text-2xl font-bold mb-2">Willkommen bei RundfunkArr</h2>
-              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                RundfunkArr indiziert Inhalte aus deutschen Mediatheken und macht sie für Sonarr und
+            <div className="py-6 text-center">
+              <span className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Tv className="size-8" />
+              </span>
+              <h2 className="text-2xl font-semibold tracking-tight">Willkommen bei RundfunkArr</h2>
+              <p className="mx-auto mb-6 mt-2 max-w-md text-muted-foreground">
+                RundfunkArr indiziert Inhalte aus den Mediatheken und macht sie für Sonarr und
                 Radarr verfügbar. Dieser Assistent hilft dir bei der Einrichtung.
               </p>
               <Button onClick={() => setCurrentStep(1)} size="lg">
                 Los geht&apos;s
-                <ArrowRight className="w-4 h-4 ml-2" />
+                <ArrowRight />
               </Button>
             </div>
           )}
@@ -191,621 +336,287 @@ export default function SetupPage() {
           {/* Step 2: Paths */}
           {currentStep === 1 && (
             <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-4">
-                <FolderOpen className="w-6 h-6 text-primary" />
-                <div>
-                  <h2 className="text-xl font-bold">Download-Pfad</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Wo sollen die Downloads gespeichert werden?
-                  </p>
-                </div>
-              </div>
+              <StepHeading
+                icon={FolderOpen}
+                title="Download-Pfad"
+                description="Wo sollen die Downloads gespeichert werden?"
+              />
 
-              <div>
-                <Input
-                  value={downloadPath}
-                  onChange={(e) => {
-                    setValue("download.path", e.target.value);
-                    setPathValid(null);
-                  }}
-                  placeholder="/downloads"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Das Verzeichnis muss existieren und beschreibbar sein.
-                </p>
-              </div>
+              <Field
+                label="Verzeichnis"
+                hint="Das Verzeichnis muss existieren und beschreibbar sein."
+              >
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={downloadPath}
+                    onChange={(e) => {
+                      setValue("download.path", e.target.value);
+                      setPathValid(null);
+                    }}
+                    placeholder="/downloads"
+                    className="font-mono text-xs md:text-xs"
+                  />
+                )}
+              </Field>
 
               {pathValid !== null && (
-                <Badge variant={pathValid ? "default" : "destructive"}>
-                  {pathValid ? <Check className="w-3 h-3 mr-1" /> : <X className="w-3 h-3 mr-1" />}
-                  {pathValid ? "Pfad gültig" : "Pfad ungültig"}
-                </Badge>
+                <div>
+                  <Badge variant={pathValid ? "ok" : "danger"}>
+                    {pathValid ? <Check /> : <X />}
+                    {pathValid ? "Pfad gültig" : "Pfad ungültig"}
+                  </Badge>
+                </div>
               )}
 
-              <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setCurrentStep(0)}>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Zurück
+              {navigation(
+                0,
+                () => setCurrentStep(2),
+                <Button variant="outline" onClick={validatePath} disabled={isValidating}>
+                  {isValidating ? <Loader2 className="animate-spin" /> : null}
+                  Prüfen
                 </Button>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={validatePath} disabled={isValidating}>
-                    {isValidating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    Prüfen
-                  </Button>
-                  <Button onClick={() => setCurrentStep(2)}>
-                    Weiter
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
+              )}
             </div>
           )}
 
           {/* Step 3: API Keys */}
           {currentStep === 2 && (
             <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-4">
-                <Key className="w-6 h-6 text-primary" />
-                <div>
-                  <h2 className="text-xl font-bold">API-Keys</h2>
-                  <p className="text-sm text-muted-foreground">API-Zugänge für Metadaten-Dienste</p>
-                </div>
-              </div>
+              <StepHeading
+                icon={Key}
+                title="API-Keys"
+                description="Zugänge für Metadaten-Dienste. Beide lassen sich später ergänzen."
+              />
 
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">TheTVDB</CardTitle>
+                  <CardTitle>TheTVDB</CardTitle>
                   <CardDescription>
-                    Für TV-Serien-Metadaten. Project API Keys funktionieren ohne PIN;
-                    Subscriber-Keys können weiterhin eine PIN verwenden.{" "}
+                    Für Serien-Metadaten. Project API Keys funktionieren ohne PIN; Subscriber-Keys
+                    können weiterhin eine PIN verwenden.{" "}
                     <a
                       href="https://thetvdb.com/api-information"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary hover:underline inline-flex items-center gap-1"
+                      className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
                     >
-                      API-Key beantragen <ExternalLink className="w-3 h-3" />
+                      API-Key beantragen <ExternalLink className="size-3" />
                     </a>
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Input
-                    value={tvdbKey}
-                    onFocus={(e) => e.currentTarget.select()}
-                    onChange={(e) => setValue("api.tvdb.key", e.target.value)}
-                    placeholder="API Key"
-                  />
-                  <Input
-                    value={tvdbPin}
-                    onFocus={(e) => e.currentTarget.select()}
-                    onChange={(e) => setValue("api.tvdb.pin", e.target.value)}
-                    placeholder="PIN (optional)"
-                  />
+                  <Field label="API Key" srOnlyLabel>
+                    {(id) => (
+                      <Input
+                        id={id}
+                        value={tvdbKey}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onChange={(e) => setValue("api.tvdb.key", e.target.value)}
+                        placeholder="API Key"
+                        className="font-mono text-xs md:text-xs"
+                      />
+                    )}
+                  </Field>
+                  <Field label="PIN (optional)" srOnlyLabel>
+                    {(id) => (
+                      <Input
+                        id={id}
+                        value={tvdbPin}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onChange={(e) => setValue("api.tvdb.pin", e.target.value)}
+                        placeholder="PIN (optional)"
+                        className="font-mono text-xs md:text-xs"
+                      />
+                    )}
+                  </Field>
                   {tvdbValid !== null && (
-                    <Badge variant={tvdbValid ? "default" : "destructive"}>
-                      {tvdbValid ? (
-                        <Check className="w-3 h-3 mr-1" />
-                      ) : (
-                        <X className="w-3 h-3 mr-1" />
-                      )}
-                      {tvdbValid ? "Verbunden" : "Fehler"}
-                    </Badge>
+                    <div>
+                      <Badge variant={tvdbValid ? "ok" : "danger"}>
+                        {tvdbValid ? <Check /> : <X />}
+                        {tvdbValid ? "Verbunden" : "Fehler"}
+                      </Badge>
+                    </div>
                   )}
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">TMDB</CardTitle>
+                  <CardTitle>TMDB</CardTitle>
                   <CardDescription>
                     Für Film-Metadaten (optional).{" "}
                     <a
                       href="https://www.themoviedb.org/settings/api"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary hover:underline inline-flex items-center gap-1"
+                      className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
                     >
-                      API-Key beantragen <ExternalLink className="w-3 h-3" />
+                      API-Key beantragen <ExternalLink className="size-3" />
                     </a>
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Input
-                    value={tmdbKey}
-                    onFocus={(e) => e.currentTarget.select()}
-                    onChange={(e) => setValue("api.tmdb.key", e.target.value)}
-                    placeholder="API Key"
-                  />
+                  <Field label="API Key" srOnlyLabel>
+                    {(id) => (
+                      <Input
+                        id={id}
+                        value={tmdbKey}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onChange={(e) => setValue("api.tmdb.key", e.target.value)}
+                        placeholder="API Key"
+                        className="font-mono text-xs md:text-xs"
+                      />
+                    )}
+                  </Field>
                   {tmdbValid !== null && (
-                    <Badge variant={tmdbValid ? "default" : "destructive"}>
-                      {tmdbValid ? (
-                        <Check className="w-3 h-3 mr-1" />
-                      ) : (
-                        <X className="w-3 h-3 mr-1" />
-                      )}
-                      {tmdbValid ? "Verbunden" : "Fehler"}
-                    </Badge>
+                    <div>
+                      <Badge variant={tmdbValid ? "ok" : "danger"}>
+                        {tmdbValid ? <Check /> : <X />}
+                        {tmdbValid ? "Verbunden" : "Fehler"}
+                      </Badge>
+                    </div>
                   )}
                 </CardContent>
               </Card>
 
-              <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setCurrentStep(1)}>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Zurück
+              {navigation(
+                1,
+                saveAndContinue,
+                <Button variant="outline" onClick={validateApis} disabled={isValidating}>
+                  {isValidating ? <Loader2 className="animate-spin" /> : null}
+                  Testen
                 </Button>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={validateApis} disabled={isValidating}>
-                    {isValidating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    Testen
-                  </Button>
-                  <Button onClick={saveAndContinue}>
-                    Weiter
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
+              )}
             </div>
           )}
 
           {/* Step 4: Test */}
           {currentStep === 3 && (
             <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-4">
-                <CheckCircle className="w-6 h-6 text-primary" />
-                <div>
-                  <h2 className="text-xl font-bold">Verbindungstest</h2>
-                  <p className="text-sm text-muted-foreground">Überprüfe alle Verbindungen</p>
-                </div>
-              </div>
+              <StepHeading
+                icon={CheckCircle}
+                title="Verbindungstest"
+                description="Überprüfe Pfad und API-Zugänge."
+              />
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <span>Download-Pfad</span>
-                  {pathValid === null ? (
-                    <Badge variant="outline">Nicht geprüft</Badge>
-                  ) : pathValid ? (
-                    <Badge className="bg-green-500">
-                      <Check className="w-3 h-3 mr-1" /> OK
-                    </Badge>
-                  ) : (
-                    <Badge variant="destructive">
-                      <X className="w-3 h-3 mr-1" /> Fehler
-                    </Badge>
-                  )}
+              <div className="divide-y rounded-lg border">
+                <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <span className="text-sm">Download-Pfad</span>
+                  <ResultBadge value={pathValid} unset="Nicht geprüft" />
                 </div>
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <span>TVDB API</span>
-                  {tvdbValid === null ? (
-                    <Badge variant="outline">Nicht konfiguriert</Badge>
-                  ) : tvdbValid ? (
-                    <Badge className="bg-green-500">
-                      <Check className="w-3 h-3 mr-1" /> OK
-                    </Badge>
-                  ) : (
-                    <Badge variant="destructive">
-                      <X className="w-3 h-3 mr-1" /> Fehler
-                    </Badge>
-                  )}
+                <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <span className="text-sm">TVDB API</span>
+                  <ResultBadge value={tvdbValid} unset="Nicht konfiguriert" />
                 </div>
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <span>TMDB API</span>
-                  {tmdbValid === null ? (
-                    <Badge variant="outline">Nicht konfiguriert</Badge>
-                  ) : tmdbValid ? (
-                    <Badge className="bg-green-500">
-                      <Check className="w-3 h-3 mr-1" /> OK
-                    </Badge>
-                  ) : (
-                    <Badge variant="destructive">
-                      <X className="w-3 h-3 mr-1" /> Fehler
-                    </Badge>
-                  )}
+                <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <span className="text-sm">TMDB API</span>
+                  <ResultBadge value={tmdbValid} unset="Nicht konfiguriert" />
                 </div>
               </div>
 
               <Button onClick={runAllTests} disabled={isValidating} className="w-full">
-                {isValidating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {isValidating ? <Loader2 className="animate-spin" /> : null}
                 Alle Tests ausführen
               </Button>
 
-              <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setCurrentStep(2)}>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Zurück
-                </Button>
-                <Button onClick={() => setCurrentStep(4)}>
-                  Weiter
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
+              {navigation(2, () => setCurrentStep(4))}
             </div>
           )}
 
           {/* Step 5: *arr Integration */}
           {currentStep === 4 && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold mb-2">*arr Integration</h2>
-                <p className="text-sm text-muted-foreground">
-                  Füge RundfunkArr als Indexer zu deinen *arr Apps hinzu
-                </p>
-              </div>
+              <StepHeading
+                icon={Tv}
+                title="*arr Integration"
+                description="Füge RundfunkArr als Indexer und Download-Client zu deinen *arr Apps hinzu."
+              />
 
               <Tabs defaultValue="sonarr">
-                <TabsList className="w-full">
-                  <TabsTrigger value="sonarr" className="flex-1">
-                    Sonarr
-                  </TabsTrigger>
-                  <TabsTrigger value="radarr" className="flex-1">
-                    Radarr
-                  </TabsTrigger>
-                  <TabsTrigger value="prowlarr" className="flex-1">
-                    Prowlarr
-                  </TabsTrigger>
+                <TabsList>
+                  {APPS.map((app) => (
+                    <TabsTrigger key={app.id} value={app.id} className="flex-1">
+                      {app.name}
+                    </TabsTrigger>
+                  ))}
                 </TabsList>
 
-                <TabsContent value="sonarr" className="space-y-4 mt-4">
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Indexer
-                    </h3>
-                    <p className="font-medium">1. Öffne Sonarr → Settings → Indexers</p>
-                    <p className="font-medium">
-                      2. Klicke auf &quot;+&quot; und wähle &quot;Newznab&quot;
-                    </p>
-                    <p className="font-medium">3. Trage folgende Werte ein:</p>
+                {APPS.map((app) => (
+                  <TabsContent key={app.id} value={app.id} className="space-y-5">
+                    <section className="space-y-3">
+                      <Eyebrow>Indexer</Eyebrow>
+                      <ol className="list-decimal space-y-1 pl-5 text-sm">
+                        <li>Öffne {app.indexerPath}</li>
+                        <li>Klicke auf „+“ und wähle „{app.indexerType}“</li>
+                        <li>Trage folgende Werte ein:</li>
+                      </ol>
+                      <ValueBlock>
+                        <ValueRow label="Name" value="RundfunkArr" />
+                        <ValueRow label="URL" value={`${baseUrl}/api/newznab`} copyable />
+                        <ValueRow label="API Key" value="rundfunkarr" />
+                      </ValueBlock>
+                      <p className="text-sm">4. Klicke „Test“ und dann „Save“</p>
+                    </section>
 
-                    <div className="bg-muted p-3 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Name:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">RundfunkArr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">URL:</span>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-background px-2 py-1 rounded text-sm">
-                            {getBaseUrl()}/api/newznab
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(`${getBaseUrl()}/api/newznab`)}
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">API Key:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">rundfunkarr</code>
-                      </div>
-                    </div>
-
-                    <p className="font-medium">
-                      4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
-                    </p>
-
-                    <hr className="my-4" />
-
-                    <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Download Client
-                    </h3>
-                    <p className="font-medium">1. Öffne Sonarr → Settings → Download Clients</p>
-                    <p className="font-medium">
-                      2. Klicke auf &quot;+&quot; und wähle &quot;SABnzbd&quot;
-                    </p>
-                    <p className="font-medium">3. Trage folgende Werte ein:</p>
-
-                    <div className="bg-muted p-3 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Name:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">RundfunkArr</code>
-                      </div>
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="text-sm">Host:</span>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-background px-2 py-1 rounded text-sm">
-                            {typeof window !== "undefined" ? window.location.hostname : "localhost"}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              copyToClipboard(
-                                typeof window !== "undefined"
-                                  ? window.location.hostname
-                                  : "localhost"
-                              )
-                            }
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Port:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">
-                          {typeof window !== "undefined" ? window.location.port || "3000" : "3000"}
-                        </code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">API Key:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">rundfunkarr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Category:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">sonarr</code>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Docker: Verwende den Container-Namen (z.B.{" "}
-                      <code className="bg-muted px-1 rounded">rundfunkarr</code>) statt localhost.
-                    </p>
-
-                    <p className="font-medium">
-                      4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
-                    </p>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="radarr" className="space-y-4 mt-4">
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Indexer
-                    </h3>
-                    <p className="font-medium">1. Öffne Radarr → Settings → Indexers</p>
-                    <p className="font-medium">
-                      2. Klicke auf &quot;+&quot; und wähle &quot;Newznab&quot;
-                    </p>
-                    <p className="font-medium">3. Trage folgende Werte ein:</p>
-
-                    <div className="bg-muted p-3 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Name:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">RundfunkArr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">URL:</span>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-background px-2 py-1 rounded text-sm">
-                            {getBaseUrl()}/api/newznab
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(`${getBaseUrl()}/api/newznab`)}
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">API Key:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">rundfunkarr</code>
-                      </div>
-                    </div>
-
-                    <p className="font-medium">
-                      4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
-                    </p>
-
-                    <hr className="my-4" />
-
-                    <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Download Client
-                    </h3>
-                    <p className="font-medium">1. Öffne Radarr → Settings → Download Clients</p>
-                    <p className="font-medium">
-                      2. Klicke auf &quot;+&quot; und wähle &quot;SABnzbd&quot;
-                    </p>
-                    <p className="font-medium">3. Trage folgende Werte ein:</p>
-
-                    <div className="bg-muted p-3 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Name:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">RundfunkArr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Host:</span>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-background px-2 py-1 rounded text-sm">
-                            {typeof window !== "undefined" ? window.location.hostname : "localhost"}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              copyToClipboard(
-                                typeof window !== "undefined"
-                                  ? window.location.hostname
-                                  : "localhost"
-                              )
-                            }
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Port:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">
-                          {typeof window !== "undefined" ? window.location.port || "3000" : "3000"}
-                        </code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">API Key:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">rundfunkarr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Category:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">radarr</code>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Docker: Verwende den Container-Namen (z.B.{" "}
-                      <code className="bg-muted px-1 rounded">rundfunkarr</code>) statt localhost.
-                    </p>
-
-                    <p className="font-medium">
-                      4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
-                    </p>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="prowlarr" className="space-y-4 mt-4">
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Indexer
-                    </h3>
-                    <p className="font-medium">1. Öffne Prowlarr → Indexers</p>
-                    <p className="font-medium">
-                      2. Klicke auf &quot;+&quot; und wähle &quot;Generic Newznab&quot;
-                    </p>
-                    <p className="font-medium">3. Trage folgende Werte ein:</p>
-
-                    <div className="bg-muted p-3 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Name:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">RundfunkArr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">URL:</span>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-background px-2 py-1 rounded text-sm">
-                            {getBaseUrl()}/api/newznab
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(`${getBaseUrl()}/api/newznab`)}
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">API Key:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">rundfunkarr</code>
-                      </div>
-                    </div>
-
-                    <p className="font-medium">
-                      4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
-                    </p>
-
-                    <hr className="my-4" />
-
-                    <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Download Client
-                    </h3>
-                    <p className="font-medium">1. Öffne Prowlarr → Settings → Download Clients</p>
-                    <p className="font-medium">
-                      2. Klicke auf &quot;+&quot; und wähle &quot;SABnzbd&quot;
-                    </p>
-                    <p className="font-medium">3. Trage folgende Werte ein:</p>
-
-                    <div className="bg-muted p-3 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Name:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">RundfunkArr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Host:</span>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-background px-2 py-1 rounded text-sm">
-                            {typeof window !== "undefined" ? window.location.hostname : "localhost"}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              copyToClipboard(
-                                typeof window !== "undefined"
-                                  ? window.location.hostname
-                                  : "localhost"
-                              )
-                            }
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Port:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">
-                          {typeof window !== "undefined" ? window.location.port || "3000" : "3000"}
-                        </code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">API Key:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">rundfunkarr</code>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Default Category:</span>
-                        <code className="bg-background px-2 py-1 rounded text-sm">sonarr</code>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Docker: Verwende den Container-Namen (z.B.{" "}
-                      <code className="bg-muted px-1 rounded">rundfunkarr</code>) statt localhost.
-                    </p>
-
-                    <p className="font-medium">
-                      4. Klicke &quot;Test&quot; und dann &quot;Save&quot;
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Prowlarr synchronisiert den Indexer automatisch zu deinen anderen *arr Apps.
-                      Den Download-Client synchronisiert Prowlarr nicht. Richte RundfunkArr dafür
-                      zusätzlich direkt in Sonarr und Radarr ein. Der Download-Client hier ist nur
-                      für manuelle Downloads aus Prowlarr gedacht.
-                    </p>
-                  </div>
-                </TabsContent>
+                    <section className="space-y-3 border-t pt-5">
+                      <Eyebrow>Download Client</Eyebrow>
+                      <ol className="list-decimal space-y-1 pl-5 text-sm">
+                        <li>Öffne {app.clientPath}</li>
+                        <li>Klicke auf „+“ und wähle „SABnzbd“</li>
+                        <li>Trage folgende Werte ein:</li>
+                      </ol>
+                      <ValueBlock>
+                        <ValueRow label="Name" value="RundfunkArr" />
+                        <ValueRow label="Host" value={host} copyable />
+                        <ValueRow label="Port" value={port} />
+                        <ValueRow label="API Key" value="rundfunkarr" />
+                        <ValueRow label={app.categoryLabel} value={app.category} />
+                      </ValueBlock>
+                      <p className="text-xs text-muted-foreground">
+                        Docker: Verwende den Container-Namen (z. B. <code>rundfunkarr</code>) statt
+                        localhost.
+                      </p>
+                      <p className="text-sm">4. Klicke „Test“ und dann „Save“</p>
+                      {app.note && <p className="text-sm text-muted-foreground">{app.note}</p>}
+                    </section>
+                  </TabsContent>
+                ))}
               </Tabs>
 
-              <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setCurrentStep(3)}>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Zurück
-                </Button>
-                <Button onClick={() => setCurrentStep(5)}>
-                  Weiter
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
+              {navigation(3, () => setCurrentStep(5))}
             </div>
           )}
 
           {/* Step 6: Done */}
           {currentStep === 5 && (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-8 h-8 text-green-500" />
-              </div>
-              <h2 className="text-2xl font-bold mb-2">Setup abgeschlossen!</h2>
-              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+            <div className="py-6 text-center">
+              <span className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-ok/10 text-ok">
+                <CheckCircle className="size-8" />
+              </span>
+              <h2 className="text-2xl font-semibold tracking-tight">Setup abgeschlossen</h2>
+              <p className="mx-auto mb-6 mt-2 max-w-md text-muted-foreground">
                 RundfunkArr ist jetzt eingerichtet. Du kannst die Einstellungen jederzeit unter
-                &quot;Settings&quot; anpassen.
+                „Einstellungen“ anpassen.
               </p>
 
-              <div className="bg-muted p-4 rounded-lg text-left mb-6 max-w-sm mx-auto">
-                <h3 className="font-medium mb-2">Zusammenfassung:</h3>
-                <ul className="text-sm space-y-1 text-muted-foreground">
-                  <li>Download-Pfad: {downloadPath}</li>
-                  <li>TVDB: {tvdbKey ? "Konfiguriert" : "Nicht konfiguriert"}</li>
-                  <li>TMDB: {tmdbKey ? "Konfiguriert" : "Nicht konfiguriert"}</li>
-                </ul>
-              </div>
+              <dl className="mx-auto mb-6 grid max-w-sm grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-lg border p-4 text-left text-sm">
+                <dt className="text-muted-foreground">Download-Pfad</dt>
+                <dd className="truncate font-mono text-xs">{downloadPath}</dd>
+                <dt className="text-muted-foreground">TVDB</dt>
+                <dd>{tvdbKey ? "Konfiguriert" : "Nicht konfiguriert"}</dd>
+                <dt className="text-muted-foreground">TMDB</dt>
+                <dd>{tmdbKey ? "Konfiguriert" : "Nicht konfiguriert"}</dd>
+              </dl>
 
               <Button onClick={finishSetup} size="lg">
                 Zum Dashboard
-                <ArrowRight className="w-4 h-4 ml-2" />
+                <ArrowRight />
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
-    </div>
+    </Page>
   );
 }

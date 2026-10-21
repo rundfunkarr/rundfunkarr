@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -12,7 +12,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, X, RotateCcw, Pause, Play } from "lucide-react";
+import { Select } from "@/components/ui/select";
+import { Page, PageHeader } from "@/components/shared/page";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Progress } from "@/components/shared/progress";
+import { Download, History, RefreshCw, X, RotateCcw, Pause, Play } from "lucide-react";
 import { formatSize } from "@/lib/formatters";
 import { getStatusBadge } from "@/components/shared/status-badge";
 
@@ -57,7 +63,8 @@ export default function DownloadsPage() {
   const requestSequence = useRef(0);
   const pageSize = 50;
   const [isLoading, setIsLoading] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  // Starts empty so the first successful fetch always changes the rendered text.
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const fetchData = useCallback(async () => {
     const sequence = ++requestSequence.current;
@@ -96,7 +103,10 @@ export default function DownloadsPage() {
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000);
-    return () => { clearInterval(interval); requestSequence.current++; };
+    return () => {
+      clearInterval(interval);
+      requestSequence.current++;
+    };
   }, [fetchData, refreshVersion]);
 
   const handleAction = async (action: string, extra: Record<string, string | number> = {}) => {
@@ -151,125 +161,125 @@ export default function DownloadsPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Downloads</h1>
-          <p className="text-muted-foreground text-sm">Verwalte deine Downloads</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
-            Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}
-          </span>
-          <Button variant="outline" size="sm" onClick={fetchData}>
-            <RefreshCw className="w-4 h-4 mr-1" />
-            Aktualisieren
-          </Button>
-        </div>
-      </div>
+    <Page>
+      <PageHeader
+        title="Downloads"
+        description="Warteschlange steuern und die Historie nachvollziehen."
+        actions={
+          <>
+            <span className="tabular font-mono text-xs text-muted-foreground">
+              Stand {lastRefresh ? lastRefresh.toLocaleTimeString("de-DE") : "–"}
+            </span>
+            <Button variant="outline" size="sm" onClick={fetchData}>
+              <RefreshCw />
+              Aktualisieren
+            </Button>
+          </>
+        }
+      />
 
-      {(error || loadError) && (
-        <p role="alert" className="text-sm text-destructive">
-          {error || loadError}
-        </p>
-      )}
+      {(error || loadError) && <Notice tone="danger">{error || loadError}</Notice>}
+
       <Card>
         <CardHeader>
           <CardTitle>Warteschlange steuern</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium">
-              Parallele Downloads
-              <select
-                aria-label="Parallele Downloads"
-                disabled={busy}
-                value={options.parallel}
-                onChange={(e) =>
-                  handleAction("settings", {
-                    parallel: Number(e.target.value),
-                    maxRetries: options.maxRetries,
-                  })
-                }
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"
-              >
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm font-medium">
-              Automatische Wiederholungen
-              <select
-                aria-label="Automatische Wiederholungen"
-                disabled={busy}
-                value={options.maxRetries}
-                onChange={(e) =>
-                  handleAction("settings", {
-                    parallel: options.parallel,
-                    maxRetries: Number(e.target.value),
-                  })
-                }
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"
-              >
-                {[0, 1, 2, 3, 4, 5].map((value) => (
-                  <option key={value} value={value}>
-                    {value === 0 ? "Aus" : value}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              disabled={busy}
-              variant="outline"
-              onClick={() => handleAction(options.paused ? "resumeQueue" : "pauseQueue")}
-            >
-              {options.paused ? (
-                <Play className="mr-2 h-4 w-4" />
-              ) : (
-                <Pause className="mr-2 h-4 w-4" />
-              )}
-              {options.paused ? "Warteschlange fortsetzen" : "Neue Starts pausieren"}
-            </Button>
-            <p className="text-sm text-muted-foreground" role="status">
-              {options.paused
-                ? "Neue Aufträge warten. Laufende Downloads werden noch abgeschlossen."
-                : "Neue Aufträge starten nach ihrer Priorität."}
-            </p>
-          </div>
-          <p className="text-xs text-muted-foreground">
+          <CardDescription>
             Einzeln pausierte Downloads stoppen sofort und beginnen beim Fortsetzen erneut.
             Netzwerkfehler werden mit wachsendem Abstand wiederholt. Nach einem Neustart werden
             unterbrochene Aufträge erneut eingeplant.
-          </p>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[13rem_15rem_minmax(0,1fr)] lg:items-end">
+            <Field label="Parallele Downloads">
+              {(id) => (
+                <Select
+                  id={id}
+                  disabled={busy}
+                  value={options.parallel}
+                  onChange={(e) =>
+                    handleAction("settings", {
+                      parallel: Number(e.target.value),
+                      maxRetries: options.maxRetries,
+                    })
+                  }
+                >
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="Automatische Wiederholungen">
+              {(id) => (
+                <Select
+                  id={id}
+                  disabled={busy}
+                  value={options.maxRetries}
+                  onChange={(e) =>
+                    handleAction("settings", {
+                      parallel: options.parallel,
+                      maxRetries: Number(e.target.value),
+                    })
+                  }
+                >
+                  {[0, 1, 2, 3, 4, 5].map((value) => (
+                    <option key={value} value={value}>
+                      {value === 0 ? "Aus" : value}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-1">
+              <Button
+                disabled={busy}
+                variant="outline"
+                onClick={() => handleAction(options.paused ? "resumeQueue" : "pauseQueue")}
+              >
+                {options.paused ? <Play /> : <Pause />}
+                {options.paused ? "Warteschlange fortsetzen" : "Neue Starts pausieren"}
+              </Button>
+              <p className="text-sm text-muted-foreground" role="status">
+                {options.paused
+                  ? "Neue Aufträge warten. Laufende Downloads werden noch abgeschlossen."
+                  : "Neue Aufträge starten nach ihrer Priorität."}
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Tabs */}
       <Card>
-        <CardHeader>
-          <CardTitle>Download-Verwaltung</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="p-5">
           <Tabs defaultValue="queue">
-            <TabsList className="mb-4">
-              <TabsTrigger value="queue">Warteschlange ({queue.length})</TabsTrigger>
-              <TabsTrigger value="history">Historie ({total})</TabsTrigger>
+            <TabsList>
+              <TabsTrigger value="queue">
+                <Download />
+                Warteschlange
+                <span className="tabular text-xs text-muted-foreground">{queue.length}</span>
+              </TabsTrigger>
+              <TabsTrigger value="history">
+                <History />
+                Historie
+                <span className="tabular text-xs text-muted-foreground">{total}</span>
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="queue">
               {isLoading ? (
-                <p className="text-muted-foreground text-center py-8">Laden...</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">Wird geladen…</p>
               ) : queue.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Keine aktiven Downloads</p>
+                <EmptyState
+                  icon={Download}
+                  title="Keine aktiven Downloads"
+                  description="Aufträge aus Sonarr, Radarr, Suchabos oder der Suche erscheinen hier, sobald sie eingeplant sind."
+                />
               ) : (
                 <div className="min-w-0">
-                  <Table scrollLabel="Warteschlange" className="min-w-[64rem]">
+                  <Table scrollLabel="Warteschlange" className="min-w-[52rem]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
@@ -277,79 +287,102 @@ export default function DownloadsPage() {
                         <TableHead>Priorität</TableHead>
                         <TableHead>Fortschritt</TableHead>
                         <TableHead>Größe</TableHead>
-                        <TableHead>Geschw.</TableHead>
-                        <TableHead>Verbleibend</TableHead>
-                        <TableHead className="w-20">Aktionen</TableHead>
+                        <TableHead className="w-24 text-right">Aktionen</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {queue.map((item) => (
-                        <TableRow key={item.nzo_id}>
-                          <TableCell className="font-medium max-w-xs truncate">
-                            {item.filename}
-                          </TableCell>
-                          <TableCell>
-                            {getStatusBadge(item.nextRetryAt ? "Retrying" : item.status)}
-                            {item.nextRetryAt && (
-                              <p className="mt-1 text-xs">
-                                Ab {new Date(item.nextRetryAt).toLocaleTimeString("de-DE")}
-                              </p>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <select
-                              aria-label={`Priorität für ${item.filename}`}
-                              disabled={busy || !["Queued", "Paused"].includes(item.status)}
-                              value={item.priorityValue || 0}
-                              onChange={(e) =>
-                                handleAction("priority", {
-                                  id: item.nzo_id,
-                                  priority: Number(e.target.value),
-                                })
-                              }
-                              className="rounded border border-input bg-background px-2 py-1"
-                            >
-                              <option value={10}>Hoch</option>
-                              <option value={0}>Normal</option>
-                              <option value={-10}>Niedrig</option>
-                            </select>
-                          </TableCell>
-                          <TableCell>{item.percentage}%</TableCell>
-                          <TableCell>{item.mb} MB</TableCell>
-                          <TableCell>{item.speed}</TableCell>
-                          <TableCell>{item.timeleft}</TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={busy}
-                              title={item.status === "Paused" ? "Fortsetzen" : "Pausieren"}
-                              aria-label={`${item.status === "Paused" ? "Fortsetzen" : "Pausieren"}: ${item.filename}`}
-                              onClick={() =>
-                                handleAction(item.status === "Paused" ? "resume" : "pause", {
-                                  id: item.nzo_id,
-                                })
-                              }
-                            >
-                              {item.status === "Paused" ? (
-                                <Play className="h-4 w-4" />
-                              ) : (
-                                <Pause className="h-4 w-4" />
+                      {queue.map((item) => {
+                        const percent = Number(item.percentage) || 0;
+                        return (
+                          <TableRow key={item.nzo_id}>
+                            <TableCell className="max-w-xs">
+                              <span
+                                className="block truncate font-mono text-xs"
+                                title={item.filename}
+                              >
+                                {item.filename}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {getStatusBadge(item.nextRetryAt ? "Retrying" : item.status)}
+                              {item.nextRetryAt && (
+                                <p className="tabular mt-1 text-xs text-muted-foreground">
+                                  Ab {new Date(item.nextRetryAt).toLocaleTimeString("de-DE")}
+                                </p>
                               )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={busy}
-                              onClick={() => handleAction("cancel", { id: item.nzo_id })}
-                              aria-label={`Abbrechen: ${item.filename}`}
-                              title="Abbrechen"
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                aria-label={`Priorität für ${item.filename}`}
+                                disabled={busy || !["Queued", "Paused"].includes(item.status)}
+                                value={item.priorityValue || 0}
+                                onChange={(e) =>
+                                  handleAction("priority", {
+                                    id: item.nzo_id,
+                                    priority: Number(e.target.value),
+                                  })
+                                }
+                                className="w-28"
+                              >
+                                <option value={10}>Hoch</option>
+                                <option value={0}>Normal</option>
+                                <option value={-10}>Niedrig</option>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Progress
+                                  value={percent}
+                                  label={`Fortschritt: ${item.filename}`}
+                                  className="w-24"
+                                />
+                                <span className="tabular text-xs">{percent}%</span>
+                              </div>
+                              {(item.speed || (item.timeleft && item.timeleft !== "0:00:00")) && (
+                                <p className="tabular mt-1 whitespace-nowrap text-xs text-muted-foreground">
+                                  {[
+                                    item.speed,
+                                    item.timeleft && item.timeleft !== "0:00:00"
+                                      ? `${item.timeleft} verbleibend`
+                                      : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </p>
+                              )}
+                            </TableCell>
+                            <TableCell className="tabular whitespace-nowrap">{item.mb} MB</TableCell>
+                            <TableCell>
+                              <div className="flex justify-end gap-0.5">
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  disabled={busy}
+                                  title={item.status === "Paused" ? "Fortsetzen" : "Pausieren"}
+                                  aria-label={`${item.status === "Paused" ? "Fortsetzen" : "Pausieren"}: ${item.filename}`}
+                                  onClick={() =>
+                                    handleAction(item.status === "Paused" ? "resume" : "pause", {
+                                      id: item.nzo_id,
+                                    })
+                                  }
+                                >
+                                  {item.status === "Paused" ? <Play /> : <Pause />}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  disabled={busy}
+                                  onClick={() => handleAction("cancel", { id: item.nzo_id })}
+                                  aria-label={`Abbrechen: ${item.filename}`}
+                                  title="Abbrechen"
+                                >
+                                  <X />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -357,23 +390,44 @@ export default function DownloadsPage() {
             </TabsContent>
 
             <TabsContent value="history">
-              <nav aria-label="Historienseiten" className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground" aria-live="polite">
-                  {total === 0 ? "0 Einträge" : `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} von ${total} Einträgen`}
+              <nav
+                aria-label="Historienseiten"
+                className="mb-4 flex flex-wrap items-center justify-between gap-3"
+              >
+                <p className="tabular text-sm text-muted-foreground" aria-live="polite">
+                  {total === 0
+                    ? "0 Einträge"
+                    : `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} von ${total} Einträgen`}
                 </p>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Zurück</Button>
-                  <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(page + 1)}>Weiter</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0}
+                    onClick={() => setPage(page - 1)}
+                  >
+                    Zurück
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={(page + 1) * pageSize >= total}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    Weiter
+                  </Button>
                 </div>
               </nav>
               {historyPage !== page ? (
-                <p className="text-muted-foreground text-center py-8">
-                  {loadError ? "Historie konnte nicht geladen werden." : "Laden..."}
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {loadError ? "Historie konnte nicht geladen werden." : "Wird geladen…"}
                 </p>
               ) : history.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">
-                  Keine Downloads in der Historie
-                </p>
+                <EmptyState
+                  icon={History}
+                  title="Keine Downloads in der Historie"
+                  description="Abgeschlossene, abgebrochene und fehlgeschlagene Aufträge erscheinen hier."
+                />
               ) : (
                 <div className="min-w-0">
                   <Table scrollLabel="Download-Historie" className="min-w-[44rem]">
@@ -383,21 +437,27 @@ export default function DownloadsPage() {
                         <TableHead>Status</TableHead>
                         <TableHead>Abgeschlossen</TableHead>
                         <TableHead>Größe</TableHead>
-                        <TableHead className="w-24">Aktionen</TableHead>
+                        <TableHead className="w-24 text-right">Aktionen</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {history.map((item) => (
                         <TableRow key={item.nzo_id}>
-                          <TableCell className="font-medium max-w-xs">
-                            <span className="truncate block">{item.name}</span>
-                            {item.warning && <span className="text-xs text-amber-500">{item.warning}</span>}
+                          <TableCell className="max-w-xs">
+                            <span className="block truncate font-mono text-xs" title={item.name}>
+                              {item.name}
+                            </span>
+                            {item.warning && (
+                              <span className="mt-1 block text-xs text-warn">{item.warning}</span>
+                            )}
                             {item.fail_message && (
-                              <span className="text-xs text-destructive">{item.fail_message}</span>
+                              <span className="mt-1 block text-xs text-danger">
+                                {item.fail_message}
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>{getStatusBadge(item.status)}</TableCell>
-                          <TableCell>
+                          <TableCell className="tabular whitespace-nowrap">
                             {new Date(item.completed * 1000).toLocaleDateString("de-DE", {
                               day: "2-digit",
                               month: "2-digit",
@@ -406,26 +466,30 @@ export default function DownloadsPage() {
                               minute: "2-digit",
                             })}
                           </TableCell>
-                          <TableCell>{formatSize(item.bytes)}</TableCell>
+                          <TableCell className="tabular whitespace-nowrap">
+                            {formatSize(item.bytes)}
+                          </TableCell>
                           <TableCell>
-                            <div className="flex gap-1">
+                            <div className="flex justify-end gap-0.5">
                               {["failed", "cancelled"].includes(item.status.toLowerCase()) && (
                                 <Button
                                   variant="ghost"
-                                  size="icon"
+                                  size="icon-sm"
                                   onClick={() => handleRetry(item.nzo_id)}
                                   title="Erneut versuchen"
+                                  aria-label={`Erneut versuchen: ${item.name}`}
                                 >
-                                  <RotateCcw className="w-4 h-4" />
+                                  <RotateCcw />
                                 </Button>
                               )}
                               <Button
                                 variant="ghost"
-                                size="icon"
+                                size="icon-sm"
                                 onClick={() => handleDelete(item.nzo_id, true)}
                                 title="Löschen"
+                                aria-label={`Löschen: ${item.name}`}
                               >
-                                <X className="w-4 h-4" />
+                                <X />
                               </Button>
                             </div>
                           </TableCell>
@@ -439,6 +503,6 @@ export default function DownloadsPage() {
           </Tabs>
         </CardContent>
       </Card>
-    </div>
+    </Page>
   );
 }

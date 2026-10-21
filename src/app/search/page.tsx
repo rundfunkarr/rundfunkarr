@@ -1,17 +1,50 @@
 "use client";
-import { useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Check, ChevronRight, Download, ExternalLink, Search as SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Page, PageHeader } from "@/components/shared/page";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
+import { ChannelBadge } from "@/components/shared/channel-badge";
+import { EmptyState } from "@/components/shared/empty-state";
+import { cn } from "@/lib/utils";
 import { formatDuration, formatSize, formatDate } from "@/lib/formatters";
 import type { SearchResult } from "@/app/api/search/route";
 
 type Quality = "low" | "standard" | "high";
-const selectClass = "h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm";
+
+/** Accessibility flag in the same ident style as the broadcaster badge. */
+function Flag({ children, title }: { children: string; title: string }) {
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className="inline-flex h-5 items-center rounded-sm border border-border px-1.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+    >
+      {children}
+    </span>
+  );
+}
+
 export default function SearchPage() {
+  return (
+    <Suspense fallback={null}>
+      <SearchView />
+    </Suspense>
+  );
+}
+
+function SearchView() {
+  const params = useSearchParams();
+  const initialQuery = params.get("q") ?? "";
   const [filters, setFilters] = useState({
-    q: "",
+    q: initialQuery,
     channel: "",
     minMinutes: "",
     maxMinutes: "",
@@ -34,6 +67,7 @@ export default function SearchPage() {
   const [quality, setQuality] = useState<Quality>("high");
   const [manualUrl, setManualUrl] = useState("");
   const sequence = useRef(0);
+  const autoSearched = useRef(false);
   const change = (key: keyof typeof filters, value: string) =>
     setFilters((prev) => ({ ...prev, [key]: value }));
   async function search(more = false) {
@@ -70,6 +104,13 @@ export default function SearchPage() {
       if (request === sequence.current) setBusy(false);
     }
   }
+  // A query handed over from the dashboard runs once on arrival.
+  useEffect(() => {
+    if (autoSearched.current || initialQuery.trim().length < 2) return;
+    autoSearched.current = true;
+    void search();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function download(ids: string[]) {
     setAdding(true);
     setError("");
@@ -121,19 +162,25 @@ export default function SearchPage() {
       setAdding(false);
     }
   }
+  const qualityField = (
+    <Field label="Download-Qualität" className="w-full sm:w-56">
+      {(id) => (
+        <Select id={id} value={quality} onChange={(e) => setQuality(e.target.value as Quality)}>
+          <option value="high">Hoch / bis 1080p</option>
+          <option value="standard">Standard / bis 720p</option>
+          <option value="low">Niedrig / bis 480p</option>
+        </Select>
+      )}
+    </Field>
+  );
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 min-w-0">
-      <div>
-        <h1 className="text-2xl font-bold">Suche</h1>
-        <p className="text-muted-foreground text-sm">
-          Sendungen finden und gemeinsam herunterladen
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Suche"
+        description="Sendungen in den Mediatheken finden und einzeln oder gesammelt herunterladen."
+      />
       <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>Mediathek durchsuchen</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="p-5">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -141,84 +188,97 @@ export default function SearchPage() {
             }}
             className="space-y-4"
           >
-            <div className="flex gap-2">
-              <label className="flex-1 min-w-0">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <label className="relative min-w-0 flex-1">
                 <span className="sr-only">Suchbegriff</span>
+                <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Titel oder Thema, z. B. Terra X"
                   value={filters.q}
                   onChange={(e) => change("q", e.target.value)}
+                  className="h-11 pl-10 md:text-base"
                   minLength={2}
                   maxLength={200}
                   required
                 />
               </label>
-              <Button type="submit" disabled={busy || adding}>
+              <Button type="submit" size="lg" className="h-11 sm:px-6" disabled={busy || adding}>
                 {busy ? "Suche läuft…" : "Suchen"}
               </Button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
-              <label className="text-sm min-w-0">
-                Sender
-                <Input
-                  placeholder="Alle Sender"
-                  value={filters.channel}
-                  onChange={(e) => change("channel", e.target.value)}
-                  maxLength={100}
-                />
-              </label>
-              <label className="text-sm min-w-0">
-                Laufzeit ab (Minuten)
-                <Input
-                  type="number"
-                  min={0}
-                  max={1440}
-                  value={filters.minMinutes}
-                  onChange={(e) => change("minMinutes", e.target.value)}
-                  placeholder="0"
-                />
-              </label>
-              <label className="text-sm min-w-0">
-                Laufzeit bis (Minuten)
-                <Input
-                  type="number"
-                  min={0}
-                  max={1440}
-                  value={filters.maxMinutes}
-                  onChange={(e) => change("maxMinutes", e.target.value)}
-                  placeholder="Unbegrenzt"
-                />
-              </label>
-              <label className="text-sm min-w-0">
-                Ausgestrahlt ab
-                <Input
-                  type="date"
-                  value={filters.from}
-                  onChange={(e) => change("from", e.target.value)}
-                />
-              </label>
-              <label className="text-sm min-w-0">
-                Ausgestrahlt bis
-                <Input
-                  type="date"
-                  value={filters.to}
-                  onChange={(e) => change("to", e.target.value)}
-                />
-              </label>
-              <label className="text-sm min-w-0">
-                Sortierung
-                <select
-                  className={selectClass}
-                  value={filters.sort}
-                  onChange={(e) => change("sort", e.target.value)}
-                >
-                  <option value="date">Neueste zuerst</option>
-                  <option value="title">Titel A–Z</option>
-                  <option value="duration">Längste zuerst</option>
-                </select>
-              </label>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Sender">
+                {(id) => (
+                  <Input
+                    id={id}
+                    placeholder="Alle Sender"
+                    value={filters.channel}
+                    onChange={(e) => change("channel", e.target.value)}
+                    maxLength={100}
+                  />
+                )}
+              </Field>
+              <Field label="Laufzeit ab (Minuten)">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    min={0}
+                    max={1440}
+                    value={filters.minMinutes}
+                    onChange={(e) => change("minMinutes", e.target.value)}
+                    placeholder="0"
+                  />
+                )}
+              </Field>
+              <Field label="Laufzeit bis (Minuten)">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    min={0}
+                    max={1440}
+                    value={filters.maxMinutes}
+                    onChange={(e) => change("maxMinutes", e.target.value)}
+                    placeholder="Unbegrenzt"
+                  />
+                )}
+              </Field>
+              <Field label="Ausgestrahlt ab">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="date"
+                    value={filters.from}
+                    onChange={(e) => change("from", e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Ausgestrahlt bis">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="date"
+                    value={filters.to}
+                    onChange={(e) => change("to", e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Sortierung">
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={filters.sort}
+                    onChange={(e) => change("sort", e.target.value)}
+                  >
+                    <option value="date">Neueste zuerst</option>
+                    <option value="title">Titel A–Z</option>
+                    <option value="duration">Längste zuerst</option>
+                  </Select>
+                )}
+              </Field>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs leading-relaxed text-muted-foreground">
               Laufzeit und Datum filtern die bis zu 1.000 neuesten Treffer der aktivierten Quellen.
               Ein genauer Suchbegriff oder Sender grenzt die Suche bereits an der Quelle ein.
               Datumsgrenzen beziehen sich auf UTC.
@@ -226,29 +286,23 @@ export default function SearchPage() {
           </form>
         </CardContent>
       </Card>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="text-sm min-w-0 w-52">
-          Download-Qualität
-          <select
-            className={selectClass}
-            value={quality}
-            onChange={(e) => setQuality(e.target.value as Quality)}
-          >
-            <option value="high">Hoch / bis 1080p</option>
-            <option value="standard">Standard / bis 720p</option>
-            <option value="low">Niedrig / bis 480p</option>
-          </select>
-        </label>
-        <p className="text-xs text-muted-foreground max-w-md">
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        {qualityField}
+        <p className="max-w-md text-xs leading-relaxed text-muted-foreground sm:pb-2">
           Fehlt die gewählte Direktdatei, wird die Standarddatei verwendet. Streams werden auf die
           gewählte Höhe begrenzt.
         </p>
       </div>
+
       <Card className="min-w-0">
-        <CardContent className="pt-5">
-          <details>
-            <summary className="cursor-pointer font-medium">Link direkt hinzufügen</summary>
-            <p className="text-sm text-muted-foreground my-3">
+        <CardContent className="p-5">
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+              Link direkt hinzufügen
+            </summary>
+            <p className="my-3 text-sm text-muted-foreground">
               MP4-/M3U8-Link oder Sendungsseite von ARD, ZDF, Arte, 3sat, ORF oder SRF. Für
               Sendungsseiten muss HLS aktiviert sein.
             </p>
@@ -257,7 +311,7 @@ export default function SearchPage() {
                 e.preventDefault();
                 void manual();
               }}
-              className="flex flex-col sm:flex-row gap-2"
+              className="flex flex-col gap-2 sm:flex-row"
             >
               <Input
                 type="url"
@@ -266,7 +320,7 @@ export default function SearchPage() {
                 value={manualUrl}
                 onChange={(e) => setManualUrl(e.target.value)}
                 required
-                className="min-w-0"
+                className="min-w-0 font-mono text-xs md:text-xs"
               />
               <Button disabled={adding || busy} type="submit">
                 {adding ? "Wird hinzugefügt…" : "Download hinzufügen"}
@@ -275,38 +329,35 @@ export default function SearchPage() {
           </details>
         </CardContent>
       </Card>
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm break-words"
-        >
-          {error}
-        </p>
-      )}
+
+      {error && <Notice tone="danger">{error}</Notice>}
       {message && (
-        <p role="status" className="text-sm">
-          {message}{" "}
-          <a className="underline" href="/downloads">
-            Zur Warteschlange
-          </a>
-        </p>
+        <Notice tone="ok">
+          {message} <a href="/downloads">Zur Warteschlange</a>
+        </Notice>
       )}
+
       {searched && (
         <Card className="min-w-0">
           <CardHeader>
             <CardTitle>
-              {results.length} von {total} Ergebnissen
+              {results.length} von {total.toLocaleString("de-DE")} Ergebnissen
             </CardTitle>
-            {limited && (
-              <p className="text-sm text-amber-500">
-                Die Grenze von 1.000 Quelltreffern wurde erreicht. Bitte die Suche eingrenzen, um
-                weitere passende Sendungen zu finden.
-              </p>
+            {!!results.length && (
+              <CardDescription>
+                Bis zu 50 Sendungen lassen sich gemeinsam zur Warteschlange hinzufügen.
+              </CardDescription>
             )}
           </CardHeader>
           <CardContent className="space-y-3">
+            {limited && (
+              <Notice tone="warn">
+                Die Grenze von 1.000 Quelltreffern wurde erreicht. Bitte die Suche eingrenzen, um
+                weitere passende Sendungen zu finden.
+              </Notice>
+            )}
             {!!results.length && (
-              <div className="flex flex-wrap gap-2 items-center">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -337,23 +388,27 @@ export default function SearchPage() {
                   disabled={!selection.size || adding || busy}
                   onClick={() => void download([...selection])}
                 >
+                  <Download />
                   {selection.size} herunterladen
                 </Button>
               </div>
             )}
-            {results.map((result) => (
-              <article key={result.id} className="rounded-lg border p-4 min-w-0">
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 shrink-0"
+            {results.map((result) => {
+              const isSelected = selection.has(result.id);
+              const isAdded = added.has(result.id);
+              return (
+                <article
+                  key={result.id}
+                  className={cn(
+                    "flex min-w-0 gap-3 rounded-lg border p-4 transition-colors",
+                    isSelected && "border-primary/50 bg-primary/5"
+                  )}
+                >
+                  <Checkbox
+                    className="mt-1"
                     aria-label={`${result.title} auswählen`}
-                    checked={selection.has(result.id)}
-                    disabled={
-                      added.has(result.id) ||
-                      adding ||
-                      (!selection.has(result.id) && selection.size >= 50)
-                    }
+                    checked={isSelected}
+                    disabled={isAdded || adding || (!isSelected && selection.size >= 50)}
                     onChange={(e) =>
                       setSelection((prev) => {
                         const next = new Set(prev);
@@ -364,65 +419,61 @@ export default function SearchPage() {
                     }
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="flex gap-2 flex-wrap items-center">
-                      <Badge variant="outline">{result.channel}</Badge>
-                      <span className="text-sm text-muted-foreground break-words">
-                        {result.topic}
-                      </span>
-                      {result.category === "movie" && (
-                        <Badge className="text-xs bg-violet-600">Film</Badge>
-                      )}
-                      {result.category === "tv" && (
-                        <Badge className="text-xs bg-sky-600">Serie</Badge>
-                      )}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                      <ChannelBadge channel={result.channel} />
+                      <span className="break-words text-muted-foreground">{result.topic}</span>
+                      {result.category === "movie" && <Badge variant="secondary">Film</Badge>}
+                      {result.category === "tv" && <Badge variant="secondary">Serie</Badge>}
                       {result.title.includes("Gebärdensprache") && (
-                        <Badge className="text-xs bg-purple-600">DGS</Badge>
+                        <Flag title="Mit Gebärdensprache">DGS</Flag>
                       )}
                       {(result.title.includes("Audiodeskription") ||
                         result.title.includes("Hörfassung")) && (
-                        <Badge className="text-xs bg-blue-600">AD</Badge>
+                        <Flag title="Mit Audiodeskription">AD</Flag>
                       )}
                       {(result.url_subtitle || result.title.includes("Untertitel")) && (
-                        <Badge className="text-xs bg-green-600">UT</Badge>
+                        <Flag title="Mit Untertiteln">UT</Flag>
                       )}
                     </div>
-                    <h2 className="font-medium mt-1 break-words">{result.title}</h2>
+                    <h2 className="mt-1.5 break-words font-medium leading-snug">{result.title}</h2>
                     {result.description && (
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                         {result.description}
                       </p>
                     )}
-                    <p className="text-xs text-muted-foreground mt-2">
+                    <p className="tabular mt-2 text-xs text-muted-foreground">
                       {formatDate(result.timestamp)} · {formatDuration(result.duration)} ·{" "}
                       {formatSize(result.size)}
                     </p>
-                    <div className="flex flex-wrap gap-3 mt-3 items-center">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Button
                         size="sm"
-                        disabled={adding || added.has(result.id) || busy}
+                        variant={isAdded ? "secondary" : "default"}
+                        disabled={adding || isAdded || busy}
                         onClick={() => void download([result.id])}
                       >
-                        {added.has(result.id) ? "Hinzugefügt" : "Herunterladen"}
+                        {isAdded ? <Check /> : <Download />}
+                        {isAdded ? "Hinzugefügt" : "Herunterladen"}
                       </Button>
                       {/^https?:\/\//i.test(result.url_website) && (
-                        <a
-                          href={result.url_website}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sm underline"
-                        >
-                          Sendungsseite
-                        </a>
+                        <Button asChild variant="ghost" size="sm">
+                          <a href={result.url_website} target="_blank" rel="noreferrer">
+                            Sendungsseite
+                            <ExternalLink />
+                          </a>
+                        </Button>
                       )}
                     </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
             {!results.length && (
-              <p className="text-sm text-muted-foreground">
-                Keine Treffer für diese Filter. Suchbegriff, Sender oder Zeitraum anpassen.
-              </p>
+              <EmptyState
+                icon={SearchIcon}
+                title="Keine Treffer für diese Filter"
+                description="Suchbegriff, Sender oder Zeitraum anpassen."
+              />
             )}
             {hasMore && (
               <Button variant="outline" disabled={busy || adding} onClick={() => void search(true)}>
@@ -432,6 +483,6 @@ export default function SearchPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </Page>
   );
 }

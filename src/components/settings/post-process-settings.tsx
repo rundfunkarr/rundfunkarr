@@ -4,6 +4,9 @@ import { Loader2, RefreshCw, Save } from "lucide-react";
 import { useSettings } from "@/contexts/settings-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
 
 interface ScriptList {
   directory: string;
@@ -65,16 +68,26 @@ export function PostProcessSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <label htmlFor="post-process-script" className="text-sm font-medium">
-            Skript
-          </label>
-          <div className="mt-1 flex gap-2">
-            <select
+        <Field
+          label="Skript"
+          htmlFor="post-process-script"
+          hint={
+            <>
+              Ausführbare Dateien aus{" "}
+              <code className="break-all">{list?.directory ?? "dem Skriptordner"}</code>. Der Ordner
+              lässt sich mit der Umgebungsvariablen <code>POST_PROCESS_SCRIPTS_DIR</code> ändern.
+              Parameter wie bei SABnzbd: <code>$1</code> Zielordner, <code>$3</code> Name,{" "}
+              <code>$5</code> Kategorie, <code>$7</code> Status (0). Zusätzlich stehen{" "}
+              <code>SAB_COMPLETE_DIR</code>, <code>SAB_CAT</code>, <code>RUNDFUNKARR_FILE</code> und
+              weitere Umgebungsvariablen bereit.
+            </>
+          }
+        >
+          <div className="flex gap-2">
+            <Select
               id="post-process-script"
               value={current}
               onChange={(e) => setScript(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             >
               <option value="">Kein Skript</option>
               {missing && <option value={current}>{current} (nicht gefunden)</option>}
@@ -83,7 +96,7 @@ export function PostProcessSettings() {
                   {name}
                 </option>
               ))}
-            </select>
+            </Select>
             <Button
               variant="outline"
               size="icon"
@@ -93,28 +106,13 @@ export function PostProcessSettings() {
               onClick={() => run(() => loadScripts())}
               disabled={busy}
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw />
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Ausführbare Dateien aus{" "}
-            <code className="break-all">{list?.directory ?? "dem Skriptordner"}</code>. Der Ordner
-            lässt sich mit der Umgebungsvariablen <code>POST_PROCESS_SCRIPTS_DIR</code> ändern.
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Parameter wie bei SABnzbd: <code>$1</code> Zielordner, <code>$3</code> Name,{" "}
-            <code>$5</code> Kategorie, <code>$7</code> Status (0). Zusätzlich stehen{" "}
-            <code>SAB_COMPLETE_DIR</code>, <code>SAB_CAT</code>, <code>RUNDFUNKARR_FILE</code> und
-            weitere Umgebungsvariablen bereit.
-          </p>
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        </Field>
+        {error && <Notice tone="danger">{error}</Notice>}
         <Button onClick={save} disabled={busy || current === saved}>
-          {busy ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4 mr-2" />
-          )}
+          {busy ? <Loader2 className="animate-spin" /> : <Save />}
           Speichern
         </Button>
       </CardContent>

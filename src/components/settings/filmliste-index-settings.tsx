@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
 
 interface FilmlisteStatus {
   enabled: boolean;
@@ -26,10 +29,10 @@ const formatNumber = (value: number) => value.toLocaleString("de-DE");
 const formatMegabytes = (bytes: number) => `${formatNumber(Math.round(bytes / 1024 / 1024))} MB`;
 
 function statusBadge(status: FilmlisteStatus) {
-  if (!status.enabled) return <Badge variant="outline">MediathekViewWeb</Badge>;
-  if (status.usable) return <Badge>Lokal</Badge>;
-  if (status.running) return <Badge variant="secondary">Index wird aufgebaut</Badge>;
-  return <Badge variant="destructive">Lokal nicht bereit</Badge>;
+  if (!status.enabled) return <Badge variant="muted">MediathekViewWeb</Badge>;
+  if (status.usable) return <Badge variant="ok">Lokal bereit</Badge>;
+  if (status.running) return <Badge variant="info">Index wird aufgebaut</Badge>;
+  return <Badge variant="danger">Lokal nicht bereit</Badge>;
 }
 
 export function FilmlisteIndexSettings() {
@@ -106,7 +109,7 @@ export function FilmlisteIndexSettings() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex flex-wrap items-center gap-2">
           Mediathek-Suchquelle {status && statusBadge(status)}
         </CardTitle>
         <CardDescription>
@@ -117,67 +120,63 @@ export function FilmlisteIndexSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <label htmlFor="mediathek-source" className="text-sm font-medium">
-            Suchquelle
-          </label>
-          <select
+        <Field label="Suchquelle" htmlFor="mediathek-source">
+          <Select
             id="mediathek-source"
             value={currentSource}
             onChange={(e) => setSource(e.target.value)}
-            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="mediathekviewweb">MediathekViewWeb (online)</option>
             <option value="local">Lokaler Filmlisten-Index</option>
-          </select>
-        </div>
+          </Select>
+        </Field>
         <div hidden={!localSelected}>
-          <label className="text-sm font-medium">Aktualisierung alle (Stunden)</label>
-          <Input
-            type="number"
-            min={1}
-            max={24}
-            value={currentHours}
-            onChange={(e) => setHours(e.target.value)}
-            className="mt-1 w-24"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Unveränderte Listen werden nicht erneut geladen.
-          </p>
+          <Field
+            label="Aktualisierung alle (Stunden)"
+            hint="Unveränderte Listen werden nicht erneut geladen."
+          >
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                min={1}
+                max={24}
+                value={currentHours}
+                onChange={(e) => setHours(e.target.value)}
+                className="w-28"
+              />
+            )}
+          </Field>
         </div>
 
         {status && (status.enabled || status.entryCount > 0) && (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
             <dt className="text-muted-foreground">Einträge</dt>
-            <dd>
+            <dd className="tabular">
               {status.running
                 ? `${formatNumber(status.processedEntries)} verarbeitet …`
                 : formatNumber(status.entryCount)}
             </dd>
             <dt className="text-muted-foreground">Filmliste vom</dt>
-            <dd>{formatDate(status.listTimestamp && status.listTimestamp * 1000)}</dd>
+            <dd className="tabular">
+              {formatDate(status.listTimestamp && status.listTimestamp * 1000)}
+            </dd>
             <dt className="text-muted-foreground">Letzter Import</dt>
-            <dd>{formatDate(status.importedAt)}</dd>
+            <dd className="tabular">{formatDate(status.importedAt)}</dd>
             <dt className="text-muted-foreground">Letzte Prüfung</dt>
-            <dd>{formatDate(status.lastCheckAt)}</dd>
+            <dd className="tabular">{formatDate(status.lastCheckAt)}</dd>
             <dt className="text-muted-foreground">Speicherbedarf</dt>
-            <dd>{formatMegabytes(status.sizeBytes)}</dd>
+            <dd className="tabular">{formatMegabytes(status.sizeBytes)}</dd>
           </dl>
         )}
         {status?.lastError && (
-          <p className="text-sm text-destructive">
-            Letzte Aktualisierung fehlgeschlagen: {status.lastError}
-          </p>
+          <Notice tone="danger">Letzte Aktualisierung fehlgeschlagen: {status.lastError}</Notice>
         )}
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <Notice tone="danger">{error}</Notice>}
 
         <div className="flex flex-wrap gap-2">
           <Button onClick={save} disabled={busy}>
-            {busy ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4 mr-2" />
-            )}
+            {busy ? <Loader2 className="animate-spin" /> : <Save />}
             Speichern
           </Button>
           {status?.enabled && (
@@ -186,7 +185,7 @@ export function FilmlisteIndexSettings() {
               onClick={() => run(() => request("POST"))}
               disabled={busy || status.running}
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${status.running ? "animate-spin" : ""}`} />
+              <RefreshCw className={status.running ? "animate-spin" : ""} />
               {status.running ? "Wird aktualisiert …" : "Jetzt aktualisieren"}
             </Button>
           )}
@@ -203,7 +202,7 @@ export function FilmlisteIndexSettings() {
               }
               disabled={busy || status.running}
             >
-              <Trash2 className="w-4 h-4 mr-2" />
+              <Trash2 />
               {confirmDelete ? "Wirklich löschen?" : "Index löschen"}
             </Button>
           )}

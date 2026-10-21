@@ -3,6 +3,10 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
 
 interface AuthSettings {
   enabled: boolean;
@@ -95,90 +99,107 @@ export function SecuritySettings() {
             }}
             className="space-y-4"
           >
-            <label className="text-sm flex flex-col gap-1">
-              Authentifizierung
-              <select
-                className="h-9 rounded-md border border-input bg-background px-3 max-w-sm"
-                value={enabled ? "forms" : "none"}
-                onChange={(e) => setEnabled(e.target.value === "forms")}
-                disabled={busy}
-              >
-                <option value="none">Deaktiviert</option>
-                <option value="forms">Anmeldeformular</option>
-              </select>
-            </label>
-            <p className="text-sm text-muted-foreground">
-              {enabled
-                ? saved.enabled
-                  ? "Die Anmeldung gilt für alle Adressen, auch im lokalen Netz. Sonarr/Radarr verwenden den Integrationsschlüssel unten."
-                  : "Beim Aktivieren wird ein neuer Integrationsschlüssel erzeugt. Nach dem Speichern in Sonarr/Radarr eintragen; bisherige Schlüssel und NZB-Links werden ungültig. Die Anmeldung gilt auch im lokalen Netz."
-                : "Oberfläche und APIs sind ohne Anmeldung zugänglich. Nur in einem vertrauenswürdigen Netzwerk betreiben."}
-            </p>
+            <Field
+              label="Authentifizierung"
+              className="max-w-sm"
+              hint={
+                enabled
+                  ? saved.enabled
+                    ? "Die Anmeldung gilt für alle Adressen, auch im lokalen Netz. Sonarr/Radarr verwenden den Integrationsschlüssel unten."
+                    : "Beim Aktivieren wird ein neuer Integrationsschlüssel erzeugt. Nach dem Speichern in Sonarr/Radarr eintragen; bisherige Schlüssel und NZB-Links werden ungültig. Die Anmeldung gilt auch im lokalen Netz."
+                  : "Oberfläche und APIs sind ohne Anmeldung zugänglich. Nur in einem vertrauenswürdigen Netzwerk betreiben."
+              }
+            >
+              {(id) => (
+                <Select
+                  id={id}
+                  value={enabled ? "forms" : "none"}
+                  onChange={(e) => setEnabled(e.target.value === "forms")}
+                  disabled={busy}
+                >
+                  <option value="none">Deaktiviert</option>
+                  <option value="forms">Anmeldeformular</option>
+                </Select>
+              )}
+            </Field>
             {enabled && (
-              <div className="grid sm:grid-cols-2 gap-4">
-                <label className="text-sm flex flex-col gap-1 sm:col-span-2">
-                  Benutzername
-                  <Input
-                    required
-                    autoComplete="username"
-                    maxLength={64}
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    disabled={busy}
-                  />
-                </label>
-                <label className="text-sm flex flex-col gap-1">
-                  Neues Passwort
-                  <Input
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={256}
-                    required={!saved.hasPassword}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={busy}
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    Mindestens 12 Zeichen{saved.hasPassword ? "; leer lassen zum Beibehalten" : ""}.
-                  </span>
-                </label>
-                <label className="text-sm flex flex-col gap-1">
-                  Neues Passwort wiederholen
-                  <Input
-                    type="password"
-                    autoComplete="new-password"
-                    required={!!password}
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    disabled={busy}
-                  />
-                </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Benutzername" className="sm:col-span-2">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      required
+                      autoComplete="username"
+                      maxLength={64}
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field
+                  label="Neues Passwort"
+                  hint={`Mindestens 12 Zeichen${saved.hasPassword ? "; leer lassen zum Beibehalten" : ""}.`}
+                >
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="password"
+                      autoComplete="new-password"
+                      minLength={12}
+                      maxLength={256}
+                      required={!saved.hasPassword}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field label="Neues Passwort wiederholen">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="password"
+                      autoComplete="new-password"
+                      required={!!password}
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
               </div>
             )}
             {saved.enabled && (
-              <div className="space-y-2">
-                <label className="text-sm flex flex-col gap-1">
-                  Integrationsschlüssel
-                  <Input
-                    type={visible ? "text" : "password"}
-                    readOnly
-                    value={saved.apiKey}
-                    autoComplete="off"
-                    onFocus={(e) => e.target.select()}
-                  />
-                </label>
-                <Button variant="outline" type="button" onClick={() => setVisible(!visible)}>
-                  {visible ? "Schlüssel verbergen" : "Schlüssel anzeigen"}
-                </Button>
-                <p className="text-sm text-muted-foreground">
-                  Diesen Wert in Sonarr/Radarr als API-Key für den RundfunkArr-Indexer und den
-                  SABnzbd-Download-Client eintragen. Der Schlüssel erlaubt keine Änderung der
-                  Sicherheitseinstellungen.
-                </p>
-                <label className="text-sm flex items-center gap-2">
-                  <input
-                    type="checkbox"
+              <div className="space-y-3 rounded-md border p-3">
+                <Field
+                  label="Integrationsschlüssel"
+                  hint="Diesen Wert in Sonarr/Radarr als API-Key für den RundfunkArr-Indexer und den SABnzbd-Download-Client eintragen. Der Schlüssel erlaubt keine Änderung der Sicherheitseinstellungen."
+                >
+                  {(id) => (
+                    <div className="flex gap-2">
+                      <Input
+                        id={id}
+                        type={visible ? "text" : "password"}
+                        readOnly
+                        value={saved.apiKey}
+                        autoComplete="off"
+                        onFocus={(e) => e.target.select()}
+                        className="font-mono text-xs md:text-xs"
+                      />
+                      <Button
+                        variant="outline"
+                        type="button"
+                        className="shrink-0"
+                        onClick={() => setVisible(!visible)}
+                      >
+                        {visible ? "Verbergen" : "Anzeigen"}
+                      </Button>
+                    </div>
+                  )}
+                </Field>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
                     checked={regenerateApiKey}
                     onChange={(e) => setRegenerateApiKey(e.target.checked)}
                     disabled={busy}
@@ -186,25 +207,27 @@ export function SecuritySettings() {
                   Beim Speichern einen neuen Schlüssel erzeugen
                 </label>
                 {regenerateApiKey && (
-                  <p className="text-sm text-amber-600">
+                  <Notice tone="warn">
                     Danach den neuen Schlüssel in allen verbundenen Anwendungen eintragen. Bisherige
                     NZB-Links verlieren ihre Gültigkeit.
-                  </p>
+                  </Notice>
                 )}
               </div>
             )}
             {saved.enabled && (
-              <label className="text-sm flex flex-col gap-1 max-w-sm">
-                Aktuelles Passwort zur Bestätigung
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  disabled={busy}
-                />
-              </label>
+              <Field label="Aktuelles Passwort zur Bestätigung" className="max-w-sm">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    disabled={busy}
+                  />
+                )}
+              </Field>
             )}
             <Button type="submit" disabled={busy}>
               {busy ? "Wird gespeichert…" : "Sicherheit speichern"}
@@ -212,14 +235,14 @@ export function SecuritySettings() {
           </form>
         )}
         {error && (
-          <p role="alert" className="text-sm text-red-500 mt-3">
+          <Notice tone="danger" className="mt-3">
             {error}
-          </p>
+          </Notice>
         )}
         {message && (
-          <p role="status" className="text-sm mt-3">
+          <Notice tone="ok" className="mt-3">
             {message}
-          </p>
+          </Notice>
         )}
       </CardContent>
     </Card>
