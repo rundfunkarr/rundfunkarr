@@ -1,4 +1,4 @@
-import { releaseLanguage } from "@/lib/media-metadata";
+import { releaseAudioTag } from "@/lib/media-metadata";
 import { getSetting } from "@/lib/settings";
 import { isHlsUrl } from "@/server/ytdlp";
 import type {
@@ -112,7 +112,7 @@ export abstract class BaseProvider implements ContentProvider {
     const sanitizedTitle = this.sanitizeForFilename(item.title);
     const year = new Date(item.timestamp * 1000).getFullYear();
 
-    const suffix = `.${year}.${releaseLanguage(item.title)}.${quality}.WEB.h264-${this.id.toUpperCase()}`;
+    const suffix = `.${year}.${releaseAudioTag(item.title)}.${quality}.WEB.h264-${this.id.toUpperCase()}`;
     const characters = Array.from(`${sanitizedTopic}.${sanitizedTitle}`);
     while (Buffer.byteLength(characters.join("") + suffix, "utf8") > 200) characters.pop();
     return characters.join("") + suffix;

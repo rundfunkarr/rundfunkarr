@@ -309,7 +309,8 @@ export default function SettingsPage() {
                     <p className="text-xs text-muted-foreground mt-1">
                       Erkennt Fassungen anhand der Titelangaben. Die tatsächliche Audiosprache wird
                       dabei nicht ermittelt. Vorhandene Sprachangaben bleiben beim Konvertieren
-                      erhalten.
+                      erhalten. Im Release-Titel stehen Originalfassungen als ORIGINAL und
+                      Audiodeskriptionen als GERMAN.AD.
                     </p>
                   </div>
                   <label className="flex items-center justify-between gap-4 rounded-md border border-input p-3">

@@ -1,10 +1,11 @@
-import { mediaMetadata, releaseLanguage } from "@/lib/media-metadata";
+import { mediaMetadata, releaseAudioTag } from "@/lib/media-metadata";
 import { Builder } from "xml2js";
 import { isStreamingUrl } from "@/lib/stream-url";
 import type {
   NewznabRss,
   NewznabItem,
   NewznabAttribute,
+  NewznabGuid,
   MatchedEpisodeInfo,
   TvdbEpisode,
   EpisodeType,
@@ -51,6 +52,14 @@ export function generateAttributes(
   }
 
   return attributes;
+}
+
+/**
+ * Builds the GUID from the video file, not the website: the regular and the audio
+ * description version share one website URL, and Sonarr/Radarr keep one release per GUID.
+ */
+export function releaseGuid(videoUrl: string, suffix: string): NewznabGuid {
+  return { isPermaLink: true, value: `${videoUrl}#${suffix}` };
 }
 
 export function getEmptyRssResult(): NewznabRss {
@@ -254,13 +263,13 @@ function generateTitle(
   if (episodeType === "daily") {
     const aired = episode.aired ? new Date(episode.aired) : new Date();
     const dateStr = aired.toISOString().split("T")[0]; // yyyy-MM-dd
-    return `${showName}.${dateStr}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
+    return `${showName}.${dateStr}.${episode.name}.${releaseAudioTag(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
       / /g,
       "."
     );
   }
 
-  return `${showName}.S${getPaddedSeason(episode)}E${getPaddedEpisode(episode)}.${episode.name}.${releaseLanguage(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
+  return `${showName}.S${getPaddedSeason(episode)}E${getPaddedEpisode(episode)}.${episode.name}.${releaseAudioTag(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
     / /g,
     "."
   );
@@ -288,10 +297,7 @@ function createRssItem(
 
   return {
     title: formattedTitle,
-    guid: {
-      isPermaLink: true,
-      value: `${item.url_website}#${quality}${episodeType === "daily" ? "" : "-d"}`,
-    },
+    guid: releaseGuid(url, `${quality}${episodeType === "daily" ? "" : "-d"}`),
     link: url,
     comments: item.url_website,
     pubDate: new Date(item.filmlisteTimestamp * 1000).toUTCString(),
@@ -471,7 +477,7 @@ function generateMovieTitle(
   const title = movieData.germanTitle || movieData.title;
   const yearPart = year ? `.${year}` : "";
 
-  return `${title}${yearPart}.${releaseLanguage(sourceTitle)}.${quality}.WEB.h264-MEDiATHEK`.replace(
+  return `${title}${yearPart}.${releaseAudioTag(sourceTitle)}.${quality}.WEB.h264-MEDiATHEK`.replace(
     / /g,
     "."
   );
@@ -497,10 +503,7 @@ function createMovieRssItem(
 
   return {
     title: formattedTitle,
-    guid: {
-      isPermaLink: true,
-      value: `${item.url_website}#movie-${quality}`,
-    },
+    guid: releaseGuid(url, `movie-${quality}`),
     link: url,
     comments: item.url_website,
     pubDate: new Date(item.filmlisteTimestamp * 1000).toUTCString(),
@@ -795,10 +798,10 @@ function createGenericRssItem(
     // Omit the episode-name segment when the pattern consumed the whole title
     // (e.g. "Staffel 2 Folge 3"), otherwise it duplicates the SxxExx info.
     rawTitle = parsed.episodeName
-      ? `${topic}.S${paddedSeason}E${paddedEpisode}.${parsed.episodeName}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`
-      : `${topic}.S${paddedSeason}E${paddedEpisode}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
+      ? `${topic}.S${paddedSeason}E${paddedEpisode}.${parsed.episodeName}.${releaseAudioTag(item.title)}.${quality}.WEB.h264-MEDiATHEK`
+      : `${topic}.S${paddedSeason}E${paddedEpisode}.${releaseAudioTag(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
   } else {
-    rawTitle = `${topic}.${item.title}.${releaseLanguage(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
+    rawTitle = `${topic}.${item.title}.${releaseAudioTag(item.title)}.${quality}.WEB.h264-MEDiATHEK`;
   }
 
   const formattedTitle = formatTitle(rawTitle);
@@ -828,10 +831,7 @@ function createGenericRssItem(
 
   return {
     title: formattedTitle,
-    guid: {
-      isPermaLink: true,
-      value: `${item.url_website}#${quality}`,
-    },
+    guid: releaseGuid(url, quality),
     link: url,
     comments: item.url_website,
     pubDate: new Date(item.filmlisteTimestamp * 1000).toUTCString(),
