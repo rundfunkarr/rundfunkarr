@@ -27,6 +27,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Determine app version
+        id: app
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # The built commit; for pull requests this is the merge commit, as in the image label.
+          COMMIT: ${{ github.sha }}
+        run: |
+          # Tags show their release version in the UI, all other builds their channel and commit.
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            version="nightly"
+          elif [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            version="pr-$PR_NUMBER"
+          else
+            version="$GITHUB_REF_NAME"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@v2
 
@@ -50,6 +70,9 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
+          build-args: |
+            APP_VERSION=${{ steps.app.outputs.version }}
+            APP_COMMIT=${{ steps.app.outputs.commit }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
@@ -59,6 +82,9 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
+          build-args: |
+            APP_VERSION=${{ steps.app.outputs.version }}
+            APP_COMMIT=${{ steps.app.outputs.commit }}
           push: false
 
       - name: Export digest
@@ -88,6 +114,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Determine app version
+        id: app
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # The built commit; for pull requests this is the merge commit, as in the image label.
+          COMMIT: ${{ github.sha }}
+        run: |
+          # Tags show their release version in the UI, all other builds their channel and commit.
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            version="nightly"
+          elif [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            version="pr-$PR_NUMBER"
+          else
+            version="$GITHUB_REF_NAME"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@v2
 
@@ -110,6 +156,9 @@ jobs:
         with:
           context: .
           platforms: linux/arm64
+          build-args: |
+            APP_VERSION=${{ steps.app.outputs.version }}
+            APP_COMMIT=${{ steps.app.outputs.commit }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 

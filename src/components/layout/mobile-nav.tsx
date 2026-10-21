@@ -3,7 +3,6 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Menu } from "lucide-react";
-import packageJson from "../../../package.json";
 import { SignOut } from "@/components/auth/sign-out";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +13,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { appVersion } from "@/lib/app-version";
 import { NavList } from "./nav-list";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -48,8 +48,8 @@ export function MobileNav() {
             <SignOut />
             <div className="flex items-center justify-between gap-2">
               <ThemeToggle />
-              <span className="font-mono text-[11px] text-muted-foreground">
-                v{packageJson.version}
+              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+                {appVersion}
               </span>
             </div>
           </div>

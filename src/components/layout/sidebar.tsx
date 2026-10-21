@@ -1,8 +1,8 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import packageJson from "../../../package.json";
 import { SignOut } from "@/components/auth/sign-out";
+import { appVersion } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
 import { NavList, collapsibleLabel } from "./nav-list";
 import { ThemeToggle } from "./theme-toggle";
@@ -47,8 +47,13 @@ export function Sidebar({ className }: { className?: string }) {
         <SignOut labelClassName={collapsibleLabel} />
         <div className="flex items-center justify-between gap-2">
           <ThemeToggle className={collapsibleLabel} />
-          <span className={cn("font-mono text-[11px] text-muted-foreground", collapsibleLabel)}>
-            v{packageJson.version}
+          <span
+            className={cn(
+              "min-w-0 truncate font-mono text-[11px] text-muted-foreground",
+              collapsibleLabel
+            )}
+          >
+            {appVersion}
           </span>
         </div>
       </div>

@@ -183,6 +183,10 @@ Der Git-Tag-Alias mit `v`-Präfix ist ebenfalls verfügbar:
 docker pull ghcr.io/rundfunkarr/rundfunkarr:v1.4.0
 ```
 
+Unten in der Seitenleiste und unter Einstellungen → System steht bei Release-Images die
+Version (z. B. `v1.4.0`), bei `main`- und Nightly-Images der Kanal mit Commit (z. B.
+`main · 5e0d419`).
+
 ### Starten
 
 ```bash
