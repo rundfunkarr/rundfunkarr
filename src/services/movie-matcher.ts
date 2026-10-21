@@ -81,10 +81,137 @@ function stringSimilarity(a: string, b: string): number {
   return 1 - distance / maxLength;
 }
 
+// Separators between parts of a Mediathek title, e.g. "Der General (Audiodeskription)"
+// or "Metropolis - Valencia". Hyphens inside words ("Science-Fiction") do not split.
+const TITLE_PART_SEPARATOR = /\s+[-–—|/·]\s+|:\s+|[()[\]]/;
+
+// Notes that broadcasters add to a film title without changing the film
+const VERSION_NOTES = new Set([
+  "audiodeskription",
+  "mit audiodeskription",
+  "hörfassung",
+  "untertitel",
+  "mit untertitel",
+  "originalversion",
+  "originalversion mit untertitel",
+  "originalfassung",
+  "omu",
+  "ov",
+  "gebärdensprache",
+  "mit gebärdensprache",
+  "englisch",
+  "französisch",
+]);
+// Production notes such as "Spielfilm, Deutschland 2004" or "Spielfilm, USA 1979/2019"
+const PRODUCTION_NOTE = /^[^,]+, [^,]+ (?:19|20)\d{2}(?:\/(?:19|20)\d{2})?$/;
+
+function isVersionNote(part: string): boolean {
+  return VERSION_NOTES.has(normalizeTitle(part)) || PRODUCTION_NOTE.test(part);
+}
+
+/**
+ * Look for the movie title as one or more whole parts of a Mediathek title.
+ * - "version": the other parts only describe the version, e.g. "Der General (Audiodeskription)"
+ * - "part": other content remains, e.g. ARTE's magazine "Metropolis - Valencia"
+ * - null: the title is no whole part, e.g. "Die Diebin & der General" or "in der Generaldebatte"
+ */
+function findTitleInParts(text: string, normalizedMovieTitle: string): "version" | "part" | null {
+  if (!normalizedMovieTitle) return null;
+
+  const rawParts = text
+    .split(TITLE_PART_SEPARATOR)
+    .map((part) => part.trim())
+    .filter((part) => normalizeTitle(part));
+  const parts = rawParts.map(normalizeTitle);
+  let found: "part" | null = null;
+
+  for (let start = 0; start < parts.length; start++) {
+    // Join neighbouring parts so titles with separators ("Mission: Impossible") still match
+    let joined = "";
+    for (let end = start; end < parts.length; end++) {
+      joined = joined ? `${joined} ${parts[end]}` : parts[end];
+      if (joined === normalizedMovieTitle) {
+        const otherParts = [...rawParts.slice(0, start), ...rawParts.slice(end + 1)];
+        if (otherParts.every(isVersionNote)) return "version";
+        found = "part";
+      }
+      if (joined.length >= normalizedMovieTitle.length) break;
+    }
+  }
+  return found;
+}
+
+type TitleMatch = "exact" | "fuzzy" | "partial";
+
+interface TitleScores {
+  exact: number;
+  fuzzy: number;
+  partial: number;
+}
+
+// Matches on the original title score slightly lower than on the German title
+const GERMAN_TITLE_SCORES: TitleScores = { exact: 100, fuzzy: 100, partial: 60 };
+const ORIGINAL_TITLE_SCORES: TitleScores = { exact: 95, fuzzy: 90, partial: 55 };
+
+function matchTitle(
+  item: ApiResultItem,
+  normalizedMovieTitle: string,
+  scores: TitleScores
+): { titleMatch: TitleMatch; titleScore: number } | null {
+  const normalizedTopic = normalizeTitle(item.topic);
+  const normalizedTitle = normalizeTitle(item.title);
+  const combinedTitle = normalizeTitle(`${item.topic} ${item.title}`);
+
+  if (
+    normalizedTopic === normalizedMovieTitle ||
+    normalizedTitle === normalizedMovieTitle ||
+    combinedTitle === normalizedMovieTitle
+  ) {
+    return { titleMatch: "exact", titleScore: scores.exact };
+  }
+
+  // The title may also span topic and title ("Klara Sonntag" + "Liebe macht blind")
+  const partMatches = [item.title, item.topic, `${item.topic} - ${item.title}`].map((text) =>
+    findTitleInParts(text, normalizedMovieTitle)
+  );
+  if (partMatches.includes("version")) {
+    // Rank the plain version above audio description and similar versions
+    return { titleMatch: "exact", titleScore: scores.exact * 0.95 };
+  }
+
+  const bestSimilarity = Math.max(
+    stringSimilarity(normalizedTopic, normalizedMovieTitle),
+    stringSimilarity(normalizedTitle, normalizedMovieTitle),
+    stringSimilarity(combinedTitle, normalizedMovieTitle)
+  );
+  if (bestSimilarity >= 0.9) {
+    return { titleMatch: "exact", titleScore: bestSimilarity * scores.exact };
+  }
+  if (bestSimilarity >= 0.7) {
+    return { titleMatch: "fuzzy", titleScore: bestSimilarity * scores.fuzzy };
+  }
+
+  // A plain substring is not enough: the movie title has to be a whole part
+  if (partMatches.includes("part")) {
+    return { titleMatch: "partial", titleScore: scores.partial };
+  }
+
+  return null;
+}
+
+/**
+ * Largest runtime difference in minutes that still counts as the same movie.
+ * TV versions often differ from the TMDB runtime by 10–15 %, so 25 % are
+ * allowed, but at least twice the configured tolerance for short films.
+ */
+function getMaxRuntimeDifference(runtimeMinutes: number, durationTolerance: number): number {
+  return Math.max(durationTolerance * 2, runtimeMinutes * 0.25);
+}
+
 export interface MovieMatchResult {
   item: ApiResultItem;
   score: number; // 0-100, higher is better
-  titleMatch: "exact" | "fuzzy" | "partial";
+  titleMatch: TitleMatch;
   durationDiff: number; // Difference in minutes
 }
 
@@ -104,6 +231,9 @@ export async function matchMovieItems(
   const normalizedGermanTitle = normalizeTitle(movieData.germanTitle);
   const normalizedOriginalTitle = normalizeTitle(movieData.title);
   const movieRuntimeMinutes = movieData.runtime || 0;
+  const runtimeKnown = movieRuntimeMinutes > 0;
+  const maxRuntimeDifference = getMaxRuntimeDifference(movieRuntimeMinutes, durationTolerance);
+  let rejectedByRuntime = 0;
 
   console.log(
     `[MovieMatcher] Matching ${items.length} items against "${movieData.germanTitle}" (original: "${movieData.title}"), runtime: ${movieRuntimeMinutes} min, hlsEnabled: ${hlsEnabled}`
@@ -119,89 +249,43 @@ export async function matchMovieItems(
     )
       continue;
 
-    const normalizedTopic = normalizeTitle(item.topic);
-    const normalizedTitle = normalizeTitle(item.title);
-    const combinedTitle = normalizeTitle(`${item.topic} ${item.title}`);
-
     // Item duration in minutes
     const itemDurationMinutes = Math.floor(item.duration / 60);
     const durationDiff = Math.abs(movieRuntimeMinutes - itemDurationMinutes);
 
     if (minDurationSeconds > 0 && item.duration < minDurationSeconds) continue;
 
-    let titleMatch: "exact" | "fuzzy" | "partial" | null = null;
-    let titleScore = 0;
-
-    // Try matching against German title
+    // Prefer the German title, but let the original title replace a weak title part
+    let match = matchTitle(item, normalizedGermanTitle, GERMAN_TITLE_SCORES);
     if (
-      normalizedTopic === normalizedGermanTitle ||
-      normalizedTitle === normalizedGermanTitle ||
-      combinedTitle === normalizedGermanTitle
+      (!match || match.titleMatch === "partial") &&
+      normalizedOriginalTitle !== normalizedGermanTitle
     ) {
-      titleMatch = "exact";
-      titleScore = 100;
-    } else {
-      // Fuzzy match
-      const topicSimilarity = stringSimilarity(normalizedTopic, normalizedGermanTitle);
-      const titleSimilarity = stringSimilarity(normalizedTitle, normalizedGermanTitle);
-      const combinedSimilarity = stringSimilarity(combinedTitle, normalizedGermanTitle);
-      const bestSimilarity = Math.max(topicSimilarity, titleSimilarity, combinedSimilarity);
-
-      if (bestSimilarity >= 0.9) {
-        titleMatch = "exact";
-        titleScore = bestSimilarity * 100;
-      } else if (bestSimilarity >= 0.7) {
-        titleMatch = "fuzzy";
-        titleScore = bestSimilarity * 100;
-      } else if (
-        normalizedTopic.includes(normalizedGermanTitle) ||
-        normalizedGermanTitle.includes(normalizedTopic) ||
-        normalizedTitle.includes(normalizedGermanTitle) ||
-        normalizedGermanTitle.includes(normalizedTitle)
-      ) {
-        titleMatch = "partial";
-        titleScore = 60;
+      const originalMatch = matchTitle(item, normalizedOriginalTitle, ORIGINAL_TITLE_SCORES);
+      if (originalMatch && (!match || originalMatch.titleMatch !== "partial")) {
+        match = originalMatch;
       }
     }
 
-    // Try matching against original title if no German match
-    if (!titleMatch && normalizedOriginalTitle !== normalizedGermanTitle) {
-      if (
-        normalizedTopic === normalizedOriginalTitle ||
-        normalizedTitle === normalizedOriginalTitle ||
-        combinedTitle === normalizedOriginalTitle
-      ) {
-        titleMatch = "exact";
-        titleScore = 95; // Slightly lower score for original title match
-      } else {
-        const topicSimilarity = stringSimilarity(normalizedTopic, normalizedOriginalTitle);
-        const titleSimilarity = stringSimilarity(normalizedTitle, normalizedOriginalTitle);
-        const combinedSimilarity = stringSimilarity(combinedTitle, normalizedOriginalTitle);
-        const bestSimilarity = Math.max(topicSimilarity, titleSimilarity, combinedSimilarity);
+    if (!match) continue;
+    const { titleMatch, titleScore } = match;
 
-        if (bestSimilarity >= 0.9) {
-          titleMatch = "exact";
-          titleScore = bestSimilarity * 95;
-        } else if (bestSimilarity >= 0.7) {
-          titleMatch = "fuzzy";
-          titleScore = bestSimilarity * 90;
-        } else if (
-          normalizedTopic.includes(normalizedOriginalTitle) ||
-          normalizedOriginalTitle.includes(normalizedTopic) ||
-          normalizedTitle.includes(normalizedOriginalTitle) ||
-          normalizedOriginalTitle.includes(normalizedTitle)
-        ) {
-          titleMatch = "partial";
-          titleScore = 55;
-        }
-      }
+    // With a known TMDB runtime, a clearly different duration means a different broadcast
+    if (runtimeKnown && durationDiff > maxRuntimeDifference) {
+      rejectedByRuntime++;
+      continue;
     }
 
-    if (!titleMatch) continue;
+    // A title part alone is weak evidence (e.g. ARTE's magazine "Metropolis - Valencia"),
+    // so it only counts together with a runtime within the tolerance.
+    if (titleMatch === "partial" && (!runtimeKnown || durationDiff > durationTolerance)) {
+      rejectedByRuntime++;
+      continue;
+    }
 
     // Calculate duration score (0-20 points)
     let durationScore = 0;
-    if (movieRuntimeMinutes > 0) {
+    if (runtimeKnown) {
       if (durationDiff <= durationTolerance) {
         // Within tolerance: full points
         durationScore = 20;
@@ -229,6 +313,11 @@ export async function matchMovieItems(
   // Sort by score (highest first)
   results.sort((a, b) => b.score - a.score);
 
+  if (rejectedByRuntime > 0) {
+    console.log(
+      `[MovieMatcher] Rejected ${rejectedByRuntime} title matches whose duration does not confirm the TMDB runtime`
+    );
+  }
   console.log(`[MovieMatcher] Found ${results.length} matches`);
   if (results.length > 0) {
     const best = results[0];

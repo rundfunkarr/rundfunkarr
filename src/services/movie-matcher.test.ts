@@ -32,6 +32,23 @@ function makeItem(duration: number, id: string): ApiResultItem {
   };
 }
 
+function makeBroadcast(topic: string, title: string, minutes: number): ApiResultItem {
+  return {
+    ...makeItem(minutes * 60, `${topic}-${title}-${minutes}`),
+    topic,
+    title,
+  };
+}
+
+function makeMovie(germanTitle: string, runtime: number | null, title = germanTitle) {
+  return { ...movie, title, germanTitle, runtime };
+}
+
+async function matchedTitles(items: ApiResultItem[], movieData: TmdbMovieData) {
+  const matches = await matchMovieItems(items, movieData, 0);
+  return matches.map((match) => `${match.item.title} (${match.item.duration / 60} min)`);
+}
+
 describe("matchMovieItems – minimum duration", () => {
   it("compares durations in seconds at the configured boundary", async () => {
     const matches = await matchMovieItems(
@@ -46,8 +63,122 @@ describe("matchMovieItems – minimum duration", () => {
   });
 
   it("does not filter by duration when the setting is zero", async () => {
-    const matches = await matchMovieItems([makeItem(120, "short")], movie, 0);
+    const matches = await matchMovieItems(
+      [makeItem(120, "short")],
+      makeMovie("Documentary", null),
+      0
+    );
 
     expect(matches).toHaveLength(1);
+  });
+});
+
+describe("matchMovieItems – TMDB runtime", () => {
+  const theGeneral = makeMovie("Der General", 79, "The General");
+
+  it("rejects broadcasts whose duration clearly differs from the runtime", async () => {
+    const titles = await matchedTitles(
+      [
+        makeBroadcast("Filme", "Der General", 45),
+        makeBroadcast("Filme", "Der General", 58),
+        makeBroadcast("Filme", "Der General", 59),
+        makeBroadcast("Filme", "Der General", 99),
+        makeBroadcast("Filme", "Der General", 100),
+      ],
+      theGeneral
+    );
+
+    // 25 % of 79 minutes is less than twice the default tolerance of 10 minutes
+    expect(titles).toEqual(["Der General (59 min)", "Der General (99 min)"]);
+  });
+
+  it("allows TV versions that differ by up to a quarter of a long runtime", async () => {
+    const titles = await matchedTitles(
+      [
+        makeBroadcast("Filme", "Metropolis", 111),
+        makeBroadcast("Filme", "Metropolis", 110),
+        makeBroadcast("Megacitys", "Metropolis", 43),
+      ],
+      makeMovie("Metropolis", 148)
+    );
+
+    expect(titles).toEqual(["Metropolis (111 min)"]);
+  });
+
+  it("keeps exact title matches when TMDB has no runtime", async () => {
+    const titles = await matchedTitles(
+      [makeBroadcast("Dokumentationen", "Das geheime Wesen der Katzen", 43)],
+      makeMovie("Das geheime Wesen der Katzen", null)
+    );
+
+    expect(titles).toEqual(["Das geheime Wesen der Katzen (43 min)"]);
+  });
+});
+
+describe("matchMovieItems – title", () => {
+  const theGeneral = makeMovie("Der General", 79, "The General");
+
+  it("does not accept the movie title as a substring of another title", async () => {
+    const titles = await matchedTitles(
+      [
+        makeBroadcast("Filme in der ARD", "Die Diebin & der General", 88),
+        makeBroadcast("phoenix parlament", "Olaf Scholz in der Generaldebatte", 80),
+        makeBroadcast("Alle meine Töchter", "Der Generalflop (S03/E06)", 80),
+        makeBroadcast("Story", "Soldat Nr. 1 – Der General und die Zeitenwende", 80),
+      ],
+      theGeneral
+    );
+
+    expect(titles).toEqual([]);
+  });
+
+  it("treats version notes like an exact title, even without a TMDB runtime", async () => {
+    const items = [
+      makeBroadcast("Filme im Ersten", "Der General - Audiodeskription", 70),
+      makeBroadcast("Kino - Filme", "Der General (Originalversion mit Untertitel)", 70),
+      makeBroadcast("Spielfilm", "Der General - Spielfilm, USA 1926", 70),
+    ];
+
+    const matches = await matchMovieItems(items, theGeneral, 0);
+    expect(matches.map((match) => match.titleMatch)).toEqual(["exact", "exact", "exact"]);
+    expect(await matchedTitles(items, makeMovie("Der General", null))).toHaveLength(3);
+  });
+
+  it("requires a runtime within the tolerance for other title parts", async () => {
+    const items = [
+      makeBroadcast("Kunst & Kultur", "Metropolis - Valencia", 44),
+      makeBroadcast("Spielfilm", "Metropolis - Die restaurierte Fassung", 145),
+      makeBroadcast("Spielfilm", "Metropolis - Die Kinofassung", 125),
+    ];
+
+    expect(await matchedTitles(items, makeMovie("Metropolis", 148))).toEqual([
+      "Metropolis - Die restaurierte Fassung (145 min)",
+    ]);
+    expect(await matchedTitles(items, makeMovie("Metropolis", null))).toEqual([]);
+  });
+
+  it("matches titles that contain separators or span topic and title", async () => {
+    const mission = await matchedTitles(
+      [makeBroadcast("Spielfilm", "Mission: Impossible (Audiodeskription)", 110)],
+      makeMovie("Mission: Impossible", 110)
+    );
+    const klaraSonntag = await matchedTitles(
+      [makeBroadcast("Klara Sonntag", "Liebe macht blind - Fernsehfilm, Deutschland 2022", 88)],
+      makeMovie("Klara Sonntag - Liebe macht blind", 89)
+    );
+
+    expect(mission).toEqual(["Mission: Impossible (Audiodeskription) (110 min)"]);
+    expect(klaraSonntag).toEqual(["Liebe macht blind - Fernsehfilm, Deutschland 2022 (88 min)"]);
+  });
+
+  it("prefers an exact original title over a German title part", async () => {
+    // "Paris" is only a part of the title, "Paris - Je t'aime" is the whole title
+    const matches = await matchMovieItems(
+      [makeBroadcast("Kino", "Paris - Je t'aime", 120)],
+      makeMovie("Paris", null, "Paris, je t'aime"),
+      0
+    );
+
+    expect(matches.map((match) => match.titleMatch)).toEqual(["exact"]);
   });
 });
