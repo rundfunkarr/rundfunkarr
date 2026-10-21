@@ -165,14 +165,47 @@ describe("matchMovieItems – title", () => {
   it("requires a runtime within the tolerance for other title parts", async () => {
     const items = [
       makeBroadcast("Kunst & Kultur", "Metropolis - Valencia", 44),
-      makeBroadcast("Spielfilm", "Metropolis - Die restaurierte Fassung", 145),
-      makeBroadcast("Spielfilm", "Metropolis - Die Kinofassung", 125),
+      makeBroadcast("Spielfilm", "Metropolis - Die Stadt der Zukunft", 145),
+      makeBroadcast("Spielfilm", "Metropolis - Die Stadt der Zukunft", 125),
     ];
 
     expect(await matchedTitles(items, makeMovie("Metropolis", 148))).toEqual([
-      "Metropolis - Die restaurierte Fassung (145 min)",
+      "Metropolis - Die Stadt der Zukunft (145 min)",
     ]);
     expect(await matchedTitles(items, makeMovie("Metropolis", null))).toEqual([]);
+  });
+
+  it("splits title parts at a period", async () => {
+    const items = [makeBroadcast("Filme im Ersten", "Dampfnudelblues. Ein Eberhoferkrimi", 86)];
+
+    expect(await matchedTitles(items, makeMovie("Dampfnudelblues", 87))).toEqual([
+      "Dampfnudelblues. Ein Eberhoferkrimi (86 min)",
+    ]);
+    expect(await matchedTitles(items, makeMovie("Dampfnudelblues", null))).toEqual([]);
+    // Abbreviations are split as well, but still match as a whole
+    expect(
+      await matchedTitles(
+        [makeBroadcast("Filme", "Das Testament des Dr. Mabuse (Audiodeskription)", 120)],
+        makeMovie("Das Testament des Dr. Mabuse", null)
+      )
+    ).toEqual(["Das Testament des Dr. Mabuse (Audiodeskription) (120 min)"]);
+  });
+
+  it("treats editions like the film within the runtime limit", async () => {
+    const titles = await matchedTitles(
+      [
+        makeBroadcast("Spielfilm", "Apocalypse Now - Final Cut - Spielfilm, USA 1979/2019", 169),
+        makeBroadcast("Spielfilm", "Apocalypse Now - Director's Cut", 150),
+        makeBroadcast("Spielfilm", "Apocalypse Now - Redux", 202),
+      ],
+      makeMovie("Apocalypse Now", 147)
+    );
+
+    // 202 minutes exceed 25 % of the TMDB runtime
+    expect(titles).toEqual([
+      "Apocalypse Now - Director's Cut (150 min)",
+      "Apocalypse Now - Final Cut - Spielfilm, USA 1979/2019 (169 min)",
+    ]);
   });
 
   it("treats a title part as weak even when the whole title is similar", async () => {

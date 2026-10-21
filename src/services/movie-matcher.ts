@@ -81,9 +81,15 @@ function stringSimilarity(a: string, b: string): number {
   return 1 - distance / maxLength;
 }
 
-// Separators between parts of a Mediathek title, e.g. "Der General (Audiodeskription)"
-// or "Metropolis - Valencia". Hyphens inside words ("Science-Fiction") do not split.
-const TITLE_PART_SEPARATOR = /\s+[-–—|/·]\s+|:\s+|[()[\]]/;
+// Separators between parts of a Mediathek title, e.g. "Der General (Audiodeskription)",
+// "Metropolis - Valencia" or "Dampfnudelblues. Ein Eberhoferkrimi". Hyphens inside words
+// ("Science-Fiction") do not split.
+const TITLE_PART_SEPARATOR = /\s+[-–—|/·]\s+|[:.]\s+|[()[\]]/;
+
+// ". " also splits abbreviations ("Dr. Mabuse"), so parts are compared without periods
+function comparablePart(text: string): string {
+  return normalizeTitle(text).replace(/\./g, "").replace(/\s+/g, " ").trim();
+}
 
 // Notes that broadcasters add to a film title without changing the film. Includes the
 // audio labels known to audioVariant() in src/lib/media-metadata.ts.
@@ -106,6 +112,10 @@ const VERSION_NOTES = new Set([
   "englisch",
   "französisch",
 ]);
+// Editions of the same film. TMDB lists them under the film itself, e.g.
+// "Apocalypse Now: Final Cut" is an alternative title of "Apocalypse Now".
+const EDITION_NOTE =
+  /^(?:die )?(?:final cut|directors cut|extended (?:cut|version|edition)|langfassung|kinofassung|restaurierte fassung|ungekürzte fassung|uncut|redux)$/;
 // Production notes such as "Spielfilm, Deutschland 2004", "Spielfilm, USA 1979/2019" or
 // "Romantische Komödie, Deutschland 2022". The first phrase has to name a kind of film,
 // optionally after up to two words ("Ein Nordseekrimi", "Historisches Drama").
@@ -113,7 +123,8 @@ const PRODUCTION_NOTE =
   /^(?:[\p{L}-]+ ){0,2}[\p{L}-]*(?:film|komödie|drama|thriller|krimi), [^,]+ (?:19|20)\d{2}(?:\/(?:19|20)\d{2})?$/iu;
 
 function isVersionNote(part: string): boolean {
-  return VERSION_NOTES.has(normalizeTitle(part)) || PRODUCTION_NOTE.test(part);
+  const note = comparablePart(part);
+  return VERSION_NOTES.has(note) || EDITION_NOTE.test(note) || PRODUCTION_NOTE.test(part);
 }
 
 /**
@@ -123,13 +134,14 @@ function isVersionNote(part: string): boolean {
  * - null: the title is no whole part, e.g. "Die Diebin & der General" or "in der Generaldebatte"
  */
 function findTitleInParts(text: string, normalizedMovieTitle: string): "version" | "part" | null {
-  if (!normalizedMovieTitle) return null;
+  const movieTitle = comparablePart(normalizedMovieTitle);
+  if (!movieTitle) return null;
 
   const rawParts = text
     .split(TITLE_PART_SEPARATOR)
     .map((part) => part.trim())
-    .filter((part) => normalizeTitle(part));
-  const parts = rawParts.map(normalizeTitle);
+    .filter((part) => comparablePart(part));
+  const parts = rawParts.map(comparablePart);
   let found: "part" | null = null;
 
   for (let start = 0; start < parts.length; start++) {
@@ -137,12 +149,12 @@ function findTitleInParts(text: string, normalizedMovieTitle: string): "version"
     let joined = "";
     for (let end = start; end < parts.length; end++) {
       joined = joined ? `${joined} ${parts[end]}` : parts[end];
-      if (joined === normalizedMovieTitle) {
+      if (joined === movieTitle) {
         const otherParts = [...rawParts.slice(0, start), ...rawParts.slice(end + 1)];
         if (otherParts.every(isVersionNote)) return "version";
         found = "part";
       }
-      if (joined.length >= normalizedMovieTitle.length) break;
+      if (joined.length >= movieTitle.length) break;
     }
   }
   return found;
