@@ -331,7 +331,8 @@ export default function SubscriptionsPage() {
                     <Badge variant="outline">Pausiert</Badge>
                   ) : item._count.matches > 0 ? (
                     <Badge variant="info">
-                      {item._count.matches} {item._count.matches === 1 ? "neue" : "neue"}
+                      {item._count.matches}{" "}
+                      {item._count.matches === 1 ? "neuer Treffer" : "neue Treffer"}
                     </Badge>
                   ) : (
                     <Badge variant="ok">Aktiv</Badge>
