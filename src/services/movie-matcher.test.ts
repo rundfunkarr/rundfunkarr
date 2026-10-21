@@ -157,6 +157,47 @@ describe("matchMovieItems – title", () => {
     expect(await matchedTitles(items, makeMovie("Metropolis", null))).toEqual([]);
   });
 
+  it("treats a title part as weak even when the whole title is similar", async () => {
+    // "Metropolis - XL" is about 77 % similar to "Metropolis"
+    const items = [makeBroadcast("Spielfilm", "Metropolis - XL", 125)];
+
+    expect(await matchedTitles(items, makeMovie("Metropolis", 148))).toEqual([]);
+    expect(await matchedTitles(items, makeMovie("Metropolis", null))).toEqual([]);
+  });
+
+  it("does not accept a topic named like the movie with another title", async () => {
+    const weniger = makeMovie("Weniger ist mehr", null);
+
+    expect(
+      await matchedTitles(
+        [
+          makeBroadcast("Weniger ist mehr", "Guggen spielen um die Ehre", 22),
+          makeBroadcast("Weniger ist mehr", "Kurios", 22),
+        ],
+        weniger
+      )
+    ).toEqual([]);
+    expect(
+      await matchedTitles([makeBroadcast("Weniger ist mehr", "Audiodeskription", 86)], weniger)
+    ).toEqual(["Audiodeskription (86 min)"]);
+  });
+
+  it("accepts production notes only when they describe a film", async () => {
+    const titles = await matchedTitles(
+      [
+        makeBroadcast("Kunst & Kultur", "Metropolis - Valencia, Spanien 2024", 44),
+        makeBroadcast("Spielfilm", "Metropolis - Spielfilm, Deutschland 1927", 145),
+        makeBroadcast("Fernsehfilm", "Metropolis - Ein Stummfilmkrimi, Deutschland 1927", 145),
+      ],
+      makeMovie("Metropolis", null)
+    );
+
+    expect(titles).toEqual([
+      "Metropolis - Spielfilm, Deutschland 1927 (145 min)",
+      "Metropolis - Ein Stummfilmkrimi, Deutschland 1927 (145 min)",
+    ]);
+  });
+
   it("matches titles that contain separators or span topic and title", async () => {
     const mission = await matchedTitles(
       [makeBroadcast("Spielfilm", "Mission: Impossible (Audiodeskription)", 110)],

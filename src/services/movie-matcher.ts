@@ -102,8 +102,10 @@ const VERSION_NOTES = new Set([
   "englisch",
   "französisch",
 ]);
-// Production notes such as "Spielfilm, Deutschland 2004" or "Spielfilm, USA 1979/2019"
-const PRODUCTION_NOTE = /^[^,]+, [^,]+ (?:19|20)\d{2}(?:\/(?:19|20)\d{2})?$/;
+// Production notes such as "Spielfilm, Deutschland 2004", "Spielfilm, USA 1979/2019" or
+// "Ein Nordseekrimi, Deutschland 2014". The first phrase has to name a kind of film.
+const PRODUCTION_NOTE =
+  /^(?:ein |eine )?[\p{L}-]*(?:film|komödie|drama|thriller|krimi), [^,]+ (?:19|20)\d{2}(?:\/(?:19|20)\d{2})?$/iu;
 
 function isVersionNote(part: string): boolean {
   return VERSION_NOTES.has(normalizeTitle(part)) || PRODUCTION_NOTE.test(part);
@@ -158,29 +160,30 @@ function matchTitle(
   normalizedMovieTitle: string,
   scores: TitleScores
 ): { titleMatch: TitleMatch; titleScore: number } | null {
-  const normalizedTopic = normalizeTitle(item.topic);
   const normalizedTitle = normalizeTitle(item.title);
   const combinedTitle = normalizeTitle(`${item.topic} ${item.title}`);
 
-  if (
-    normalizedTopic === normalizedMovieTitle ||
-    normalizedTitle === normalizedMovieTitle ||
-    combinedTitle === normalizedMovieTitle
-  ) {
+  // The topic alone is often the name of a series or magazine ("Weniger ist mehr" with
+  // "Guggen spielen um die Ehre"), so it only counts together with the title.
+  if (normalizedTitle === normalizedMovieTitle || combinedTitle === normalizedMovieTitle) {
     return { titleMatch: "exact", titleScore: scores.exact };
   }
 
-  // The title may also span topic and title ("Klara Sonntag" + "Liebe macht blind")
-  const partMatches = [item.title, item.topic, `${item.topic} - ${item.title}`].map((text) =>
+  // The movie title may also span topic and title ("Klara Sonntag" + "Liebe macht blind")
+  const partMatches = [item.title, `${item.topic} - ${item.title}`].map((text) =>
     findTitleInParts(text, normalizedMovieTitle)
   );
   if (partMatches.includes("version")) {
     // Rank the plain version above audio description and similar versions
     return { titleMatch: "exact", titleScore: scores.exact * 0.95 };
   }
+  // Other content next to the movie title ("Metropolis - XL") stays a weak match,
+  // even when the whole string is similar to the movie title
+  if (partMatches.includes("part")) {
+    return { titleMatch: "partial", titleScore: scores.partial };
+  }
 
   const bestSimilarity = Math.max(
-    stringSimilarity(normalizedTopic, normalizedMovieTitle),
     stringSimilarity(normalizedTitle, normalizedMovieTitle),
     stringSimilarity(combinedTitle, normalizedMovieTitle)
   );
@@ -191,11 +194,7 @@ function matchTitle(
     return { titleMatch: "fuzzy", titleScore: bestSimilarity * scores.fuzzy };
   }
 
-  // A plain substring is not enough: the movie title has to be a whole part
-  if (partMatches.includes("part")) {
-    return { titleMatch: "partial", titleScore: scores.partial };
-  }
-
+  // A plain substring like "in der Generaldebatte" is not enough
   return null;
 }
 
