@@ -78,15 +78,17 @@ export default function Dashboard() {
 
   const fetchOverview = useCallback(async () => {
     try {
+      // Each source fails on its own, so a network error never leaves stale values behind.
+      const load = (path: string) => fetch(path).catch(() => null);
       const [systemRes, subscriptionsRes, filmlisteRes] = await Promise.all([
-        fetch("/api/system"),
-        fetch("/api/subscriptions"),
-        fetch("/api/filmliste"),
+        load("/api/system"),
+        load("/api/subscriptions"),
+        load("/api/filmliste"),
       ]);
-      const system = systemRes.ok ? await systemRes.json() : null;
+      const system = systemRes?.ok ? await systemRes.json() : null;
       const subscriptions: { paused: boolean; _count?: { matches: number } }[] | null =
-        subscriptionsRes.ok ? ((await subscriptionsRes.json()).subscriptions ?? []) : null;
-      const filmliste = filmlisteRes.ok ? await filmlisteRes.json() : null;
+        subscriptionsRes?.ok ? ((await subscriptionsRes.json()).subscriptions ?? []) : null;
+      const filmliste = filmlisteRes?.ok ? await filmlisteRes.json() : null;
       setOverview({
         completed: system?.downloads?.completed ?? null,
         failed: system?.downloads?.failed ?? null,
