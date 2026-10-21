@@ -115,6 +115,22 @@ describe("matchMovieItems – TMDB runtime", () => {
   });
 });
 
+describe("matchMovieItems – unknown broadcast duration", () => {
+  it("skips the runtime check for exact titles but not for title parts", async () => {
+    // The local Filmliste stores 0 when the duration is missing
+    const titles = await matchedTitles(
+      [
+        makeBroadcast("Filme", "Der General", 0),
+        makeBroadcast("Filme", "Der General (Audiodeskription)", 0),
+        makeBroadcast("Kunst & Kultur", "Der General - Valencia", 0),
+      ],
+      makeMovie("Der General", 79, "The General")
+    );
+
+    expect(titles).toEqual(["Der General (0 min)", "Der General (Audiodeskription) (0 min)"]);
+  });
+});
+
 describe("matchMovieItems – title", () => {
   const theGeneral = makeMovie("Der General", 79, "The General");
 
@@ -137,11 +153,13 @@ describe("matchMovieItems – title", () => {
       makeBroadcast("Filme im Ersten", "Der General - Audiodeskription", 70),
       makeBroadcast("Kino - Filme", "Der General (Originalversion mit Untertitel)", 70),
       makeBroadcast("Spielfilm", "Der General - Spielfilm, USA 1926", 70),
+      makeBroadcast("Filme", "Der General (Originalton)", 70),
+      makeBroadcast("Filme", "Der General (AD)", 70),
     ];
 
     const matches = await matchMovieItems(items, theGeneral, 0);
-    expect(matches.map((match) => match.titleMatch)).toEqual(["exact", "exact", "exact"]);
-    expect(await matchedTitles(items, makeMovie("Der General", null))).toHaveLength(3);
+    expect(matches.map((match) => match.titleMatch)).toEqual(Array(5).fill("exact"));
+    expect(await matchedTitles(items, makeMovie("Der General", null))).toHaveLength(5);
   });
 
   it("requires a runtime within the tolerance for other title parts", async () => {
@@ -188,6 +206,8 @@ describe("matchMovieItems – title", () => {
         makeBroadcast("Kunst & Kultur", "Metropolis - Valencia, Spanien 2024", 44),
         makeBroadcast("Spielfilm", "Metropolis - Spielfilm, Deutschland 1927", 145),
         makeBroadcast("Fernsehfilm", "Metropolis - Ein Stummfilmkrimi, Deutschland 1927", 145),
+        makeBroadcast("Fernsehfilm", "Metropolis - Historisches Drama, Deutschland 1927", 145),
+        makeBroadcast("Fernsehfilm", "Metropolis - Romantische Komödie, Deutschland 1927", 145),
       ],
       makeMovie("Metropolis", null)
     );
@@ -195,6 +215,8 @@ describe("matchMovieItems – title", () => {
     expect(titles).toEqual([
       "Metropolis - Spielfilm, Deutschland 1927 (145 min)",
       "Metropolis - Ein Stummfilmkrimi, Deutschland 1927 (145 min)",
+      "Metropolis - Historisches Drama, Deutschland 1927 (145 min)",
+      "Metropolis - Romantische Komödie, Deutschland 1927 (145 min)",
     ]);
   });
 

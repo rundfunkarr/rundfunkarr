@@ -85,7 +85,8 @@ function stringSimilarity(a: string, b: string): number {
 // or "Metropolis - Valencia". Hyphens inside words ("Science-Fiction") do not split.
 const TITLE_PART_SEPARATOR = /\s+[-–—|/·]\s+|:\s+|[()[\]]/;
 
-// Notes that broadcasters add to a film title without changing the film
+// Notes that broadcasters add to a film title without changing the film. Includes the
+// audio labels known to audioVariant() in src/lib/media-metadata.ts.
 const VERSION_NOTES = new Set([
   "audiodeskription",
   "mit audiodeskription",
@@ -95,17 +96,21 @@ const VERSION_NOTES = new Set([
   "originalversion",
   "originalversion mit untertitel",
   "originalfassung",
+  "originalfassung mit untertitel",
+  "originalton",
   "omu",
   "ov",
+  "ad",
   "gebärdensprache",
   "mit gebärdensprache",
   "englisch",
   "französisch",
 ]);
 // Production notes such as "Spielfilm, Deutschland 2004", "Spielfilm, USA 1979/2019" or
-// "Ein Nordseekrimi, Deutschland 2014". The first phrase has to name a kind of film.
+// "Romantische Komödie, Deutschland 2022". The first phrase has to name a kind of film,
+// optionally after up to two words ("Ein Nordseekrimi", "Historisches Drama").
 const PRODUCTION_NOTE =
-  /^(?:ein |eine )?[\p{L}-]*(?:film|komödie|drama|thriller|krimi), [^,]+ (?:19|20)\d{2}(?:\/(?:19|20)\d{2})?$/iu;
+  /^(?:[\p{L}-]+ ){0,2}[\p{L}-]*(?:film|komödie|drama|thriller|krimi), [^,]+ (?:19|20)\d{2}(?:\/(?:19|20)\d{2})?$/iu;
 
 function isVersionNote(part: string): boolean {
   return VERSION_NOTES.has(normalizeTitle(part)) || PRODUCTION_NOTE.test(part);
@@ -248,9 +253,10 @@ export async function matchMovieItems(
     )
       continue;
 
-    // Item duration in minutes
+    // Item duration in minutes. A duration of 0 means unknown (e.g. local Filmliste).
     const itemDurationMinutes = Math.floor(item.duration / 60);
     const durationDiff = Math.abs(movieRuntimeMinutes - itemDurationMinutes);
+    const runtimeComparable = runtimeKnown && item.duration > 0;
 
     if (minDurationSeconds > 0 && item.duration < minDurationSeconds) continue;
 
@@ -269,22 +275,22 @@ export async function matchMovieItems(
     if (!match) continue;
     const { titleMatch, titleScore } = match;
 
-    // With a known TMDB runtime, a clearly different duration means a different broadcast
-    if (runtimeKnown && durationDiff > maxRuntimeDifference) {
+    // With known durations, a clearly different duration means a different broadcast
+    if (runtimeComparable && durationDiff > maxRuntimeDifference) {
       rejectedByRuntime++;
       continue;
     }
 
     // A title part alone is weak evidence (e.g. ARTE's magazine "Metropolis - Valencia"),
     // so it only counts together with a runtime within the tolerance.
-    if (titleMatch === "partial" && (!runtimeKnown || durationDiff > durationTolerance)) {
+    if (titleMatch === "partial" && (!runtimeComparable || durationDiff > durationTolerance)) {
       rejectedByRuntime++;
       continue;
     }
 
     // Calculate duration score (0-20 points)
     let durationScore = 0;
-    if (runtimeKnown) {
+    if (runtimeComparable) {
       if (durationDiff <= durationTolerance) {
         // Within tolerance: full points
         durationScore = 20;
@@ -294,7 +300,7 @@ export async function matchMovieItems(
       }
       // Outside 2x tolerance: 0 points
     } else {
-      // No runtime info from TMDB: give benefit of the doubt
+      // Runtime or broadcast duration unknown: give benefit of the doubt
       durationScore = 10;
     }
 
