@@ -31,7 +31,8 @@ jobs:
         id: app
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          # The built commit; for pull requests this is the merge commit, as in the image label.
+          COMMIT: ${{ github.sha }}
         run: |
           # Tags show their release version in the UI, all other builds their channel and commit.
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
@@ -117,7 +118,8 @@ jobs:
         id: app
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          # The built commit; for pull requests this is the merge commit, as in the image label.
+          COMMIT: ${{ github.sha }}
         run: |
           # Tags show their release version in the UI, all other builds their channel and commit.
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
