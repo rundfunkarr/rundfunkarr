@@ -21,8 +21,35 @@ export async function GET() {
             (saved) => saved.topic === rule.topic && saved.tvdbId === rule.media.media_tvdbId
           )
       );
+    // Community rules may carry the TVDB id as a string or not at all.
+    const tvdbIdOf = (value: unknown): number | null => {
+      const id = Number(value);
+      return Number.isInteger(id) && id > 0 ? id : null;
+    };
+    const tvdbIds = [
+      ...new Set(
+        [
+          ...local.map((rule) => tvdbIdOf(rule.tvdbId)),
+          ...external.map((rule) => tvdbIdOf(rule.media.media_tvdbId)),
+        ].filter((id): id is number => id !== null)
+      ),
+    ];
+    const posters = new Map(
+      tvdbIds.length
+        ? (
+            await prisma.tvdbSeries.findMany({
+              where: { id: { in: tvdbIds } },
+              select: { id: true, image: true },
+            })
+          ).map((series) => [series.id, series.image])
+        : []
+    );
     return NextResponse.json([
-      ...local.map((rule) => ({ ...rule, source: "local" })),
+      ...local.map((rule) => ({
+        ...rule,
+        image: posters.get(rule.tvdbId) ?? null,
+        source: "local",
+      })),
       ...external.map((rule) => ({
         id: `community-${rule.id}-${rule.media.media_tvdbId}`,
         topic: rule.topic,
@@ -35,6 +62,7 @@ export async function GET() {
         seasonRegex: rule.seasonRegex || "",
         episodeRegex: rule.episodeRegex || "",
         updatedAt: null,
+        image: posters.get(tvdbIdOf(rule.media.media_tvdbId) ?? -1) ?? null,
         source: "community",
       })),
     ]);

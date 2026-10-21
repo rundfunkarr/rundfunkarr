@@ -13,6 +13,7 @@ import { Field } from "@/components/shared/field";
 import { Notice } from "@/components/shared/notice";
 import { ChannelBadge } from "@/components/shared/channel-badge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Thumbnail } from "@/components/shared/thumbnail";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatSize, formatDate } from "@/lib/formatters";
 import type { SearchResult } from "@/app/api/search/route";
@@ -417,6 +418,11 @@ function SearchView() {
                         return next;
                       })
                     }
+                  />
+                  <Thumbnail
+                    src={result.url_image}
+                    websiteUrl={result.url_website}
+                    className="mt-0.5 w-24 sm:w-40"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">

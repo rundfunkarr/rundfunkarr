@@ -150,6 +150,7 @@ export abstract class BaseProvider implements ContentProvider {
     duration: number;
     size: number;
     websiteUrl: string;
+    imageUrl?: string;
     videoUrl: string;
     videoUrlLow?: string;
     videoUrlHigh?: string;
@@ -167,6 +168,7 @@ export abstract class BaseProvider implements ContentProvider {
       duration: data.duration,
       size: data.size,
       websiteUrl: data.websiteUrl,
+      imageUrl: data.imageUrl,
       subtitleUrl: data.subtitleUrl,
       audioLanguage: data.audioLanguage,
       videoUrls: {

@@ -267,6 +267,7 @@ export class SrfProvider extends BaseProvider {
       duration: durationSeconds,
       size: 0, // Unknown until download
       websiteUrl: `https://www.srf.ch/play/tv/sendung/${result.show?.id || result.id}`,
+      imageUrl: result.imageUrl || result.show?.imageUrl,
       videoUrl: withStreamQuality(videoUrl, "standard"),
       videoUrlLow: withStreamQuality(videoUrl, "low"),
       videoUrlHigh: withStreamQuality(videoUrl, "high"),

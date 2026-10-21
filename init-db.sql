@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS TvdbSeries (
     overview TEXT,
     aliases TEXT,
     firstAired DATETIME,
+    image TEXT,
     cachedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     expiresAt DATETIME NOT NULL
 );
@@ -130,3 +131,10 @@ CREATE TABLE IF NOT EXISTS "AuthSession" (
     "expiresAt" DATETIME NOT NULL
 );
 CREATE INDEX IF NOT EXISTS "AuthSession_expiresAt_idx" ON "AuthSession"("expiresAt");
+CREATE TABLE IF NOT EXISTS "WebsitePreview" (
+    "url" TEXT NOT NULL PRIMARY KEY,
+    "imageUrl" TEXT,
+    "fetchedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expiresAt" DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "WebsitePreview_expiresAt_idx" ON "WebsitePreview"("expiresAt");

@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 
 type Theme = "system" | "light" | "dark";
 const STORAGE_KEY = "rundfunkarr-theme";
-const options: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "system", label: "Darstellung wie das System", icon: Monitor },
-  { value: "light", label: "Helle Darstellung", icon: Sun },
-  { value: "dark", label: "Dunkle Darstellung", icon: Moon },
+const options: { value: Theme; label: string; short: string; icon: typeof Sun }[] = [
+  { value: "system", label: "Darstellung wie das System", short: "System", icon: Monitor },
+  { value: "light", label: "Helle Darstellung", short: "Hell", icon: Sun },
+  { value: "dark", label: "Dunkle Darstellung", short: "Dunkel", icon: Moon },
 ];
 const listeners = new Set<() => void>();
 
@@ -47,7 +47,13 @@ function subscribe(callback: () => void) {
   };
 }
 
-export function ThemeToggle({ className }: { className?: string }) {
+export function ThemeToggle({
+  className,
+  showLabels = false,
+}: {
+  className?: string;
+  showLabels?: boolean;
+}) {
   const theme = useSyncExternalStore(subscribe, read, () => "system" as Theme);
   const select = (next: Theme) => {
     try {
@@ -65,21 +71,23 @@ export function ThemeToggle({ className }: { className?: string }) {
       aria-label="Darstellung"
       className={cn("inline-flex shrink-0 rounded-md border bg-background p-0.5", className)}
     >
-      {options.map(({ value, label, icon: Icon }) => (
+      {options.map(({ value, label, short, icon: Icon }) => (
         <button
           key={value}
           type="button"
           role="radio"
           aria-checked={theme === value}
-          aria-label={label}
+          aria-label={showLabels ? undefined : label}
           title={label}
           onClick={() => select(value)}
           className={cn(
-            "flex h-7 w-8 cursor-pointer items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            "flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            showLabels ? "px-3 text-sm" : "w-8",
             theme === value && "bg-accent text-foreground"
           )}
         >
           <Icon className="size-4" />
+          {showLabels && <span>{short}</span>}
         </button>
       ))}
     </div>

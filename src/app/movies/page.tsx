@@ -10,6 +10,7 @@ import { Page, PageHeader } from "@/components/shared/page";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Notice } from "@/components/shared/notice";
 import { ChannelBadge } from "@/components/shared/channel-badge";
+import { Thumbnail } from "@/components/shared/thumbnail";
 import { Search, Download, Film } from "lucide-react";
 import { formatDuration, formatSize, formatDate } from "@/lib/formatters";
 
@@ -28,6 +29,7 @@ interface SearchResult {
   url_website: string;
   url_subtitle?: string;
   audioLanguage?: string;
+  url_image?: string;
 }
 
 type QualityOption = {
@@ -194,8 +196,13 @@ export default function MoviesPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {searchResults.map((result) => (
-              <article key={result.id} className="rounded-lg border p-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <article key={result.id} className="flex gap-3 rounded-lg border p-4">
+                <Thumbnail
+                  src={result.url_image}
+                  websiteUrl={result.url_website}
+                  className="mt-0.5 w-24 sm:w-44"
+                />
+                <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                       <ChannelBadge channel={result.channel} />

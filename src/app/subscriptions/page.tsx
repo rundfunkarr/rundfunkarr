@@ -11,6 +11,7 @@ import { Field } from "@/components/shared/field";
 import { Notice } from "@/components/shared/notice";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ChannelBadge } from "@/components/shared/channel-badge";
+import { Thumbnail } from "@/components/shared/thumbnail";
 import type { SubscriptionInput } from "@/server/subscriptions";
 interface Subscription extends SubscriptionInput {
   id: string;
@@ -484,47 +485,51 @@ export default function SubscriptionsPage() {
               </div>
             )}
             {matches.map((match) => (
-              <article key={match.id} className="min-w-0 space-y-2 rounded-lg border p-4">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                  <ChannelBadge channel={match.channel} />
-                  <span className="text-muted-foreground">{match.topic}</span>
-                  {match.state === "queued" ? (
-                    <Badge variant="ok">Download hinzugefügt</Badge>
-                  ) : match.state === "dismissed" ? (
-                    <Badge variant="muted">Gelesen</Badge>
-                  ) : (
-                    <Badge variant="info">Neu</Badge>
-                  )}
-                </div>
-                <h3 className="break-words font-medium leading-snug">{match.title}</h3>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {!match.downloadId && (
-                    <Button
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => void action({ action: "download", id: match.id })}
-                    >
-                      Herunterladen
-                    </Button>
-                  )}
-                  {match.state === "new" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => void action({ action: "dismiss", id: match.id })}
-                    >
-                      Als gelesen markieren
-                    </Button>
-                  )}
-                  {/^https?:\/\//i.test(match.websiteUrl) && (
-                    <Button asChild variant="ghost" size="sm">
-                      <a href={match.websiteUrl} target="_blank" rel="noreferrer">
-                        Sendungsseite
-                        <ExternalLink />
-                      </a>
-                    </Button>
-                  )}
+              <article key={match.id} className="flex min-w-0 gap-3 rounded-lg border p-4">
+                <Thumbnail websiteUrl={match.websiteUrl} className="mt-0.5 w-20 sm:w-36" />
+
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                    <ChannelBadge channel={match.channel} />
+                    <span className="text-muted-foreground">{match.topic}</span>
+                    {match.state === "queued" ? (
+                      <Badge variant="ok">Download hinzugefügt</Badge>
+                    ) : match.state === "dismissed" ? (
+                      <Badge variant="muted">Gelesen</Badge>
+                    ) : (
+                      <Badge variant="info">Neu</Badge>
+                    )}
+                  </div>
+                  <h3 className="break-words font-medium leading-snug">{match.title}</h3>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {!match.downloadId && (
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void action({ action: "download", id: match.id })}
+                      >
+                        Herunterladen
+                      </Button>
+                    )}
+                    {match.state === "new" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void action({ action: "dismiss", id: match.id })}
+                      >
+                        Als gelesen markieren
+                      </Button>
+                    )}
+                    {/^https?:\/\//i.test(match.websiteUrl) && (
+                      <Button asChild variant="ghost" size="sm">
+                        <a href={match.websiteUrl} target="_blank" rel="noreferrer">
+                          Sendungsseite
+                          <ExternalLink />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </article>
             ))}
