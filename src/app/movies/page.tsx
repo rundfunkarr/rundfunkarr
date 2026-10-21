@@ -264,7 +264,7 @@ export default function MoviesPage() {
         />
       )}
 
-      {!searched && searchResults.length === 0 && (
+      {!isSearching && !error && !searched && searchResults.length === 0 && (
         <EmptyState
           icon={Film}
           title="Filmtitel eingeben"

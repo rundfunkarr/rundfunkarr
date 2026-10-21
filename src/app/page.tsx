@@ -34,12 +34,12 @@ interface HistorySlot {
 }
 
 interface Overview {
-  // null when /api/system could not be read, so a failure never reads as "0".
+  // null when the source API could not be read, so a failure never reads as "0".
   completed: number | null;
   failed: number | null;
-  subscriptions: number;
-  paused: number;
-  newMatches: number;
+  subscriptions: number | null;
+  paused: number | null;
+  newMatches: number | null;
   source: "local" | "building" | "web" | null;
   entries: number;
 }
@@ -84,16 +84,17 @@ export default function Dashboard() {
         fetch("/api/filmliste"),
       ]);
       const system = systemRes.ok ? await systemRes.json() : null;
-      const subscriptions: { paused: boolean; _count?: { matches: number } }[] = subscriptionsRes.ok
-        ? ((await subscriptionsRes.json()).subscriptions ?? [])
-        : [];
+      const subscriptions: { paused: boolean; _count?: { matches: number } }[] | null =
+        subscriptionsRes.ok ? ((await subscriptionsRes.json()).subscriptions ?? []) : null;
       const filmliste = filmlisteRes.ok ? await filmlisteRes.json() : null;
       setOverview({
         completed: system?.downloads?.completed ?? null,
         failed: system?.downloads?.failed ?? null,
-        subscriptions: subscriptions.length,
-        paused: subscriptions.filter((item) => item.paused).length,
-        newMatches: subscriptions.reduce((sum, item) => sum + (item._count?.matches ?? 0), 0),
+        subscriptions: subscriptions?.length ?? null,
+        paused: subscriptions ? subscriptions.filter((item) => item.paused).length : null,
+        newMatches: subscriptions
+          ? subscriptions.reduce((sum, item) => sum + (item._count?.matches ?? 0), 0)
+          : null,
         source: filmliste
           ? filmliste.enabled
             ? filmliste.usable
@@ -207,15 +208,17 @@ export default function Dashboard() {
         />
         <StatTile
           label="Suchabos"
-          value={overview ? overview.subscriptions : "–"}
+          value={overview?.subscriptions ?? "–"}
           hint={
             !overview
               ? "Wird geladen…"
-              : overview.newMatches > 0
-                ? `${overview.newMatches} neue ${overview.newMatches === 1 ? "Meldung" : "Meldungen"}`
-                : overview.paused > 0
-                  ? `${overview.paused} pausiert`
-                  : "Keine neuen Meldungen"
+              : overview.newMatches === null || overview.paused === null
+                ? "Nicht verfügbar"
+                : overview.newMatches > 0
+                  ? `${overview.newMatches} neue ${overview.newMatches === 1 ? "Meldung" : "Meldungen"}`
+                  : overview.paused > 0
+                    ? `${overview.paused} pausiert`
+                    : "Keine neuen Meldungen"
           }
           icon={Bell}
         />
