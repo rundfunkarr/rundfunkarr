@@ -81,6 +81,14 @@ function stringSimilarity(a: string, b: string): number {
   return 1 - distance / maxLength;
 }
 
+/**
+ * Whether one normalized title contains the other. Empty strings never match,
+ * because every string includes "".
+ */
+function containsTitle(a: string, b: string): boolean {
+  return a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+}
+
 export interface MovieMatchResult {
   item: ApiResultItem;
   score: number; // 0-100, higher is better
@@ -154,18 +162,19 @@ export async function matchMovieItems(
         titleMatch = "fuzzy";
         titleScore = bestSimilarity * 100;
       } else if (
-        normalizedTopic.includes(normalizedGermanTitle) ||
-        normalizedGermanTitle.includes(normalizedTopic) ||
-        normalizedTitle.includes(normalizedGermanTitle) ||
-        normalizedGermanTitle.includes(normalizedTitle)
+        containsTitle(normalizedTopic, normalizedGermanTitle) ||
+        containsTitle(normalizedTitle, normalizedGermanTitle)
       ) {
         titleMatch = "partial";
         titleScore = 60;
       }
     }
 
-    // Try matching against original title if no German match
-    if (!titleMatch && normalizedOriginalTitle !== normalizedGermanTitle) {
+    // Try the original title if the German title gave no or only a partial match
+    if (
+      (!titleMatch || titleMatch === "partial") &&
+      normalizedOriginalTitle !== normalizedGermanTitle
+    ) {
       if (
         normalizedTopic === normalizedOriginalTitle ||
         normalizedTitle === normalizedOriginalTitle ||
@@ -186,10 +195,9 @@ export async function matchMovieItems(
           titleMatch = "fuzzy";
           titleScore = bestSimilarity * 90;
         } else if (
-          normalizedTopic.includes(normalizedOriginalTitle) ||
-          normalizedOriginalTitle.includes(normalizedTopic) ||
-          normalizedTitle.includes(normalizedOriginalTitle) ||
-          normalizedOriginalTitle.includes(normalizedTitle)
+          !titleMatch &&
+          (containsTitle(normalizedTopic, normalizedOriginalTitle) ||
+            containsTitle(normalizedTitle, normalizedOriginalTitle))
         ) {
           titleMatch = "partial";
           titleScore = 55;

@@ -103,4 +103,34 @@ describe("matchMovieItems – partial title matches", () => {
     expect(matches).toHaveLength(1);
     expect(matches[0].titleMatch).toBe("exact");
   });
+
+  it("does not treat empty topics or titles as contained in the movie title", async () => {
+    const matches = await matchMovieItems(
+      [
+        { ...broadcast("Pressekonferenz", 150, "no-topic"), topic: "" },
+        { ...broadcast("", 150, "no-title"), topic: "Tagesgespräch" },
+      ],
+      metropolis,
+      300
+    );
+
+    expect(matches).toEqual([]);
+  });
+
+  it("prefers an exact original-title match over a partial German one", async () => {
+    const taken: TmdbMovieData = {
+      tmdbId: 8681,
+      imdbId: "tt0936501",
+      title: "Taken",
+      germanTitle: "96 Hours",
+      runtime: 94,
+      releaseDate: "2008-02-18",
+    };
+    const item = { ...broadcast("Taken", 60, "taken"), topic: "Filme im Ersten: 96 Hours" };
+
+    const matches = await matchMovieItems([item], taken, 300);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].titleMatch).toBe("exact");
+  });
 });
