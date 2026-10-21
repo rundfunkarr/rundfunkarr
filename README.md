@@ -23,7 +23,7 @@ Rundfunk-Indexer für Sonarr/Radarr - Automatischer Download von ARD, ZDF und an
 </p>
 
 Die Oberfläche folgt der Systemeinstellung für helle oder dunkle Darstellung und lässt sich
-unten in der Seitenleiste umschalten.
+unten in der Seitenleiste oder unter Einstellungen → Darstellung umschalten.
 
 ## Features
 
@@ -364,6 +364,7 @@ RundfunkArr bietet eine vollständige Web-Oberfläche mit:
   - API Keys für TVDB/TMDB/SRG-SSR
   - Matching-Strategie und Schwellwerte
   - Cache-TTL Einstellungen
+  - Darstellung: Farbschema, Vorschaubilder und Serienposter
 - **Diagnose & Protokoll** - Systemdiagnose, Verbindungstest und Serverprotokoll
 - **Setup-Wizard** - Geführte Erstkonfiguration
 
@@ -374,8 +375,9 @@ Bilder, deshalb ruft RundfunkArr beim ersten Anzeigen die Sendungsseite des Send
 liest dort die Adresse des Vorschaubilds (`og:image`) aus und merkt sie sich in der Datenbank
 (30 Tage, bei Fehlschlag einen Tag). Das Bild selbst lädt der Browser direkt vom Sender.
 Abgerufen werden nur Seiten der öffentlich-rechtlichen Sender; SRF-Bilder kommen aus der
-SRG-SSR-API, Serienposter aus TVDB. Unter Einstellungen → Allgemein → **Suche** lässt sich
-das Nachladen abschalten; dann bleiben die Trefferlisten reine Textlisten.
+SRG-SSR-API, Serienposter aus TVDB. Unter Einstellungen → **Darstellung** lassen sich
+Vorschaubilder und Serienposter getrennt abschalten; ohne Vorschaubilder ruft RundfunkArr keine
+Sendungsseiten ab. Dort lässt sich auch das Farbschema (System, Hell, Dunkel) wählen.
 
 ### Metadaten-Quellen
 

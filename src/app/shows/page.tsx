@@ -142,6 +142,7 @@ export default function ShowsPage() {
                         <Thumbnail
                           src={show.image}
                           ratio="poster"
+                          setting="posters"
                           className="w-8"
                           always
                           fallback={<Tv className="size-3.5" aria-hidden />}

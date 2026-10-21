@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Page, PageHeader } from "@/components/shared/page";
 import { Field, ToggleRow } from "@/components/shared/field";
 import {
@@ -31,6 +32,7 @@ import {
   Sliders,
   Database,
   Info,
+  Palette,
   Check,
   X,
   Loader2,
@@ -256,6 +258,10 @@ export default function SettingsPage() {
             <Settings />
             Allgemein
           </TabsTrigger>
+          <TabsTrigger value="display">
+            <Palette />
+            Darstellung
+          </TabsTrigger>
           <TabsTrigger value="api">
             <Key />
             API-Keys
@@ -372,28 +378,6 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Suche</CardTitle>
-              <CardDescription>
-                Darstellung der Treffer in Suche, Filmen und Suchabos
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ToggleRow
-                label="Vorschaubilder laden"
-                hint="RundfunkArr ruft die Sendungsseite des Senders einmal ab, merkt sich die Bildadresse und zeigt das Bild direkt aus dem Netz des Senders. SRF liefert Bilder über seine API. Ohne diese Option bleiben die Trefferlisten reine Textlisten."
-                control={
-                  <Switch
-                    checked={getFieldValue("search.thumbnails") !== "false"}
-                    onChange={(e) => setFieldValue("search.thumbnails", String(e.target.checked))}
-                  />
-                }
-              />
-              <SaveButton saving={isSaving} onClick={() => handleSave(["search.thumbnails"])} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
               <CardTitle>Streaming</CardTitle>
               <CardDescription>HLS-Streams, ORF-Suche, yt-dlp und Proxy</CardDescription>
             </CardHeader>
@@ -465,6 +449,55 @@ export default function SettingsPage() {
           <PostProcessSettings />
 
           <FilmlisteIndexSettings />
+        </TabsContent>
+
+        {/* Display Tab */}
+        <TabsContent value="display" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Farbschema</CardTitle>
+              <CardDescription>
+                Gilt nur für diesen Browser und wird sofort übernommen. „System“ folgt der hellen
+                oder dunklen Einstellung des Geräts.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ThemeToggle showLabels />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Bilder</CardTitle>
+              <CardDescription>Gilt für alle Browser, die diese Instanz verwenden.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ToggleRow
+                label="Vorschaubilder in Suche, Filmen und Suchabos"
+                hint="RundfunkArr ruft die Sendungsseite des Senders einmal ab, merkt sich die Bildadresse und zeigt das Bild direkt aus dem Netz des Senders. SRF liefert Bilder über seine API. Ausgeschaltet ruft RundfunkArr keine Sendungsseiten ab, und die Trefferlisten bleiben reine Textlisten."
+                control={
+                  <Switch
+                    checked={getFieldValue("search.thumbnails") !== "false"}
+                    onChange={(e) => setFieldValue("search.thumbnails", String(e.target.checked))}
+                  />
+                }
+              />
+              <ToggleRow
+                label="Serienposter in Serien und Rulesets"
+                hint="Poster aus TVDB, die beim Abgleich mit Sonarr ohnehin mitgeladen werden. Der Browser lädt sie vom Bildserver von TVDB."
+                control={
+                  <Switch
+                    checked={getFieldValue("ui.posters") !== "false"}
+                    onChange={(e) => setFieldValue("ui.posters", String(e.target.checked))}
+                  />
+                }
+              />
+              <SaveButton
+                saving={isSaving}
+                onClick={() => handleSave(["search.thumbnails", "ui.posters"])}
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* API Keys Tab */}

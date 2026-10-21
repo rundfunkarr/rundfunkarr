@@ -211,7 +211,13 @@ export default function RulesetsPage() {
                     <TableCell className="font-medium">{rs.topic}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <Thumbnail src={rs.image} ratio="poster" className="w-7" always />
+                        <Thumbnail
+                          src={rs.image}
+                          ratio="poster"
+                          setting="posters"
+                          className="w-7"
+                          always
+                        />
                         <div className="min-w-0">
                           <span className="block">{rs.showName}</span>
                           {rs.germanName && (

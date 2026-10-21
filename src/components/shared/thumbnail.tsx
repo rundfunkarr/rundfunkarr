@@ -22,8 +22,8 @@ function lookupPreview(websiteUrl: string): Promise<string | null> {
 /**
  * Preview image for a programme or series. Uses `src` when the source already
  * provides an image; otherwise asks the server for the programme page's preview
- * once the element scrolls into view. Renders nothing when previews are
- * disabled and no image is known, unless `always` asks for a placeholder.
+ * once the element scrolls into view. Renders nothing when the matching display
+ * setting is off, or when no image is known unless `always` asks for a placeholder.
  */
 export function Thumbnail({
   src,
@@ -33,6 +33,7 @@ export function Thumbnail({
   className,
   fallback,
   always = false,
+  setting = "thumbnails",
 }: {
   src?: string | null;
   websiteUrl?: string;
@@ -41,9 +42,12 @@ export function Thumbnail({
   className?: string;
   fallback?: ReactNode;
   always?: boolean;
+  /** Display setting that switches this image off: preview stills or series posters. */
+  setting?: "thumbnails" | "posters";
 }) {
   const { settings } = useSettings();
-  const enabled = settings?.["search.thumbnails"] !== "false";
+  const enabled =
+    settings?.[setting === "posters" ? "ui.posters" : "search.thumbnails"] !== "false";
   const container = useRef<HTMLDivElement>(null);
   const [lookedUp, setLookedUp] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -73,6 +77,7 @@ export function Thumbnail({
   }, [shouldLookUp, websiteUrl]);
 
   const resolved = src || lookedUp;
+  if (!enabled) return null;
   if (!resolved && !shouldLookUp && !always) return null;
   const showImage = !!resolved && !failed;
 

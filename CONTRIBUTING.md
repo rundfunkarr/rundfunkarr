@@ -199,7 +199,8 @@ Die Web-Oberfläche folgt einem kleinen Baukasten, damit neue Seiten gleich auss
 - **Bewegung**: nur der Signalpunkt (`LiveDot`) für laufende Downloads; alles andere bleibt
   ruhig und respektiert `prefers-reduced-motion`.
 - Helle und dunkle Darstellung müssen beide funktionieren; die Umschaltung sitzt in der
-  Seitenleiste.
+  Seitenleiste und unter Einstellungen → Darstellung. Neue reine Anzeigeoptionen gehören in
+  diesen Tab, mit Schlüsseln unter `ui.` und Standardwert in `src/app/api/settings/route.ts`.
 
 ## Issues
 

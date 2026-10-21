@@ -29,8 +29,9 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "matching.minDuration": "300",
   "matching.normalizeSeriesNamesForSonarr": "false",
 
-  // Preview images from programme pages in search results
+  // Display: preview images from programme pages and TVDB series posters
   "search.thumbnails": "true",
+  "ui.posters": "true",
 
   // MediathekView search source: "mediathekviewweb" or "local"
   "mediathek.source": "mediathekviewweb",
