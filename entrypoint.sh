@@ -85,20 +85,24 @@ else
     fail "Database initialization failed. Check that /app/prisma/data is writable by UID $PUID/GID $PGID."
 fi
 
-# Preserve existing downloads when adding queue controls and subtitle metadata.
-for column in priority attempts nextRetryAt mediaMetadata warning subtitleArtifact; do
-    if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT name FROM pragma_table_info('Download');" | grep -qx "$column"; then
-        case "$column" in
-            nextRetryAt) definition="DATETIME" ;;
-            priority|attempts) definition="INTEGER NOT NULL DEFAULT 0" ;;
-            *) definition="TEXT" ;;
-        esac
-        su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE Download ADD COLUMN $column $definition;"
+# Preserve existing rows when later versions add columns to existing tables.
+add_column() {
+    if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT name FROM pragma_table_info('$1');" | grep -qx "$2"; then
+        su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE $1 ADD COLUMN $2 $3;"
     fi
+}
+for column in priority attempts nextRetryAt mediaMetadata warning subtitleArtifact; do
+    case "$column" in
+        nextRetryAt) definition="DATETIME" ;;
+        priority|attempts) definition="INTEGER NOT NULL DEFAULT 0" ;;
+        *) definition="TEXT" ;;
+    esac
+    add_column Download "$column" "$definition"
 done
+add_column TvdbSeries image TEXT
 
 MISSING_TABLES=""
-for table in TvdbSeries TvdbEpisode Download Config GeneratedRuleset TopicCategory SearchSubscription SubscriptionMatch AuthConfig AuthSession; do
+for table in TvdbSeries TvdbEpisode Download Config GeneratedRuleset TopicCategory SearchSubscription SubscriptionMatch AuthConfig AuthSession WebsitePreview; do
     if ! su-exec "$USER_NAME" sqlite3 "$DB_PATH" "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$table';" | grep -q 1; then
         MISSING_TABLES="$MISSING_TABLES $table"
     fi

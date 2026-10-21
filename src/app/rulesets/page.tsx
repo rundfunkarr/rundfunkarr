@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Page, PageHeader } from "@/components/shared/page";
 import { Notice } from "@/components/shared/notice";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Thumbnail } from "@/components/shared/thumbnail";
 import { RefreshCw, Search, Settings2, Trash2, ExternalLink, Plus } from "lucide-react";
 
 interface Ruleset {
@@ -43,6 +44,7 @@ interface Ruleset {
   titleRegexRules: string;
   createdAt: string;
   updatedAt: string | null;
+  image: string | null;
   source: "local" | "community";
 }
 
@@ -208,10 +210,17 @@ export default function RulesetsPage() {
                   <TableRow key={rs.id}>
                     <TableCell className="font-medium">{rs.topic}</TableCell>
                     <TableCell>
-                      <span className="block">{rs.showName}</span>
-                      {rs.germanName && (
-                        <span className="block text-xs text-muted-foreground">{rs.germanName}</span>
-                      )}
+                      <div className="flex items-center gap-3">
+                        <Thumbnail src={rs.image} ratio="poster" className="w-7" always />
+                        <div className="min-w-0">
+                          <span className="block">{rs.showName}</span>
+                          {rs.germanName && (
+                            <span className="block text-xs text-muted-foreground">
+                              {rs.germanName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <a

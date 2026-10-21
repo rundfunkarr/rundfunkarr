@@ -191,6 +191,9 @@ Die Web-Oberfläche folgt einem kleinen Baukasten, damit neue Seiten gleich auss
   `Select` und `Textarea` aus `src/components/ui`. Keine handgeschriebenen `select`-Klassen.
 - **Zustände**: `Notice` für Fehler und Hinweise, `EmptyState` für leere Listen,
   `getStatusBadge` für Download-Status, `ChannelBadge` für Sender.
+- **Bilder**: `Thumbnail` zeigt Standbilder (16:9) und Poster (2:3). Es nutzt eine vom
+  Server gelieferte Bildadresse oder fragt `/api/thumbnail` nach dem Vorschaubild der
+  Sendungsseite, sobald das Element sichtbar wird; ohne Bild bleibt ein ruhiger Platzhalter.
 - **Schrift**: Dateinamen, Schlüssel, Adressen, Protokolle und Zahlenkolonnen in `font-mono`
   bzw. `tabular`; Beschriftungen in Tabellen und Kacheln über die Klasse `eyebrow`.
 - **Bewegung**: nur der Signalpunkt (`LiveDot`) für laufende Downloads; alles andere bleibt

@@ -28,6 +28,8 @@ export interface SearchResult {
   url_website: string;
   url_subtitle?: string;
   audioLanguage?: string;
+  /** Preview image from the source; otherwise the UI asks /api/thumbnail for the page image. */
+  url_image?: string;
   category?: CategoryType;
   providerId?: string;
 }
@@ -52,6 +54,7 @@ function providerItemToSearchResult(
     url_video_hd: item.videoUrls.high || item.videoUrls.standard,
     url_video_low: item.videoUrls.low || "",
     url_website: item.websiteUrl,
+    url_image: item.imageUrl,
     url_subtitle: item.subtitleUrl,
     audioLanguage: item.audioLanguage,
     category,
@@ -195,6 +198,7 @@ async function handleDefaultSearch(
         url_website: string;
         url_subtitle?: string;
         audioLanguage?: string;
+        url_image?: string;
       }) => ({
         id: `${item.channel}-${item.topic}-${item.title}-${item.filmlisteTimestamp}`,
         channel: item.channel,
@@ -208,6 +212,7 @@ async function handleDefaultSearch(
         url_video_hd: item.url_video_hd || item.url_video,
         url_video_low: item.url_video_low || "",
         url_website: item.url_website,
+        url_image: item.url_image,
         url_subtitle: item.url_subtitle,
         audioLanguage: item.audioLanguage,
         category: categoryMap.get(item.topic),

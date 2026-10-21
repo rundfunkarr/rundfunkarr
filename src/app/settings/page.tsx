@@ -372,6 +372,28 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>Suche</CardTitle>
+              <CardDescription>
+                Darstellung der Treffer in Suche, Filmen und Suchabos
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ToggleRow
+                label="Vorschaubilder laden"
+                hint="RundfunkArr ruft die Sendungsseite des Senders einmal ab, merkt sich die Bildadresse und zeigt das Bild direkt aus dem Netz des Senders. SRF liefert Bilder über seine API. Ohne diese Option bleiben die Trefferlisten reine Textlisten."
+                control={
+                  <Switch
+                    checked={getFieldValue("search.thumbnails") !== "false"}
+                    onChange={(e) => setFieldValue("search.thumbnails", String(e.target.checked))}
+                  />
+                }
+              />
+              <SaveButton saving={isSaving} onClick={() => handleSave(["search.thumbnails"])} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Streaming</CardTitle>
               <CardDescription>HLS-Streams, ORF-Suche, yt-dlp und Proxy</CardDescription>
             </CardHeader>

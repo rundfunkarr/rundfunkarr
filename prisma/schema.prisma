@@ -15,6 +15,7 @@ model TvdbSeries {
   overview   String?
   aliases    String?       // JSON array stored as string
   firstAired DateTime?
+  image      String?       // Poster URL from TVDB
   cachedAt   DateTime      @default(now())
   expiresAt  DateTime
   episodes   TvdbEpisode[]
@@ -147,4 +148,14 @@ model SubscriptionMatch {
   subscription SearchSubscription @relation(fields:[subscriptionId], references:[id], onDelete:Cascade)
   @@unique([subscriptionId,sourceKey])
   @@index([subscriptionId,state,foundAt])
+}
+
+// Cached preview image of a broadcaster's programme page (og:image).
+model WebsitePreview {
+  url       String   @id
+  imageUrl  String?
+  fetchedAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }

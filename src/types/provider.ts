@@ -33,6 +33,8 @@ export interface ProviderContentItem {
   size: number;
   /** URL to the website page for this content */
   websiteUrl: string;
+  /** Preview image supplied by the provider, if any */
+  imageUrl?: string;
   /** Available video URLs by quality */
   videoUrls: ProviderVideoUrls;
   subtitleUrl?: string;

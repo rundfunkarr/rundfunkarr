@@ -32,6 +32,7 @@ unten in der Seitenleiste umschalten.
 - **Optionale MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
 - **Flexible Metadaten-Quellen** - Lokale Datenbank, TVDB oder TMDB
 - **Community-Rulesets** - Lokale Rulesets via Pull Request erweiterbar
+- **Vorschaubilder** - Standbilder der Sendungen in Suche, Filmen und Suchabos, Poster aus TVDB bei Serien
 - **SQLite-Datenbank** - Persistente Speicherung von Cache und Download-Historie
 
 ## SRF und ORF über HLS
@@ -365,6 +366,16 @@ RundfunkArr bietet eine vollständige Web-Oberfläche mit:
   - Cache-TTL Einstellungen
 - **Diagnose & Protokoll** - Systemdiagnose, Verbindungstest und Serverprotokoll
 - **Setup-Wizard** - Geführte Erstkonfiguration
+
+#### Vorschaubilder
+
+Suche, Filme und Suchabos zeigen zu jedem Treffer ein Standbild. MediathekView liefert keine
+Bilder, deshalb ruft RundfunkArr beim ersten Anzeigen die Sendungsseite des Senders einmal ab,
+liest dort die Adresse des Vorschaubilds (`og:image`) aus und merkt sie sich in der Datenbank
+(30 Tage, bei Fehlschlag einen Tag). Das Bild selbst lädt der Browser direkt vom Sender.
+Abgerufen werden nur Seiten der öffentlich-rechtlichen Sender; SRF-Bilder kommen aus der
+SRG-SSR-API, Serienposter aus TVDB. Unter Einstellungen → Allgemein → **Suche** lässt sich
+das Nachladen abschalten; dann bleiben die Trefferlisten reine Textlisten.
 
 ### Metadaten-Quellen
 

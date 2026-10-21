@@ -300,6 +300,7 @@ async function fetchAndCacheSeriesData(tvdbId: number): Promise<TvdbData | null>
           germanName: germanName,
           slug: series.slug || null,
           firstAired: series.firstAired ? new Date(series.firstAired) : null,
+          image: typeof series.image === "string" && series.image ? series.image : null,
           aliases: JSON.stringify(germanAliases),
           expiresAt: cacheExpiry,
         },

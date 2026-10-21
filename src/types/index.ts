@@ -31,6 +31,8 @@ export interface ApiResultItem {
   audioLanguage?: string;
   url_video_low: string;
   url_video_hd: string;
+  /** Preview image supplied by the source (SRF); other sources use the programme page. */
+  url_image?: string;
 }
 
 // TVDB Types

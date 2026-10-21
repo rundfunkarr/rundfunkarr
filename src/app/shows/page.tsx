@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Page, PageHeader } from "@/components/shared/page";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Thumbnail } from "@/components/shared/thumbnail";
 import { RefreshCw, Search, Tv, ExternalLink } from "lucide-react";
 
 interface Show {
@@ -23,6 +24,7 @@ interface Show {
   slug: string | null;
   overview: string | null;
   firstAired: string | null;
+  image: string | null;
   cachedAt: string;
   expiresAt: string;
   _count: {
@@ -135,7 +137,18 @@ export default function ShowsPage() {
                     <TableCell className="tabular font-mono text-xs text-muted-foreground">
                       {show.id}
                     </TableCell>
-                    <TableCell className="font-medium">{show.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-3">
+                        <Thumbnail
+                          src={show.image}
+                          ratio="poster"
+                          className="w-8"
+                          always
+                          fallback={<Tv className="size-3.5" aria-hidden />}
+                        />
+                        <span>{show.name}</span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {show.germanName || "–"}
                     </TableCell>

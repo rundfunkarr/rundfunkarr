@@ -55,6 +55,7 @@ export async function queryContent(
         duration: item.duration,
         size: item.size,
         url_website: item.websiteUrl,
+        url_image: item.imageUrl,
         url_subtitle: item.subtitleUrl,
         audioLanguage: item.audioLanguage,
         url_video: item.videoUrls.standard,

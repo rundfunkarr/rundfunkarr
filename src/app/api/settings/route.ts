@@ -29,6 +29,9 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "matching.minDuration": "300",
   "matching.normalizeSeriesNamesForSonarr": "false",
 
+  // Preview images from programme pages in search results
+  "search.thumbnails": "true",
+
   // MediathekView search source: "mediathekviewweb" or "local"
   "mediathek.source": "mediathekviewweb",
   "mediathek.localIndex.updateHours": "2",
