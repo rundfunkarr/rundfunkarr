@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { downloadHlsStream, downloadVideo } from "./ytdlp";
+import { downloadHlsStream, downloadVideo, ORF_GEO_BLOCK_ERROR } from "./ytdlp";
 
 const { spawn, mergeVideoAudio, unlink, readdir, getSetting } = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -383,4 +383,51 @@ it("beendet yt-dlp bei einem Abbruch und startet danach keine Audiospur", async 
   child.emit("close", null);
   expect((await done).success).toBe(false);
   expect(spawn).toHaveBeenCalledTimes(1);
+});
+
+const ORF_URL =
+  "https://apasfiis.sf.apa.at/ipad/cms-austria/2026/10/16/example_QXA.mp4/chunklist_b6100000.m3u8";
+const ORF_GEO_REDIRECT =
+  "[redirect] Following redirect to https://apasfiis.sf.apa.at/gp_nas/_definst_/nas/gp/online/insert_geoprotection_hr.smil/playlist.m3u8\n";
+
+it.each([undefined, 1080] as const)(
+  "stops at the ORF geo restriction instead of saving the notice clip (height: %s)",
+  async (height) => {
+    const done = downloadHlsStream(ORF_URL, "/tmp/result.mkv", undefined, "mkv", height);
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+    // The redirect target may arrive split across two stdout chunks.
+    const split = ORF_GEO_REDIRECT.indexOf("geoprotection");
+    child.stdout.emit("data", Buffer.from(ORF_GEO_REDIRECT.slice(0, split)));
+    expect(child.kill).not.toHaveBeenCalled();
+    child.stdout.emit("data", Buffer.from(ORF_GEO_REDIRECT.slice(split)));
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+
+    // Without a height filter yt-dlp can finish the 10 s notice clip before it
+    // is stopped; with one it fails with "Requested format is not available".
+    if (height) {
+      child.stderr.emit(
+        "data",
+        Buffer.from("ERROR: [generic] playlist: Requested format is not available.\n")
+      );
+    }
+    child.emit("close", height ? 1 : 0);
+
+    expect(await done).toEqual({ success: false, error: ORF_GEO_BLOCK_ERROR });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(mergeVideoAudio).not.toHaveBeenCalled();
+  }
+);
+
+it("follows ordinary ORF redirects without reporting a geo restriction", async () => {
+  const done = downloadVideo(ORF_URL, { outputPath: "/tmp/result.mkv" });
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+  child.stdout.emit(
+    "data",
+    Buffer.from(
+      "[redirect] Following redirect to https://apasfiis.sf.apa.at/cms-austria_nas/_definst_/nas/cms-austria/online/2026/10/16/example.smil/chunklist_b6100000.m3u8\n"
+    )
+  );
+  child.emit("close", 0);
+  expect(await done).toEqual({ success: true, outputPath: "/tmp/result.mkv" });
+  expect(child.kill).not.toHaveBeenCalled();
 });

@@ -17,6 +17,13 @@ const YTDLP_PATH = path.join(YTDLP_DIR, isWindows ? "yt-dlp.exe" : "yt-dlp");
 // Activity resets this deadline, so long downloads can continue. Allow enough
 // silence for retries and FFmpeg remuxing without blocking the queue forever.
 const DOWNLOAD_STALL_TIMEOUT_MS = 10 * 60_000;
+// Outside Austria, ORF's APA CDN redirects geo-restricted streams to a short
+// clip saying the video may only be played in Austria. yt-dlp logs the target
+// on stdout: "[redirect] Following redirect to …/insert_geoprotection_hr.smil/…".
+const ORF_GEO_BLOCK_PATTERN = /\/insert_geoprotection[^/\s]*\.smil\//i;
+export const ORF_GEO_BLOCK_ERROR =
+  "ORF-Geosperre: Dieses Video ist nur in Österreich abrufbar. " +
+  "ORF hat statt des Videos nur einen Sperrhinweis geliefert.";
 
 function releaseAsset(): keyof typeof release.sha256 {
   if (process.platform === "win32" && process.arch === "x64") return "yt-dlp.exe";
@@ -345,10 +352,12 @@ export async function downloadVideo(
     proc.once("error", stopCancellation);
 
     let stderr = "";
+    let unfinishedStdoutLine = "";
     let progressUpdates = Promise.resolve();
     let progressError: unknown;
     let ended = false;
     let timedOut = false;
+    let geoBlocked = false;
     let stallTimer: ReturnType<typeof setTimeout>;
     const resetStallTimer = () => {
       clearTimeout(stallTimer);
@@ -361,9 +370,20 @@ export async function downloadVideo(
     resetStallTimer();
 
     proc.stdout.on("data", (data) => {
-      if (ended || timedOut || progressError || options.signal?.aborted) return;
+      if (ended || timedOut || geoBlocked || progressError || options.signal?.aborted) return;
       resetStallTimer();
       const line = data.toString();
+
+      // Stop before the restriction clip is saved as the requested video.
+      // Include the previous unfinished line in case the URL spans chunks.
+      const output = unfinishedStdoutLine + line;
+      unfinishedStdoutLine = output.slice(output.lastIndexOf("\n") + 1).slice(-4096);
+      if (ORF_GEO_BLOCK_PATTERN.test(output)) {
+        geoBlocked = true;
+        clearTimeout(stallTimer);
+        terminateProcess(proc);
+        return;
+      }
 
       // Parse progress from yt-dlp output
       // Format: [download]  45.2% of ~500.00MiB at 10.50MiB/s ETA 00:25
@@ -386,7 +406,7 @@ export async function downloadVideo(
     });
 
     proc.stderr.on("data", (data) => {
-      if (ended || timedOut || progressError || options.signal?.aborted) return;
+      if (ended || timedOut || geoBlocked || progressError || options.signal?.aborted) return;
       resetStallTimer();
       stderr += data.toString();
     });
@@ -398,6 +418,11 @@ export async function downloadVideo(
       await progressUpdates;
       if (timedOut) {
         resolve({ success: false, error: "yt-dlp timed out after 10 minutes without output" });
+        return;
+      }
+      if (geoBlocked) {
+        console.error("[yt-dlp] ORF geo restriction detected, download stopped");
+        resolve({ success: false, error: ORF_GEO_BLOCK_ERROR });
         return;
       }
       if (progressError) {
