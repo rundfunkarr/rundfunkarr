@@ -688,6 +688,30 @@ describe("completed download folders", () => {
   );
 });
 
+it("fails an ORF geo restriction at once instead of retrying it", async () => {
+  const { ORF_GEO_BLOCK_ERROR } = await vi.importActual<typeof import("./ytdlp")>("./ytdlp");
+  configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
+    Promise.resolve(where.key === "download.path" ? { value: testRoot } : null)
+  );
+  downloadFindUnique.mockResolvedValue({
+    id: "orf",
+    title: "Universum History",
+    category: "tv",
+    status: "queued",
+    attempts: 1,
+    url: "https://apasfiis.sf.apa.at/ipad/cms-austria/2026/10/16/example_QXA.mp4/chunklist_b6100000.m3u8#rundfunkarr-height=1080",
+  });
+  downloadUpdate.mockResolvedValue({});
+  downloadHlsStream.mockResolvedValue({ success: false, error: ORF_GEO_BLOCK_ERROR });
+
+  await processDownload("orf");
+
+  expect(downloadUpdate).toHaveBeenLastCalledWith({
+    where: { id: "orf" },
+    data: expect.objectContaining({ status: "failed", error: ORF_GEO_BLOCK_ERROR }),
+  });
+});
+
 it.each(["network error", "stall"])("removes partial files after a %s", async (failure) => {
   configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
     Promise.resolve(where.key === "download.path" ? { value: testRoot } : null)
