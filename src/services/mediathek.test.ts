@@ -32,6 +32,7 @@ import {
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { mediathekCache } from "@/lib/cache";
 import { getMinDurationSeconds, getSetting } from "@/lib/settings";
+import { searchMovieByTitle } from "./tmdb";
 
 const mockedFetch = vi.mocked(fetchWithRetry);
 const mockedGetMinDuration = vi.mocked(getMinDurationSeconds);
@@ -116,6 +117,65 @@ describe("fetchMovieSearchByQuery – configured minimum duration", () => {
       expect.stringContaining("movie_query_Documentary__100_0_all_2700"),
       expect.any(Object)
     );
+  });
+});
+
+describe("fetchMovieSearchByQuery – TMDB IDs", () => {
+  const theGeneral: TmdbMovieData = {
+    tmdbId: 961,
+    imdbId: "tt0017925",
+    title: "The General",
+    germanTitle: "Der General",
+    runtime: 78,
+    releaseDate: "1926-12-31",
+  };
+
+  // Results are deduplicated by video URL, so every broadcast needs its own.
+  function broadcast(slug: string, overrides: Partial<ApiResultItem>): ApiResultItem {
+    return makeItem({
+      url_website: `https://example.com/${slug}`,
+      url_video: `https://example.com/${slug}_720.mp4`,
+      url_video_low: `https://example.com/${slug}_480.mp4`,
+      url_video_hd: `https://example.com/${slug}_1080.mp4`,
+      ...overrides,
+    });
+  }
+
+  it("attaches the TMDB/IMDB IDs only to results that match the movie", async () => {
+    vi.mocked(searchMovieByTitle).mockResolvedValueOnce(theGeneral);
+    mockApi([
+      broadcast("general", { topic: "Der General", title: "Der General", duration: 4680 }),
+      broadcast("mdr", { topic: "MDR um 4", title: "MDR um 4 vom 20.10.2026", duration: 3600 }),
+      broadcast("phoenix", { topic: "phoenix vor ort", title: "Pressekonferenz", duration: 3600 }),
+    ]);
+
+    const xml = await fetchMovieSearchByQuery("The General 1926", 100, 0);
+
+    expect(searchMovieByTitle).toHaveBeenCalledWith("The General", 1926);
+    const items = xml.split("<item>").slice(1);
+    const matched = items.filter((i) => i.includes("<title>Der.General."));
+    const unrelated = items.filter((i) => !i.includes("<title>Der.General."));
+    expect(matched).toHaveLength(3);
+    expect(unrelated).toHaveLength(6);
+    for (const item of matched) {
+      expect(item).toContain('name="tmdbid" value="961"');
+      expect(item).toContain('name="imdbid" value="tt0017925"');
+    }
+    for (const item of unrelated) {
+      expect(item).not.toContain('name="tmdbid"');
+      expect(item).not.toContain('name="imdbid"');
+    }
+  });
+
+  it("omits the IDs when no result matches the movie", async () => {
+    vi.mocked(searchMovieByTitle).mockResolvedValueOnce(theGeneral);
+    mockApi([makeItem({ topic: "MDR um 4", title: "MDR um 4 vom 20.10.2026" })]);
+
+    const xml = await fetchMovieSearchByQuery("The General 1926", 100, 0);
+
+    expect(xml).toContain("<title>MDR.um.4.");
+    expect(xml).not.toContain('name="tmdbid"');
+    expect(xml).not.toContain('name="imdbid"');
   });
 });
 
