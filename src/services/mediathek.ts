@@ -1,3 +1,4 @@
+import { releaseAudioTag } from "@/lib/media-metadata";
 import { isStreamingUrl } from "@/lib/stream-url";
 import { mediathekCache } from "@/lib/cache";
 import { getMinDurationSeconds, getSetting, isSeriesUmlautStrippingEnabled } from "@/lib/settings";
@@ -18,6 +19,7 @@ import {
   convertItemsToRss,
   serializeRss,
   getEmptyRssResult,
+  releaseGuid,
   QualityPreference,
 } from "./newznab";
 import { matchMovieItems } from "./movie-matcher";
@@ -1183,7 +1185,7 @@ export async function fetchMovieSearchByQuery(
     }
 
     for (const q of qualities) {
-      const releaseTitle = `${baseTitle}.${year}.GERMAN.${q.qualityName}.WEB.h264-MEDiATHEK`;
+      const releaseTitle = `${baseTitle}.${year}.${releaseAudioTag(item.title)}.${q.qualityName}.WEB.h264-MEDiATHEK`;
       const adjustedSize = Math.floor(size * q.sizeMultiplier);
 
       const encodedTitle = Buffer.from(releaseTitle).toString("base64");
@@ -1192,10 +1194,7 @@ export async function fetchMovieSearchByQuery(
 
       newznabItems.push({
         title: releaseTitle,
-        guid: {
-          isPermaLink: true,
-          value: `${item.url_website || q.url}#movie-${q.qualityName}`,
-        },
+        guid: releaseGuid(q.url, `movie-${q.qualityName}`),
         link: q.url,
         comments: item.url_website || "",
         pubDate: new Date(item.filmlisteTimestamp * 1000).toUTCString(),

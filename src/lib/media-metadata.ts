@@ -49,8 +49,11 @@ export function matchesAudioVariant(title: string, preference: string | null): b
   );
 }
 
-export function releaseLanguage(title: string): string {
-  return audioVariant(title) === "original" ? "ORIGINAL" : "GERMAN";
+/** Language part of a release name. AD marks audio description, which otherwise looks identical. */
+export function releaseAudioTag(title: string): string {
+  const variant = audioVariant(title);
+  if (variant === "original") return "ORIGINAL";
+  return variant === "description" ? "GERMAN.AD" : "GERMAN";
 }
 
 export function mediaMetadataComment(item: {
