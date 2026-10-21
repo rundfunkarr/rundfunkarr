@@ -13,7 +13,7 @@ export function Sidebar({ className }: { className?: string }) {
       className={cn(
         "group/nav hidden h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex",
         // Tablet: icon rail that expands on hover. Desktop: always expanded.
-        "md:w-16 md:overflow-hidden md:transition-[width] md:duration-200 md:hover:w-60 lg:w-60",
+        "md:w-16 md:overflow-hidden md:transition-[width] md:duration-200 md:hover:w-60 md:focus-within:w-60 lg:w-60",
         className
       )}
     >

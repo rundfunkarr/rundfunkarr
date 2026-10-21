@@ -51,7 +51,7 @@ export const navGroups: { label: string; items: NavItem[] }[] = [
 
 /** Text that fades in when the tablet sidebar expands on hover. */
 export const collapsibleLabel =
-  "transition-opacity md:opacity-0 md:group-hover/nav:opacity-100 lg:opacity-100";
+  "transition-opacity md:opacity-0 md:group-hover/nav:opacity-100 md:group-focus-within/nav:opacity-100 lg:opacity-100";
 
 export function NavList({
   collapsible = false,

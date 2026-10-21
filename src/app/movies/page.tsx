@@ -53,6 +53,8 @@ export default function MoviesPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searched, setSearched] = useState(false);
+  // The query the shown results belong to; the input may change afterwards.
+  const [lastQuery, setLastQuery] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
@@ -60,6 +62,7 @@ export default function MoviesPage() {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
+    setLastQuery(searchQuery.trim());
     setError("");
     setMessage("");
     try {
@@ -246,10 +249,10 @@ export default function MoviesPage() {
         </Card>
       )}
 
-      {!isSearching && searched && searchResults.length === 0 && (
+      {!isSearching && searched && !error && searchResults.length === 0 && (
         <EmptyState
           icon={Film}
-          title={`Keine Filme für „${searchQuery}“ gefunden`}
+          title={`Keine Filme für „${lastQuery}“ gefunden`}
           description="Anderen Titel oder den deutschen Verleihtitel probieren."
         />
       )}

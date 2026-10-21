@@ -34,8 +34,9 @@ interface HistorySlot {
 }
 
 interface Overview {
-  completed: number;
-  failed: number;
+  // null when /api/system could not be read, so a failure never reads as "0".
+  completed: number | null;
+  failed: number | null;
   subscriptions: number;
   paused: number;
   newMatches: number;
@@ -88,8 +89,8 @@ export default function Dashboard() {
         : [];
       const filmliste = filmlisteRes.ok ? await filmlisteRes.json() : null;
       setOverview({
-        completed: system?.downloads?.completed ?? 0,
-        failed: system?.downloads?.failed ?? 0,
+        completed: system?.downloads?.completed ?? null,
+        failed: system?.downloads?.failed ?? null,
         subscriptions: subscriptions.length,
         paused: subscriptions.filter((item) => item.paused).length,
         newMatches: subscriptions.reduce((sum, item) => sum + (item._count?.matches ?? 0), 0),
@@ -194,8 +195,14 @@ export default function Dashboard() {
         />
         <StatTile
           label="Abgeschlossen"
-          value={overview ? overview.completed.toLocaleString("de-DE") : "–"}
-          hint={overview ? `${overview.failed} fehlgeschlagen` : "Wird geladen…"}
+          value={overview?.completed != null ? overview.completed.toLocaleString("de-DE") : "–"}
+          hint={
+            !overview
+              ? "Wird geladen…"
+              : overview.failed != null
+                ? `${overview.failed.toLocaleString("de-DE")} fehlgeschlagen`
+                : "Nicht verfügbar"
+          }
           icon={CheckCircle2}
         />
         <StatTile

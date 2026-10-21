@@ -77,10 +77,15 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       aria-label={copied ? `${label} kopiert` : `${label} kopieren`}
       title={copied ? "Kopiert" : "Kopieren"}
       onClick={() => {
-        void navigator.clipboard.writeText(value).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
+        // navigator.clipboard is missing over plain HTTP on LAN addresses; the
+        // value then stays visible for manual copying.
+        void navigator.clipboard
+          ?.writeText(value)
+          .then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          })
+          .catch(() => {});
       }}
     >
       {copied ? <Check className="text-ok" /> : <Copy />}
