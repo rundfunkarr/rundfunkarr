@@ -1119,10 +1119,21 @@ export async function fetchMovieSearchByQuery(
     return response;
   }
 
+  // Radarr maps releases by tmdbid/imdbid rather than by title. Only results
+  // that match the TMDB movie (same check as the ID search) may carry its IDs;
+  // otherwise Radarr would grab unrelated broadcasts as that movie.
+  const matchedItems = new Set<ApiResultItem>(
+    tmdbMovie
+      ? (await matchMovieItems(filteredResults, tmdbMovie, minDuration)).map((m) => m.item)
+      : []
+  );
+
   // Generate RSS items directly for the filtered results (as movies)
   const newznabItems: NewznabItem[] = [];
 
   for (const item of filteredResults) {
+    const movieIds = matchedItems.has(item) ? tmdbMovie : null;
+
     // Format the release title
     const baseTitle = formatTitle(item.topic || item.title);
     const year = new Date(item.filmlisteTimestamp * 1000).getFullYear();
@@ -1198,8 +1209,8 @@ export async function fetchMovieSearchByQuery(
         attributes: [
           { name: "category", value: "2000" },
           { name: "category", value: q.category },
-          ...(tmdbMovie?.tmdbId ? [{ name: "tmdbid", value: tmdbMovie.tmdbId.toString() }] : []),
-          ...(tmdbMovie?.imdbId ? [{ name: "imdbid", value: tmdbMovie.imdbId }] : []),
+          ...(movieIds?.tmdbId ? [{ name: "tmdbid", value: movieIds.tmdbId.toString() }] : []),
+          ...(movieIds?.imdbId ? [{ name: "imdbid", value: movieIds.imdbId }] : []),
         ],
       });
     }

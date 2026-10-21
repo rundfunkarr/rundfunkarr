@@ -215,6 +215,11 @@ export async function matchMovieItems(
       durationScore = 10;
     }
 
+    // A title that merely contains the movie title is weak evidence (e.g. the
+    // ARTE magazine "Metropolis - Valencia" for the film "Metropolis"), so a
+    // partial match also needs a fitting runtime.
+    if (titleMatch === "partial" && durationScore === 0) continue;
+
     // Total score (weighted)
     const totalScore = titleScore * 0.8 + durationScore;
 

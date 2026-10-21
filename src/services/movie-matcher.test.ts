@@ -51,3 +51,56 @@ describe("matchMovieItems – minimum duration", () => {
     expect(matches).toHaveLength(1);
   });
 });
+
+describe("matchMovieItems – partial title matches", () => {
+  const metropolis: TmdbMovieData = {
+    tmdbId: 19,
+    imdbId: "tt0017136",
+    title: "Metropolis",
+    germanTitle: "Metropolis",
+    runtime: 153,
+    releaseDate: "1927-01-10",
+  };
+
+  function broadcast(title: string, minutes: number, id: string): ApiResultItem {
+    return { ...makeItem(minutes * 60, id), topic: "Kunst & Kultur", title };
+  }
+
+  it("rejects partial matches whose runtime does not fit the movie", async () => {
+    const matches = await matchMovieItems(
+      [
+        broadcast("Metropolis - Valencia", 44, "magazine"),
+        broadcast('"Metropolis" - ein Meilenstein der Science-Fiction', 14, "report"),
+      ],
+      metropolis,
+      300
+    );
+
+    expect(matches).toEqual([]);
+  });
+
+  it("keeps partial matches within twice the duration tolerance", async () => {
+    const matches = await matchMovieItems(
+      [
+        broadcast("Metropolis (restaurierte Fassung)", 145, "film"),
+        broadcast("Metropolis - Stummfilmklassiker", 133, "edge"),
+        broadcast("Metropolis - Valencia", 132, "outside"),
+      ],
+      metropolis,
+      300
+    );
+
+    expect(matches.map((match) => match.item.url_website)).toEqual([
+      "https://example.com/film",
+      "https://example.com/edge",
+    ]);
+    expect(matches.every((match) => match.titleMatch === "partial")).toBe(true);
+  });
+
+  it("keeps exact title matches regardless of runtime", async () => {
+    const matches = await matchMovieItems([broadcast("Metropolis", 44, "exact")], metropolis, 300);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].titleMatch).toBe("exact");
+  });
+});
