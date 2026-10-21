@@ -14,8 +14,16 @@ Rundfunk-Indexer für Sonarr/Radarr - Automatischer Download von ARD, ZDF und an
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="Dashboard">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard mit Suche, Statuskacheln, aktiven Downloads und letzten Aktivitäten">
 </p>
+
+<p align="center">
+  <img src="docs/screenshots/search.png" alt="Mediathek-Suche mit Filtern und Trefferliste" width="49%">
+  <img src="docs/screenshots/downloads.png" alt="Download-Warteschlange mit Fortschritt und Steuerung" width="49%">
+</p>
+
+Die Oberfläche folgt der Systemeinstellung für helle oder dunkle Darstellung und lässt sich
+unten in der Seitenleiste umschalten.
 
 ## Features
 
@@ -28,7 +36,7 @@ Rundfunk-Indexer für Sonarr/Radarr - Automatischer Download von ARD, ZDF und an
 
 ## SRF und ORF über HLS
 
-Aktiviere **HLS-Streams aktivieren** unter Settings → Streaming. Mit
+Aktiviere **HLS-Streams aktivieren** unter Einstellungen → Streaming. Mit
 **ORF-Suche aktivieren** werden ORF-Treffer aus MediathekView einbezogen.
 Für die SRF-API trägst du Consumer Key und Consumer Secret aus dem
 [SRG-SSR-Entwicklerportal](https://developer.srgssr.ch/en/apis/srgssr-video) ein.
@@ -47,7 +55,7 @@ können einen eigenen Programmpfad oder den ebenfalls geprüften automatischen D
 
 ## Lokaler Filmlisten-Index
 
-Unter Settings → Allgemein → **Mediathek-Suchquelle** lässt sich zwischen
+Unter Einstellungen → Allgemein → **Mediathek-Suchquelle** lässt sich zwischen
 **MediathekViewWeb (online)** und dem **lokalen Filmlisten-Index** umschalten. Lokal lädt
 RundfunkArr die MediathekView-Filmliste selbst herunter und durchsucht sie, statt jede Suche an
 mediathekviewweb.de zu schicken.
@@ -87,7 +95,7 @@ Download in der Warteschlange auf **Skript läuft** (SABnzbd-Status `Running`).
    chmod +x data/scripts/mein-skript.sh
    ```
 
-2. Unter Settings → Allgemein → **Post-Processing-Skript** das Skript auswählen und speichern.
+2. Unter Einstellungen → Allgemein → **Post-Processing-Skript** das Skript auswählen und speichern.
 
 Das Skript erhält dieselben Parameter wie bei SABnzbd, sodass vorhandene Skripte weiter
 funktionieren:
@@ -257,7 +265,7 @@ Diagnose-Schlüssel.
 
 ### Optionale Anmeldung
 
-Unter **Settings → General → Sicherheit** lässt sich ein Anmeldeformular mit
+Unter **Einstellungen → Allgemein → Sicherheit** lässt sich ein Anmeldeformular mit
 Benutzername und Passwort aktivieren. Standardmäßig ist die Anmeldung aus, damit
 bestehende Installationen unverändert starten. Neue Passwörter benötigen mindestens
 12 Zeichen und werden ausschließlich als gesalzener scrypt-Hash gespeichert.
@@ -344,14 +352,18 @@ Konto konfigurieren. Ein Neustart allein löscht keine Anmeldung.
 
 RundfunkArr bietet eine vollständige Web-Oberfläche mit:
 
-- **Dashboard** - Übersicht über aktive Downloads und letzte Aktivitäten
-- **Suche** - Direkte Suche in den Mediatheken
-- **Downloads** - Queue und Historie verwalten
-- **Settings** - Alle Einstellungen konfigurieren:
-  - Download-Pfad, Qualitäts-Präferenzen und optionale MKV-Konvertierung
-  - API Keys für TVDB/TMDB
+- **Dashboard** - Schnellsuche, Statuskacheln, aktive Downloads und letzte Aktivitäten
+- **Suche** - Direkte Suche in den Mediatheken mit Filtern, Mehrfachauswahl und Direktlinks
+- **Downloads** - Warteschlange steuern und Historie verwalten
+- **Suchabos** - Suchbegriffe regelmäßig prüfen und neue Sendungen melden oder laden
+- **Serien** und **Filme** - Zwischengespeicherte Serien aus TVDB und Filmsuche in den Mediatheken
+- **Rulesets** - Zuordnungsregeln ansehen, prüfen und lokal überschreiben
+- **Einstellungen** - Alle Einstellungen konfigurieren:
+  - Download-Pfad, Qualitäts-Präferenzen, Untertitel und optionale MKV-Konvertierung
+  - API Keys für TVDB/TMDB/SRG-SSR
   - Matching-Strategie und Schwellwerte
   - Cache-TTL Einstellungen
+- **Diagnose & Protokoll** - Systemdiagnose, Verbindungstest und Serverprotokoll
 - **Setup-Wizard** - Geführte Erstkonfiguration
 
 ### Metadaten-Quellen

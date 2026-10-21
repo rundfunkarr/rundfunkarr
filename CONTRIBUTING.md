@@ -177,6 +177,27 @@ Teste dein Ruleset lokal:
 - `console.log` ist für Server-Logging erlaubt
 - Explizite `any` Types sind als Warning markiert
 
+## Oberfläche
+
+Die Web-Oberfläche folgt einem kleinen Baukasten, damit neue Seiten gleich aussehen:
+
+- **Farben** kommen ausschließlich aus den Tokens in `src/app/globals.css`. Die Akzentfarbe
+  (`primary`) ist das Orange des Logos und bleibt der Hauptaktion, aktiven Navigationspunkten
+  und dem Fortschrittsbalken vorbehalten. Zustände verwenden nur `ok`, `info`, `warn` und
+  `danger` - immer zusammen mit Text oder Symbol, nie als Farbe allein.
+- **Seitenaufbau**: `Page` und `PageHeader` aus `src/components/shared/page.tsx` für Rahmen,
+  Titel, Beschreibung und Aktionen; Inhalte in `Card`.
+- **Formulare**: `Field` (Label, Steuerelement, Hinweis), `ToggleRow` mit `Switch`, `Input`,
+  `Select` und `Textarea` aus `src/components/ui`. Keine handgeschriebenen `select`-Klassen.
+- **Zustände**: `Notice` für Fehler und Hinweise, `EmptyState` für leere Listen,
+  `getStatusBadge` für Download-Status, `ChannelBadge` für Sender.
+- **Schrift**: Dateinamen, Schlüssel, Adressen, Protokolle und Zahlenkolonnen in `font-mono`
+  bzw. `tabular`; Beschriftungen in Tabellen und Kacheln über die Klasse `eyebrow`.
+- **Bewegung**: nur der Signalpunkt (`LiveDot`) für laufende Downloads; alles andere bleibt
+  ruhig und respektiert `prefers-reduced-motion`.
+- Helle und dunkle Darstellung müssen beide funktionieren; die Umschaltung sitzt in der
+  Seitenleiste.
+
 ## Issues
 
 ### Bug Reports

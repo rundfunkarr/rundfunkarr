@@ -1,121 +1,57 @@
 "use client";
-import { SignOut } from "@/components/auth/sign-out";
-
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Search,
-  Download,
-  Tv,
-  Film,
-  Settings2,
-  Settings,
-  Wand2,
-  Bell,
-  FileText,
-} from "lucide-react";
+import packageJson from "../../../package.json";
+import { SignOut } from "@/components/auth/sign-out";
 import { cn } from "@/lib/utils";
+import { NavList, collapsibleLabel } from "./nav-list";
+import { ThemeToggle } from "./theme-toggle";
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-const navGroups: { items: NavItem[] }[] = [
-  {
-    items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/search", label: "Suche", icon: Search },
-      { href: "/downloads", label: "Downloads", icon: Download },
-      { href: "/subscriptions", label: "Suchabos", icon: Bell },
-    ],
-  },
-  {
-    items: [
-      { href: "/shows", label: "Shows", icon: Tv },
-      { href: "/movies", label: "Filme", icon: Film },
-      { href: "/rulesets", label: "Rulesets", icon: Settings2 },
-    ],
-  },
-  {
-    items: [
-      { href: "/settings", label: "Settings", icon: Settings },
-      { href: "/logs", label: "Diagnose & Protokoll", icon: FileText },
-      { href: "/setup", label: "Setup", icon: Wand2 },
-    ],
-  },
-];
-
-interface SidebarProps {
-  className?: string;
-}
-
-export function Sidebar({ className }: SidebarProps) {
-  const pathname = usePathname();
-
+export function Sidebar({ className }: { className?: string }) {
   return (
     <aside
       className={cn(
-        "flex flex-col bg-card border-r border-border h-full",
-        // Desktop: full sidebar
-        "lg:w-60",
-        // Tablet: icons only, expand on hover
-        "md:w-16 md:hover:w-60 md:transition-all md:duration-300 md:overflow-hidden",
-        // Mobile: hidden (handled by mobile-nav)
-        "hidden md:flex",
+        "group/nav hidden h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex",
+        // Tablet: icon rail that expands on hover. Desktop: always expanded.
+        "md:w-16 md:overflow-hidden md:transition-[width] md:duration-200 md:hover:w-60 md:focus-within:w-60 lg:w-60",
         className
       )}
     >
-      {/* Logo */}
-      <div className="p-4 border-b border-border">
-        <Link href="/" className="flex items-center gap-3">
+      <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border px-4">
+        <Link
+          href="/"
+          className="flex items-center gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
           <Image
             src="/logo.svg"
-            alt="RundfunkArr"
+            alt=""
             width={32}
             height={32}
-            className="flex-shrink-0"
+            priority
+            className="size-8 shrink-0 rounded-lg"
           />
-          <span className="font-bold text-lg whitespace-nowrap md:opacity-0 md:group-hover:opacity-100 lg:opacity-100 transition-opacity">
+          <span
+            className={cn(
+              "whitespace-nowrap text-[15px] font-semibold tracking-tight",
+              collapsibleLabel
+            )}
+          >
             RundfunkArr
           </span>
         </Link>
       </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 p-2 space-y-4 overflow-y-auto group">
-        {navGroups.map((group, groupIndex) => (
-          <div key={groupIndex} className="space-y-1">
-            {groupIndex > 0 && <div className="h-px bg-border mx-2 my-2" />}
-            {group.items.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                    "hover:bg-accent hover:text-accent-foreground",
-                    isActive && "bg-accent text-accent-foreground font-medium"
-                  )}
-                >
-                  <item.icon className="w-5 h-5 flex-shrink-0" />
-                  <span className="whitespace-nowrap md:opacity-0 md:group-hover:opacity-100 lg:opacity-100 transition-opacity">
-                    {item.label}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
-      <SignOut />
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
+        <NavList collapsible />
+      </div>
+      <div className="shrink-0 space-y-2 border-t border-sidebar-border px-3 py-3">
+        <SignOut labelClassName={collapsibleLabel} />
+        <div className="flex items-center justify-between gap-2">
+          <ThemeToggle className={collapsibleLabel} />
+          <span className={cn("font-mono text-[11px] text-muted-foreground", collapsibleLabel)}>
+            v{packageJson.version}
+          </span>
+        </div>
+      </div>
     </aside>
   );
 }
-
-export { navGroups };
-export type { NavItem };

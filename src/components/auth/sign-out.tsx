@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-export function SignOut() {
+import { cn } from "@/lib/utils";
+
+export function SignOut({ labelClassName }: { labelClassName?: string }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -17,10 +20,11 @@ export function SignOut() {
   }, []);
   if (!authenticated) return null;
   return (
-    <div className="p-2 border-t">
+    <div>
       <Button
         variant="ghost"
-        className="w-full justify-start"
+        size="sm"
+        className="w-full justify-start px-2.5 text-muted-foreground hover:text-foreground"
         onClick={async () => {
           try {
             const response = await fetch("/api/auth/logout", { method: "POST" });
@@ -31,10 +35,11 @@ export function SignOut() {
           }
         }}
       >
-        Abmelden
+        <LogOut className="shrink-0" />
+        <span className={cn("truncate", labelClassName)}>Abmelden</span>
       </Button>
       {error && (
-        <p role="alert" className="text-xs text-red-500">
+        <p role="alert" className={cn("px-2.5 pt-1 text-xs text-danger", labelClassName)}>
           {error}
         </p>
       )}

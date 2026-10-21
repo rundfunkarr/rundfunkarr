@@ -1,8 +1,16 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Bell, ExternalLink, Plus } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Page, PageHeader } from "@/components/shared/page";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
+import { EmptyState } from "@/components/shared/empty-state";
+import { ChannelBadge } from "@/components/shared/channel-badge";
 import type { SubscriptionInput } from "@/server/subscriptions";
 interface Subscription extends SubscriptionInput {
   id: string;
@@ -33,7 +41,8 @@ const initial: SubscriptionInput = {
   action: "notify",
   category: "default",
 };
-const selectClass = "h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm";
+const formatTime = (value: string | null) =>
+  value ? new Date(value).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : "–";
 export default function SubscriptionsPage() {
   const [items, setItems] = useState<Subscription[]>([]),
     [form, setForm] = useState(initial),
@@ -126,39 +135,39 @@ export default function SubscriptionsPage() {
       setForm(initial);
     }
   }
+  const openNew = () => {
+    setEditing(undefined);
+    setForm(initial);
+    setShowForm(true);
+  };
+  const selectedItem = items.find((x) => x.id === selected);
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 min-w-0">
-      <div className="flex justify-between items-start gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Suchabos</h1>
-          <p className="text-sm text-muted-foreground">
-            Neue Sendungen zu deinen Themen automatisch finden
-          </p>
-        </div>
-        <Button
-          onClick={() => {
-            setEditing(undefined);
-            setForm(initial);
-            setShowForm(true);
-          }}
-        >
-          Neues Suchabo
-        </Button>
-      </div>
+    <Page>
+      <PageHeader
+        title="Suchabos"
+        description="Neue Sendungen zu deinen Themen automatisch finden und auf Wunsch sofort laden."
+        actions={
+          <Button onClick={openNew}>
+            <Plus />
+            Neues Suchabo
+          </Button>
+        }
+      />
       <p className="text-sm text-muted-foreground">
         Beim ersten Lauf werden vorhandene Treffer nur vorgemerkt. Erst danach neu entdeckte
         Sendungen erscheinen hier als Meldung oder werden heruntergeladen. Pro Prüfung werden bis zu
         1.000 Quelltreffer berücksichtigt.
       </p>
-      {visibleError && (
-        <p role="alert" className="text-sm text-red-500">
-          {visibleError}
-        </p>
-      )}
+      {visibleError && <Notice tone="danger">{visibleError}</Notice>}
       {showForm && (
         <Card className="min-w-0">
           <CardHeader>
             <CardTitle>{editing ? "Suchabo bearbeiten" : "Suchabo anlegen"}</CardTitle>
+            <CardDescription>
+              Ein geänderter Suchbegriff, Sender oder Laufzeitfilter beginnt mit einem neuen
+              Vormerklauf. Bereits gestartete Downloads bleiben erhalten. Streams berücksichtigen
+              die HLS-Einstellung.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form
@@ -168,114 +177,126 @@ export default function SubscriptionsPage() {
               }}
               className="space-y-4"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
-                <label className="text-sm min-w-0">
-                  Name
-                  <Input
-                    value={form.name}
-                    onChange={(e) => field("name", e.target.value)}
-                    maxLength={100}
-                    required
-                    placeholder="Dokumentationen am Abend"
-                  />
-                </label>
-                <label className="text-sm min-w-0">
-                  Suchbegriff
-                  <Input
-                    value={form.query}
-                    onChange={(e) => field("query", e.target.value)}
-                    minLength={2}
-                    maxLength={200}
-                    required
-                    placeholder="Terra X"
-                  />
-                </label>
-                <label className="text-sm min-w-0">
-                  Sender
-                  <Input
-                    value={form.channel}
-                    onChange={(e) => field("channel", e.target.value)}
-                    maxLength={100}
-                    placeholder="Alle Sender"
-                  />
-                </label>
-                <label className="text-sm min-w-0">
-                  Laufzeit ab (Minuten)
-                  <Input
-                    type="number"
-                    min={0}
-                    max={1440}
-                    value={form.minMinutes}
-                    onChange={(e) => field("minMinutes", Number(e.target.value))}
-                  />
-                </label>
-                <label className="text-sm min-w-0">
-                  Laufzeit bis (0 = unbegrenzt)
-                  <Input
-                    type="number"
-                    min={0}
-                    max={1440}
-                    value={form.maxMinutes}
-                    onChange={(e) => field("maxMinutes", Number(e.target.value))}
-                  />
-                </label>
-                <label className="text-sm min-w-0">
-                  Prüfintervall (Minuten)
-                  <Input
-                    type="number"
-                    min={15}
-                    max={10080}
-                    value={form.intervalMinutes}
-                    onChange={(e) => field("intervalMinutes", Number(e.target.value))}
-                    required
-                  />
-                </label>
-                <label className="text-sm min-w-0">
-                  Neue Treffer
-                  <select
-                    className={selectClass}
-                    value={form.action}
-                    onChange={(e) => field("action", e.target.value as SubscriptionInput["action"])}
-                  >
-                    <option value="notify">Hier als Meldung anzeigen</option>
-                    <option value="download">Automatisch herunterladen</option>
-                  </select>
-                </label>
-                <label className="text-sm min-w-0">
-                  Qualität
-                  <select
-                    className={selectClass}
-                    value={form.quality}
-                    onChange={(e) =>
-                      field("quality", e.target.value as SubscriptionInput["quality"])
-                    }
-                  >
-                    <option value="high">Hoch / bis 1080p</option>
-                    <option value="standard">Standard / bis 720p</option>
-                    <option value="low">Niedrig / bis 480p</option>
-                  </select>
-                </label>
-                <label className="text-sm min-w-0">
-                  Download-Kategorie
-                  <select
-                    className={selectClass}
-                    value={form.category}
-                    onChange={(e) =>
-                      field("category", e.target.value as SubscriptionInput["category"])
-                    }
-                  >
-                    <option value="default">Standard</option>
-                    <option value="tv">Serien (tv)</option>
-                    <option value="movie">Filme (movie)</option>
-                  </select>
-                </label>
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Name">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      value={form.name}
+                      onChange={(e) => field("name", e.target.value)}
+                      maxLength={100}
+                      required
+                      placeholder="Dokumentationen am Abend"
+                    />
+                  )}
+                </Field>
+                <Field label="Suchbegriff">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      value={form.query}
+                      onChange={(e) => field("query", e.target.value)}
+                      minLength={2}
+                      maxLength={200}
+                      required
+                      placeholder="Terra X"
+                    />
+                  )}
+                </Field>
+                <Field label="Sender">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      value={form.channel}
+                      onChange={(e) => field("channel", e.target.value)}
+                      maxLength={100}
+                      placeholder="Alle Sender"
+                    />
+                  )}
+                </Field>
+                <Field label="Laufzeit ab (Minuten)">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      min={0}
+                      max={1440}
+                      value={form.minMinutes}
+                      onChange={(e) => field("minMinutes", Number(e.target.value))}
+                    />
+                  )}
+                </Field>
+                <Field label="Laufzeit bis (0 = unbegrenzt)">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      min={0}
+                      max={1440}
+                      value={form.maxMinutes}
+                      onChange={(e) => field("maxMinutes", Number(e.target.value))}
+                    />
+                  )}
+                </Field>
+                <Field label="Prüfintervall (Minuten)">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      min={15}
+                      max={10080}
+                      value={form.intervalMinutes}
+                      onChange={(e) => field("intervalMinutes", Number(e.target.value))}
+                      required
+                    />
+                  )}
+                </Field>
+                <Field label="Neue Treffer">
+                  {(id) => (
+                    <Select
+                      id={id}
+                      value={form.action}
+                      onChange={(e) =>
+                        field("action", e.target.value as SubscriptionInput["action"])
+                      }
+                    >
+                      <option value="notify">Hier als Meldung anzeigen</option>
+                      <option value="download">Automatisch herunterladen</option>
+                    </Select>
+                  )}
+                </Field>
+                <Field label="Qualität">
+                  {(id) => (
+                    <Select
+                      id={id}
+                      value={form.quality}
+                      onChange={(e) =>
+                        field("quality", e.target.value as SubscriptionInput["quality"])
+                      }
+                    >
+                      <option value="high">Hoch / bis 1080p</option>
+                      <option value="standard">Standard / bis 720p</option>
+                      <option value="low">Niedrig / bis 480p</option>
+                    </Select>
+                  )}
+                </Field>
+                <Field label="Download-Kategorie">
+                  {(id) => (
+                    <Select
+                      id={id}
+                      value={form.category}
+                      onChange={(e) =>
+                        field("category", e.target.value as SubscriptionInput["category"])
+                      }
+                    >
+                      <option value="default">Standard</option>
+                      <option value="tv">Serien (tv)</option>
+                      <option value="movie">Filme (movie)</option>
+                    </Select>
+                  )}
+                </Field>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Ein geänderter Suchbegriff, Sender oder Laufzeitfilter beginnt mit einem neuen
-                Vormerklauf. Bereits gestartete Downloads bleiben erhalten. Streams berücksichtigen
-                die HLS-Einstellung.
-              </p>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={busy}>
                   {busy ? "Wird gespeichert und geprüft…" : "Speichern und prüfen"}
                 </Button>
@@ -292,151 +313,191 @@ export default function SubscriptionsPage() {
           </CardContent>
         </Card>
       )}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
-        {items.map((item) => (
-          <Card key={item.id} className="min-w-0">
-            <CardHeader>
-              <CardTitle className="break-words">{item.name}</CardTitle>
-              <p className="text-sm text-muted-foreground break-words">
-                {item.query}
-                {item.channel ? ` · ${item.channel}` : ""} ·{" "}
-                {item.paused ? "Pausiert" : `Alle ${item.intervalMinutes} Minuten`}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm">
-                {item.action === "download"
-                  ? "Neue Treffer automatisch herunterladen"
-                  : "Neue Treffer als Meldung anzeigen"}{" "}
-                · {item._count.matches} neue Meldungen
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {item.initialized
-                  ? `Zuletzt geprüft: ${item.lastCheckedAt ? new Date(item.lastCheckedAt).toLocaleString("de-DE") : "–"}`
-                  : "Erster Vormerklauf steht aus."}
-                {!item.paused && (
-                  <> · Nächste Prüfung: {new Date(item.nextCheckAt).toLocaleString("de-DE")}</>
-                )}
-              </p>
-              {item.lastError && <p className="text-sm text-amber-500">{item.lastError}</p>}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setPage(0);
-                    setSelected(item.id);
-                  }}
-                  disabled={busy}
-                >
-                  Treffer ansehen
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() =>
-                    void action({ action: "pause", id: item.id, paused: !item.paused })
-                  }
-                >
-                  {item.paused ? "Fortsetzen" : "Pausieren"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy || item.paused}
-                  onClick={() => void action({ action: "check", id: item.id })}
-                >
-                  Jetzt prüfen
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    setEditing(item.id);
-                    setForm({
-                      name: item.name,
-                      query: item.query,
-                      channel: item.channel,
-                      minMinutes: item.minMinutes,
-                      maxMinutes: item.maxMinutes,
-                      intervalMinutes: item.intervalMinutes,
-                      quality: item.quality,
-                      action: item.action,
-                      category: item.category,
-                    });
-                    setShowForm(true);
-                  }}
-                >
-                  Bearbeiten
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    if (
-                      confirm(
-                        `Suchabo „${item.name}“ und seine Trefferliste löschen? Downloads bleiben erhalten.`
-                      )
-                    )
-                      void action({ action: "delete", id: item.id }).then((ok) => {
-                        if (ok && selected === item.id) setSelected(null);
+      {items.length > 0 && (
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+          {items.map((item) => (
+            <Card key={item.id} className="flex min-w-0 flex-col">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <CardTitle className="break-words">{item.name}</CardTitle>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                      <span className="break-words">„{item.query}“</span>
+                      {item.channel && <ChannelBadge channel={item.channel} />}
+                    </p>
+                  </div>
+                  {item.paused ? (
+                    <Badge variant="outline">Pausiert</Badge>
+                  ) : item._count.matches > 0 ? (
+                    <Badge variant="info">
+                      {item._count.matches}{" "}
+                      {item._count.matches === 1 ? "neuer Treffer" : "neue Treffer"}
+                    </Badge>
+                  ) : (
+                    <Badge variant="ok">Aktiv</Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col gap-3">
+                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
+                  <dt className="text-muted-foreground">Prüfung</dt>
+                  <dd className="tabular">
+                    {item.paused ? "Pausiert" : `Alle ${item.intervalMinutes} Minuten`}
+                  </dd>
+                  <dt className="text-muted-foreground">Neue Treffer</dt>
+                  <dd>
+                    {item.action === "download"
+                      ? "Automatisch herunterladen"
+                      : "Als Meldung anzeigen"}
+                  </dd>
+                  <dt className="text-muted-foreground">Zuletzt</dt>
+                  <dd className="tabular">
+                    {item.initialized
+                      ? formatTime(item.lastCheckedAt)
+                      : "Erster Vormerklauf steht aus"}
+                  </dd>
+                  {!item.paused && (
+                    <>
+                      <dt className="text-muted-foreground">Nächste</dt>
+                      <dd className="tabular">{formatTime(item.nextCheckAt)}</dd>
+                    </>
+                  )}
+                </dl>
+                {item.lastError && <Notice tone="warn">{item.lastError}</Notice>}
+                <div className="mt-auto flex flex-wrap gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant={selected === item.id ? "secondary" : "default"}
+                    onClick={() => {
+                      setPage(0);
+                      setSelected(item.id);
+                    }}
+                    disabled={busy}
+                  >
+                    Treffer ansehen
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() =>
+                      void action({ action: "pause", id: item.id, paused: !item.paused })
+                    }
+                  >
+                    {item.paused ? "Fortsetzen" : "Pausieren"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || item.paused}
+                    onClick={() => void action({ action: "check", id: item.id })}
+                  >
+                    Jetzt prüfen
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditing(item.id);
+                      setForm({
+                        name: item.name,
+                        query: item.query,
+                        channel: item.channel,
+                        minMinutes: item.minMinutes,
+                        maxMinutes: item.maxMinutes,
+                        intervalMinutes: item.intervalMinutes,
+                        quality: item.quality,
+                        action: item.action,
+                        category: item.category,
                       });
-                  }}
-                >
-                  Löschen
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                      setShowForm(true);
+                    }}
+                  >
+                    Bearbeiten
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-danger hover:text-danger"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Suchabo „${item.name}“ und seine Trefferliste löschen? Downloads bleiben erhalten.`
+                        )
+                      )
+                        void action({ action: "delete", id: item.id }).then((ok) => {
+                          if (ok && selected === item.id) setSelected(null);
+                        });
+                    }}
+                  >
+                    Löschen
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
       {!items.length && !showForm && (
-        <p className="text-muted-foreground">Noch keine Suchabos angelegt.</p>
+        <EmptyState
+          icon={Bell}
+          title="Noch keine Suchabos angelegt"
+          description="Ein Suchabo prüft die Mediatheken regelmäßig nach einem Suchbegriff und meldet oder lädt neue Sendungen."
+          action={
+            <Button onClick={openNew}>
+              <Plus />
+              Neues Suchabo
+            </Button>
+          }
+        />
       )}
       {selected && (
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Neue Treffer: {items.find((x) => x.id === selected)?.name}</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardTitle>Neue Treffer: {selectedItem?.name}</CardTitle>
+            <CardDescription>
               {matchTotal} Treffer · Seite {page + 1} von {Math.max(1, Math.ceil(matchTotal / 50))}.
               Vorgemerkte Altfunde werden ausgeblendet.
-            </p>
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex gap-2 flex-wrap">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy || page === 0}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Vorherige
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy || (page + 1) * 50 >= matchTotal}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Nächste
-              </Button>
-            </div>
+            {matchTotal > 50 && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || page === 0}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Vorherige
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || (page + 1) * 50 >= matchTotal}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Nächste
+                </Button>
+              </div>
+            )}
             {matches.map((match) => (
-              <article key={match.id} className="border rounded-md p-3 space-y-2 min-w-0">
-                <p className="text-xs text-muted-foreground">
-                  {match.channel} · {match.topic}
-                </p>
-                <h3 className="font-medium break-words">{match.title}</h3>
-                <p className="text-xs">
-                  {match.state === "queued"
-                    ? "Download hinzugefügt"
-                    : match.state === "dismissed"
-                      ? "Gelesen"
-                      : "Neu"}
-                </p>
-                <div className="flex flex-wrap gap-2 items-center">
+              <article key={match.id} className="min-w-0 space-y-2 rounded-lg border p-4">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                  <ChannelBadge channel={match.channel} />
+                  <span className="text-muted-foreground">{match.topic}</span>
+                  {match.state === "queued" ? (
+                    <Badge variant="ok">Download hinzugefügt</Badge>
+                  ) : match.state === "dismissed" ? (
+                    <Badge variant="muted">Gelesen</Badge>
+                  ) : (
+                    <Badge variant="info">Neu</Badge>
+                  )}
+                </div>
+                <h3 className="break-words font-medium leading-snug">{match.title}</h3>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   {!match.downloadId && (
                     <Button
                       size="sm"
@@ -457,26 +518,26 @@ export default function SubscriptionsPage() {
                     </Button>
                   )}
                   {/^https?:\/\//i.test(match.websiteUrl) && (
-                    <a
-                      className="text-sm underline"
-                      href={match.websiteUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Sendungsseite
-                    </a>
+                    <Button asChild variant="ghost" size="sm">
+                      <a href={match.websiteUrl} target="_blank" rel="noreferrer">
+                        Sendungsseite
+                        <ExternalLink />
+                      </a>
+                    </Button>
                   )}
                 </div>
               </article>
             ))}
             {!matches.length && (
-              <p className="text-sm text-muted-foreground">
-                Noch keine neuen Sendungen seit dem ersten Vormerklauf gefunden.
-              </p>
+              <EmptyState
+                icon={Bell}
+                title="Noch keine neuen Sendungen"
+                description="Seit dem ersten Vormerklauf wurde nichts Neues gefunden."
+              />
             )}
           </CardContent>
         </Card>
       )}
-    </div>
+    </Page>
   );
 }

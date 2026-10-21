@@ -1,28 +1,47 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Lock, ScrollText, Stethoscope } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Page, PageHeader } from "@/components/shared/page";
+import { Field } from "@/components/shared/field";
+import { Notice } from "@/components/shared/notice";
+import { EmptyState } from "@/components/shared/empty-state";
+import { cn } from "@/lib/utils";
 import type { Diagnostic } from "@/server/diagnostics";
 import type { LogEntry } from "@/lib/logger";
-const selectClass = "h-9 rounded-md border border-input bg-background px-3 text-sm min-w-0";
+
 const statusLabels = { ok: "In Ordnung", warn: "Prüfen", error: "Fehler", info: "Hinweis" };
-const levelLabels = { info: "Information", warn: "Warnung", error: "Fehler", debug: "Details" };
+const statusVariants: Record<Diagnostic["status"], BadgeProps["variant"]> = {
+  ok: "ok",
+  warn: "warn",
+  error: "danger",
+  info: "info",
+};
+const levelLabels = { info: "Info", warn: "Warnung", error: "Fehler", debug: "Details" };
+const levelClasses = {
+  error: "text-danger",
+  warn: "text-warn",
+  info: "text-info",
+  debug: "text-muted-foreground",
+};
+
 function CheckResult({ check }: { check: Diagnostic }) {
   return (
-    <div className="rounded-md border p-3 min-w-0">
-      <div className="flex flex-wrap justify-between gap-2">
+    <div className="min-w-0 rounded-lg border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-medium">{check.label}</h3>
-        <span
-          className={`text-xs ${check.status === "error" ? "text-red-500" : check.status === "warn" ? "text-amber-500" : check.status === "ok" ? "text-green-500" : "text-muted-foreground"}`}
-        >
-          {statusLabels[check.status]}
-        </span>
+        <Badge variant={statusVariants[check.status]}>{statusLabels[check.status]}</Badge>
       </div>
-      <p className="text-sm text-muted-foreground mt-1 break-words">{check.message}</p>
+      <p className="mt-1 break-words text-sm text-muted-foreground">{check.message}</p>
     </div>
   );
 }
+
 export default function LogsPage() {
   const [adminKey, setAdminKey] = useState("");
   const [input, setInput] = useState("");
@@ -57,11 +76,21 @@ export default function LogsPage() {
 
   if (adminKey) return <ProtectedLogs adminKey={adminKey} onLock={lock} />;
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 min-w-0">
-      <h1 className="text-2xl font-bold">Diagnose & Protokoll</h1>
-      <Card>
+    <Page>
+      <PageHeader
+        title="Diagnose & Protokoll"
+        description="Verbindungen prüfen und Fehler nachvollziehen."
+      />
+      <Card className="max-w-lg">
         <CardHeader>
-          <CardTitle>Admin-Zugriff</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Lock className="size-4 text-muted-foreground" />
+            Admin-Zugriff
+          </CardTitle>
+          <CardDescription>
+            Gib den im Server konfigurierten Admin-Schlüssel ein. Er bleibt nur bis zum Sperren,
+            Verlassen oder Neuladen dieser Seite im Speicher.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -69,35 +98,30 @@ export default function LogsPage() {
               e.preventDefault();
               void unlock();
             }}
-            className="space-y-4 max-w-lg"
+            className="space-y-4"
           >
-            <p className="text-sm text-muted-foreground">
-              Gib den im Server konfigurierten Admin-Schlüssel ein. Er bleibt nur bis zum Sperren,
-              Verlassen oder Neuladen dieser Seite im Speicher.
-            </p>
-            <label className="text-sm flex flex-col gap-1">
-              Admin-Schlüssel
-              <Input
-                type="password"
-                required
-                autoComplete="off"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                disabled={unlocking}
-              />
-            </label>
+            <Field label="Admin-Schlüssel">
+              {(id) => (
+                <Input
+                  id={id}
+                  type="password"
+                  required
+                  autoComplete="off"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  disabled={unlocking}
+                  className="font-mono"
+                />
+              )}
+            </Field>
+            {error && <Notice tone="danger">{error}</Notice>}
             <Button type="submit" disabled={unlocking}>
               {unlocking ? "Wird geprüft…" : "Freischalten"}
             </Button>
-            {error && (
-              <p role="alert" className="text-sm text-red-500">
-                {error}
-              </p>
-            )}
           </form>
         </CardContent>
       </Card>
-    </div>
+    </Page>
   );
 }
 
@@ -232,126 +256,141 @@ function ProtectedLogs({
     }
   }
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 min-w-0">
-      <div>
-        <h1 className="text-2xl font-bold">Diagnose & Protokoll</h1>
-        <p className="text-sm text-muted-foreground">
-          Verbindungen prüfen und Fehler nachvollziehen
-        </p>
-        <Button className="mt-3" variant="outline" onClick={() => lock()}>
-          Zugriff sperren
-        </Button>
-      </div>
-      {error && (
-        <p role="alert" className="text-sm text-red-500">
-          {error}
-        </p>
-      )}
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>Systemdiagnose</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Prüft Datenbank, lokale Verzeichnisse, FFmpeg, yt-dlp und die MediathekView-Suche.
-          </p>
-          <Button disabled={diagnosing} onClick={() => void diagnose()}>
-            {diagnosing ? "Prüfung läuft…" : "System prüfen"}
+    <Page>
+      <PageHeader
+        title="Diagnose & Protokoll"
+        description="Verbindungen prüfen und Fehler nachvollziehen."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => lock()}>
+            <Lock />
+            Zugriff sperren
           </Button>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
-            {checks.map((check) => (
-              <CheckResult key={check.id} check={check} />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>Sonarr / Radarr verbinden</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Testet die Basisadresse und den API-Schlüssel sowie das Vorhandensein aktivierter
-            SABnzbd-Clients. Die Angaben werden nicht gespeichert. Der Dateizugriff auf dem anderen
-            Host muss dort geprüft werden.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void testConnection();
-            }}
-            className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0"
-          >
-            <label className="text-sm flex flex-col gap-1">
-              Anwendung
-              <select
-                value={kind}
-                onChange={(e) => setKind(e.target.value)}
-                className={selectClass}
-              >
-                <option value="sonarr">Sonarr</option>
-                <option value="radarr">Radarr</option>
-              </select>
-            </label>
-            <label className="text-sm min-w-0">
-              Basisadresse
-              <Input
-                type="url"
-                required
-                placeholder="http://sonarr:8989"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
-            </label>
-            <label className="text-sm min-w-0">
-              API-Schlüssel
-              <Input
-                type="password"
-                required
-                autoComplete="off"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-            </label>
-            <Button className="self-end" disabled={testing} type="submit">
-              {testing ? "Verbindung wird geprüft…" : "Verbindung testen"}
+        }
+      />
+      {error && <Notice tone="danger">{error}</Notice>}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Stethoscope className="size-4 text-muted-foreground" />
+              Systemdiagnose
+            </CardTitle>
+            <CardDescription>
+              Prüft Datenbank, lokale Verzeichnisse, FFmpeg, yt-dlp und die MediathekView-Suche.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button disabled={diagnosing} onClick={() => void diagnose()}>
+              {diagnosing ? "Prüfung läuft…" : "System prüfen"}
             </Button>
-          </form>
-          {connection && (
-            <div role="status">
-              <CheckResult check={connection} />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            {checks.length > 0 && (
+              <div className="grid min-w-0 grid-cols-1 gap-2">
+                {checks.map((check) => (
+                  <CheckResult key={check.id} check={check} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>Sonarr / Radarr verbinden</CardTitle>
+            <CardDescription>
+              Testet die Basisadresse und den API-Schlüssel sowie das Vorhandensein aktivierter
+              SABnzbd-Clients. Die Angaben werden nicht gespeichert. Der Dateizugriff auf dem
+              anderen Host muss dort geprüft werden.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void testConnection();
+              }}
+              className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2"
+            >
+              <Field label="Anwendung">
+                {(id) => (
+                  <Select id={id} value={kind} onChange={(e) => setKind(e.target.value)}>
+                    <option value="sonarr">Sonarr</option>
+                    <option value="radarr">Radarr</option>
+                  </Select>
+                )}
+              </Field>
+              <Field label="Basisadresse">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="url"
+                    required
+                    placeholder="http://sonarr:8989"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="font-mono text-xs md:text-xs"
+                  />
+                )}
+              </Field>
+              <Field label="API-Schlüssel">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="password"
+                    required
+                    autoComplete="off"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="font-mono"
+                  />
+                )}
+              </Field>
+              <div className="flex items-end">
+                <Button disabled={testing} type="submit">
+                  {testing ? "Verbindung wird geprüft…" : "Verbindung testen"}
+                </Button>
+              </div>
+            </form>
+            {connection && (
+              <div role="status">
+                <CheckResult check={connection} />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
       <Card className="min-w-0">
         <CardHeader>
-          <CardTitle>Aktuelles Protokoll</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 min-w-0">
-          <p className="text-sm text-muted-foreground">
+          <CardTitle className="flex items-center gap-2">
+            <ScrollText className="size-4 text-muted-foreground" />
+            Aktuelles Protokoll
+          </CardTitle>
+          <CardDescription>
             Die letzten 500 Einträge dieses Serverprozesses. Nach einem Neustart beginnt die Liste
             neu. Bekannte Zugangsdaten sowie Parameter in Webadressen werden ausgeblendet.
-          </p>
-          <div className="flex flex-wrap gap-3 items-end">
-            <label className="text-sm flex flex-col gap-1">
-              Stufe
-              <select
-                className={selectClass}
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
-              >
-                <option value="all">Alle</option>
-                <option value="error">Fehler</option>
-                <option value="warn">Warnungen</option>
-                <option value="info">Informationen</option>
-                <option value="debug">Details</option>
-              </select>
-            </label>
-            <label className="text-sm flex-1 min-w-40">
-              Im Protokoll suchen
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} maxLength={200} />
-            </label>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="min-w-0 space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="Stufe" className="w-40">
+              {(id) => (
+                <Select id={id} value={level} onChange={(e) => setLevel(e.target.value)}>
+                  <option value="all">Alle</option>
+                  <option value="error">Fehler</option>
+                  <option value="warn">Warnungen</option>
+                  <option value="info">Informationen</option>
+                  <option value="debug">Details</option>
+                </Select>
+              )}
+            </Field>
+            <Field label="Im Protokoll suchen" className="min-w-40 flex-1">
+              {(id) => (
+                <Input
+                  id={id}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  maxLength={200}
+                />
+              )}
+            </Field>
             <Button variant="outline" onClick={() => void load()}>
               Aktualisieren
             </Button>
@@ -359,32 +398,43 @@ function ProtectedLogs({
               Text exportieren
             </Button>
           </div>
-          <label className="flex gap-2 text-sm items-center">
-            <input
-              type="checkbox"
-              checked={automatic}
-              onChange={(e) => setAutomatic(e.target.checked)}
-            />
-            Alle fünf Sekunden aktualisieren
-          </label>
-          <p className="text-xs text-muted-foreground">{entries.length} sichtbare Einträge</p>
-          <div className="space-y-2 min-w-0 max-h-[40rem] overflow-y-auto">
-            {entries.map((entry) => (
-              <article key={entry.id} className="rounded-md border p-3 min-w-0">
-                <p className="text-xs text-muted-foreground mb-1">
-                  {new Date(entry.time).toLocaleString("de-DE")} · {levelLabels[entry.level]}
-                </p>
-                <pre className="text-xs whitespace-pre-wrap break-all font-mono">
-                  {entry.message}
-                </pre>
-              </article>
-            ))}
-            {!entries.length && (
-              <p className="text-sm text-muted-foreground">Keine Einträge für diese Auswahl.</p>
-            )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={automatic} onChange={(e) => setAutomatic(e.target.checked)} />
+              Alle fünf Sekunden aktualisieren
+            </label>
+            <p className="tabular text-xs text-muted-foreground">
+              {entries.length} sichtbare Einträge
+            </p>
           </div>
+          {entries.length === 0 ? (
+            <EmptyState icon={ScrollText} title="Keine Einträge für diese Auswahl" />
+          ) : (
+            <div className="max-h-[40rem] min-w-0 divide-y overflow-y-auto rounded-lg border bg-background font-mono text-xs">
+              {entries.map((entry) => (
+                <article
+                  key={entry.id}
+                  className="grid min-w-0 grid-cols-[auto_4rem_minmax(0,1fr)] gap-x-3 px-3 py-2"
+                >
+                  <time
+                    dateTime={new Date(entry.time).toISOString()}
+                    className="tabular whitespace-nowrap text-muted-foreground"
+                  >
+                    {new Date(entry.time).toLocaleString("de-DE", {
+                      dateStyle: "short",
+                      timeStyle: "medium",
+                    })}
+                  </time>
+                  <span className={cn("uppercase tracking-wide", levelClasses[entry.level])}>
+                    {levelLabels[entry.level]}
+                  </span>
+                  <pre className="whitespace-pre-wrap break-all font-mono">{entry.message}</pre>
+                </article>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
-    </div>
+    </Page>
   );
 }

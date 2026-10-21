@@ -25,7 +25,10 @@ import type { RulesetInput } from "@/lib/ruleset-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, Search, Settings2, Trash2, ExternalLink } from "lucide-react";
+import { Page, PageHeader } from "@/components/shared/page";
+import { Notice } from "@/components/shared/notice";
+import { EmptyState } from "@/components/shared/empty-state";
+import { RefreshCw, Search, Settings2, Trash2, ExternalLink, Plus } from "lucide-react";
 
 interface Ruleset {
   id: string;
@@ -42,6 +45,13 @@ interface Ruleset {
   updatedAt: string | null;
   source: "local" | "community";
 }
+
+const strategyLabels: Record<string, string> = {
+  SeasonAndEpisodeNumber: "Staffel + Episode",
+  ItemTitleExact: "Episodentitel",
+  ItemTitleIncludes: "Episodentitel (enthält)",
+  ItemTitleEqualsAirdate: "Ausstrahlungsdatum",
+};
 
 export default function RulesetsPage() {
   const [editing, setEditing] = useState<Ruleset | null | undefined>(undefined);
@@ -111,52 +121,33 @@ export default function RulesetsPage() {
     }
   };
 
-  const getStrategyBadge = (strategy: string) => {
-    switch (strategy) {
-      case "SeasonAndEpisodeNumber":
-        return <Badge variant="outline">S+E Nummer</Badge>;
-      case "ItemTitleExact":
-      case "ItemTitleIncludes":
-        return <Badge variant="secondary">Titel Match</Badge>;
-      case "ItemTitleEqualsAirdate":
-        return <Badge>Datum</Badge>;
-      default:
-        return <Badge variant="outline">{strategy}</Badge>;
-    }
-  };
-
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Rulesets</h1>
-          <p className="text-muted-foreground text-sm">Matching-Regeln für Shows</p>
-        </div>
-        <Button variant="outline" onClick={fetchRulesets}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Aktualisieren
-        </Button>
-      </div>
+    <Page>
+      <PageHeader
+        title="Rulesets"
+        description="Regeln, die Mediathek-Themen einer Serie zuordnen und Folgen erkennen."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={fetchRulesets}>
+              <RefreshCw />
+              Aktualisieren
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditing(null);
+                setMessage(null);
+              }}
+            >
+              <Plus />
+              Eigene Regel anlegen
+            </Button>
+          </>
+        }
+      />
 
-      {message && (
-        <p role="status" className="text-sm">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <Button
-        onClick={() => {
-          setEditing(null);
-          setMessage(null);
-        }}
-      >
-        Eigene Regel anlegen
-      </Button>
+      {message && <Notice tone="ok">{message}</Notice>}
+      {error && <Notice tone="danger">{error}</Notice>}
       {editing !== undefined && (
         <RulesetEditor
           key={editing?.id || "new"}
@@ -170,80 +161,82 @@ export default function RulesetsPage() {
         />
       )}
 
-      {/* Search */}
       <Card>
-        <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Rulesets durchsuchen..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Rulesets Table */}
-      <Card>
-        <CardHeader>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
-            <Settings2 className="w-5 h-5" />
+            <Settings2 className="size-4 text-muted-foreground" />
             {filteredRulesets.length} Rulesets
           </CardTitle>
+          <label className="relative w-full sm:w-72">
+            <span className="sr-only">Rulesets durchsuchen</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Thema oder Serie suchen…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </label>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground text-center py-8">Laden...</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">Wird geladen…</p>
           ) : filteredRulesets.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              {rulesets.length === 0
-                ? "Keine Rulesets vorhanden. Rulesets werden automatisch generiert wenn Sonarr nach Shows sucht."
-                : "Keine Rulesets gefunden für diese Suche."}
-            </p>
+            <EmptyState
+              icon={Settings2}
+              title={rulesets.length === 0 ? "Noch keine Rulesets" : "Keine Rulesets gefunden"}
+              description={
+                rulesets.length === 0
+                  ? "Rulesets entstehen automatisch, sobald Sonarr nach Serien sucht. Eigene Regeln lassen sich jederzeit anlegen."
+                  : "Für diese Suche gibt es kein passendes Ruleset."
+              }
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Topic</TableHead>
-                    <TableHead>Show</TableHead>
-                    <TableHead>TVDB ID</TableHead>
-                    <TableHead>Strategie</TableHead>
-                    <TableHead>Quelle</TableHead>
-                    <TableHead className="w-24">Aktionen</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRulesets.map((rs) => (
-                    <TableRow key={rs.id}>
-                      <TableCell className="font-medium">{rs.topic}</TableCell>
-                      <TableCell>
-                        <div>
-                          <span>{rs.showName}</span>
-                          {rs.germanName && (
-                            <span className="text-muted-foreground text-sm block">
-                              {rs.germanName}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <a
-                          href={`https://thetvdb.com/?tab=series&id=${rs.tvdbId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline inline-flex items-center gap-1"
-                        >
-                          {rs.tvdbId} <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </TableCell>
-                      <TableCell>{getStrategyBadge(rs.matchingStrategy)}</TableCell>
-                      <TableCell>{rs.source === "local" ? "Lokal" : "Community"}</TableCell>
-                      <TableCell>
+            <Table scrollLabel="Rulesets" className="min-w-[52rem]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Thema</TableHead>
+                  <TableHead>Serie</TableHead>
+                  <TableHead>TVDB-ID</TableHead>
+                  <TableHead>Zuordnung</TableHead>
+                  <TableHead>Quelle</TableHead>
+                  <TableHead className="w-36 text-right">Aktionen</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredRulesets.map((rs) => (
+                  <TableRow key={rs.id}>
+                    <TableCell className="font-medium">{rs.topic}</TableCell>
+                    <TableCell>
+                      <span className="block">{rs.showName}</span>
+                      {rs.germanName && (
+                        <span className="block text-xs text-muted-foreground">{rs.germanName}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <a
+                        href={`https://thetvdb.com/?tab=series&id=${rs.tvdbId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="tabular inline-flex items-center gap-1 font-mono text-xs text-primary underline-offset-4 hover:underline"
+                      >
+                        {rs.tvdbId} <ExternalLink className="size-3" />
+                      </a>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {strategyLabels[rs.matchingStrategy] ?? rs.matchingStrategy}
+                    </TableCell>
+                    <TableCell>
+                      {rs.source === "local" ? (
+                        <Badge variant="secondary">Lokal</Badge>
+                      ) : (
+                        <Badge variant="muted">Community</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
                           onClick={() => {
                             setEditing(rs);
@@ -252,26 +245,28 @@ export default function RulesetsPage() {
                         >
                           Bearbeiten
                         </Button>
-                        <Button
-                          disabled={rs.source !== "local"}
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteConfirm({ show: true, ruleset: rs })}
-                          title="Löschen"
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                        {rs.source === "local" && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-danger"
+                            onClick={() => setDeleteConfirm({ show: true, ruleset: rs })}
+                            title="Löschen"
+                            aria-label={`Löschen: ${rs.topic}`}
+                          >
+                            <Trash2 />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog
         open={deleteConfirm.show}
         onOpenChange={(open) => !open && setDeleteConfirm({ show: false, ruleset: null })}
@@ -280,8 +275,8 @@ export default function RulesetsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Ruleset löschen?</AlertDialogTitle>
             <AlertDialogDescription>
-              Möchtest du das Ruleset für &quot;{deleteConfirm.ruleset?.topic}&quot; wirklich
-              löschen? Danach gelten wieder die Community-Regeln für dieses Thema.
+              Möchtest du das Ruleset für „{deleteConfirm.ruleset?.topic}“ wirklich löschen? Danach
+              gelten wieder die Community-Regeln für dieses Thema.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -290,6 +285,6 @@ export default function RulesetsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </Page>
   );
 }
