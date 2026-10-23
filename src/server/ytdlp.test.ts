@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { downloadHlsStream, downloadVideo, ORF_GEO_BLOCK_ERROR } from "./ytdlp";
+import { downloadHlsStream, downloadVideo, ORF_GEO_BLOCK_ERROR, parseYtdlpSpeed } from "./ytdlp";
 
 const { spawn, mergeVideoAudio, unlink, readdir, getSetting } = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -448,3 +448,21 @@ it("follows ordinary ORF redirects without reporting a geo restriction", async (
   expect(await done).toEqual({ success: true, outputPath: "/tmp/result.mkv" });
   expect(child.kill).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["123B/s", 123],
+  ["1KiB/s", 1024],
+  ["1MiB/s", 1024 ** 2],
+  ["1GiB/s", 1024 ** 3],
+  ["1.5KiB/s", 1536],
+  ["11.91MiB/s", 12488540],
+  ["0MiB/s", 0],
+])("rechnet yt-dlp speed string %s in byte/s", (input, expected) => {
+  expect(parseYtdlpSpeed(input)).toBe(expected);
+});
+it.each(["", "bledsin", "123", "1MiB"])(
+  "yt-dlp speed gibt 0 zurück bei falschem input %s",
+  (input) => {
+    expect(parseYtdlpSpeed(input)).toBe(0);
+  }
+);

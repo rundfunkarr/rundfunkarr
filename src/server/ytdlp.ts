@@ -468,15 +468,19 @@ export async function downloadVideo(
 }
 
 // Parse a yt-dlp speed string (e.g. "10.50MiB/s") into bytes/sec.
-function parseYtdlpSpeed(speedStr: string): number {
+export function parseYtdlpSpeed(speedStr: string): number {
   const speedMatch = speedStr.match(/([\d.]+)(\w+)\/s/);
   if (!speedMatch) return 0;
   const value = parseFloat(speedMatch[1]);
   const unit = speedMatch[2].toLowerCase();
-  if (unit.includes("g")) return value * 1024 * 1024 * 1024;
-  if (unit.includes("m")) return value * 1024 * 1024;
-  if (unit.includes("k")) return value * 1024;
-  return value;
+  const multiplier = unit.includes("g")
+    ? 1024 ** 3
+    : unit.includes("m")
+      ? 1024 ** 2
+      : unit.includes("k")
+        ? 1024
+        : 1;
+  return Math.floor(value * multiplier);
 }
 
 /**
