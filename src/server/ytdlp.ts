@@ -386,9 +386,10 @@ export async function downloadVideo(
       }
 
       // Parse progress from yt-dlp output
-      // Format: [download]  45.2% of ~500.00MiB at 10.50MiB/s ETA 00:25
+      // Format:      [download]  45.2% of ~500.00MiB at 10.50MiB/s ETA 00:25
+      // Format Neu:  [download]  22.3% of ~   2.05GiB at   11.91MiB/s ETA 02:19
       const progressMatch = line.match(
-        /\[download\]\s+(\d+(?:\.\d+)?%)\s+of\s+[~]?[\d.]+\w+\s+at\s+([\d.]+\w+\/s)\s+ETA\s+(\d+:\d+)/
+        /\[download\]\s+(\d+(?:\.\d+)?%)\s+of\s+[~]?\s*[\d.]+\w+\s+at\s+([\d.]+\w+\/s)\s+ETA\s+(\d+:\d+)/
       );
 
       if (progressMatch && options.onProgress) {

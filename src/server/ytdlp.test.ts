@@ -248,6 +248,23 @@ it("reports rejected progress writes without an unhandled rejection", async () =
   expect((await done).success).toBe(false);
 });
 
+it("reports rejected progress writes without an unhandled rejection", async () => {
+  const done = downloadVideo("https://example.org/master.m3u8", {
+    outputPath: "/tmp/result.mkv",
+    onProgress: async () => {
+      throw new Error("database unavailable");
+    },
+  });
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+  child.stdout.emit(
+    "data",
+    Buffer.from("[download]  22.3% of ~   2.05GiB at   11.91MiB/s ETA 02:19\n")
+  );
+  await vi.waitFor(() => expect(child.kill).toHaveBeenCalledWith("SIGKILL"));
+  child.emit("close", 0);
+  expect((await done).success).toBe(false);
+});
+
 it.each([480, 720, 1080] as const)(
   "limits the video download to the requested %ip height",
   async (height) => {
