@@ -386,9 +386,10 @@ export async function downloadVideo(
       }
 
       // Parse progress from yt-dlp output
-      // Format: [download]  45.2% of ~500.00MiB at 10.50MiB/s ETA 00:25
+      // Format:      [download]  45.2% of ~500.00MiB at 10.50MiB/s ETA 00:25
+      // Format Neu:  [download]  22.3% of ~   2.05GiB at   11.91MiB/s ETA 02:19
       const progressMatch = line.match(
-        /\[download\]\s+(\d+(?:\.\d+)?%)\s+of\s+[~]?[\d.]+\w+\s+at\s+([\d.]+\w+\/s)\s+ETA\s+(\d+:\d+)/
+        /\[download\]\s+(\d+(?:\.\d+)?%)\s+of\s+[~]?\s*[\d.]+\w+\s+at\s+([\d.]+\w+\/s)\s+ETA\s+(\d+:\d+)/
       );
 
       if (progressMatch && options.onProgress) {
@@ -467,15 +468,19 @@ export async function downloadVideo(
 }
 
 // Parse a yt-dlp speed string (e.g. "10.50MiB/s") into bytes/sec.
-function parseYtdlpSpeed(speedStr: string): number {
+export function parseYtdlpSpeed(speedStr: string): number {
   const speedMatch = speedStr.match(/([\d.]+)(\w+)\/s/);
   if (!speedMatch) return 0;
   const value = parseFloat(speedMatch[1]);
   const unit = speedMatch[2].toLowerCase();
-  if (unit.includes("g")) return value * 1024 * 1024 * 1024;
-  if (unit.includes("m")) return value * 1024 * 1024;
-  if (unit.includes("k")) return value * 1024;
-  return value;
+  const multiplier = unit.includes("g")
+    ? 1024 ** 3
+    : unit.includes("m")
+      ? 1024 ** 2
+      : unit.includes("k")
+        ? 1024
+        : 1;
+  return Math.floor(value * multiplier);
 }
 
 /**
@@ -496,6 +501,12 @@ function parseYtdlpSpeed(speedStr: string): number {
  * own though, so this sidesteps the broken "+" merge entirely by
  * downloading each half separately and combining them with our own
  * ffmpeg pass.
+ *
+ * Some HLS masters (observed on ORF's APA CDN, e.g. on.orf.at content) report
+ * resolution as unkown, in this case the height format condition fails and
+ * yt-dlp fails with "Requested format not available".
+ * "height<=?${maxHeight}" leaves the condition optional and chooses video
+ * with unkown resolution if the condition cant be met
  */
 export async function downloadHlsStream(
   hlsUrl: string,
@@ -540,7 +551,7 @@ export async function downloadHlsStream(
       signal,
       container: "mp4",
       format: maxHeight
-        ? `bestvideo[height<=${maxHeight}]/best[height<=${maxHeight}]`
+        ? `bestvideo[height<=?${maxHeight}]/best[height<=?${maxHeight}]`
         : "bestvideo/best",
       onProgress: forwardProgress(0, 85),
     });
@@ -558,7 +569,7 @@ export async function downloadHlsStream(
       // bare "bestaudio" would have no match there and error out.
       // mergeVideoAudio only ever maps this input's audio stream, so it's
       // safe to hand it a combined video+audio file here too.
-      format: maxHeight ? `bestaudio/best[height<=${maxHeight}]` : "bestaudio/best",
+      format: maxHeight ? `bestaudio/best[height<=?${maxHeight}]` : "bestaudio/best",
       onProgress: forwardProgress(85, 10),
     });
     audioOutputPath = audioResult.outputPath ?? audioTempPath;

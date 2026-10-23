@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { downloadHlsStream, downloadVideo, ORF_GEO_BLOCK_ERROR } from "./ytdlp";
+import { downloadHlsStream, downloadVideo, ORF_GEO_BLOCK_ERROR, parseYtdlpSpeed } from "./ytdlp";
 
 const { spawn, mergeVideoAudio, unlink, readdir, getSetting } = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -248,6 +248,23 @@ it("reports rejected progress writes without an unhandled rejection", async () =
   expect((await done).success).toBe(false);
 });
 
+it("reports rejected progress writes without an unhandled rejection", async () => {
+  const done = downloadVideo("https://example.org/master.m3u8", {
+    outputPath: "/tmp/result.mkv",
+    onProgress: async () => {
+      throw new Error("database unavailable");
+    },
+  });
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+  child.stdout.emit(
+    "data",
+    Buffer.from("[download]  22.3% of ~   2.05GiB at   11.91MiB/s ETA 02:19\n")
+  );
+  await vi.waitFor(() => expect(child.kill).toHaveBeenCalledWith("SIGKILL"));
+  child.emit("close", 0);
+  expect((await done).success).toBe(false);
+});
+
 it.each([480, 720, 1080] as const)(
   "limits the video download to the requested %ip height",
   async (height) => {
@@ -261,13 +278,13 @@ it.each([480, 720, 1080] as const)(
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
     const videoArgs = spawn.mock.calls[0][1];
     expect(videoArgs[videoArgs.indexOf("-f") + 1]).toBe(
-      `bestvideo[height<=${height}]/best[height<=${height}]`
+      `bestvideo[height<=?${height}]/best[height<=?${height}]`
     );
     child.emit("close", 0);
 
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
     const audioArgs = spawn.mock.calls[1][1];
-    expect(audioArgs[audioArgs.indexOf("-f") + 1]).toBe(`bestaudio/best[height<=${height}]`);
+    expect(audioArgs[audioArgs.indexOf("-f") + 1]).toBe(`bestaudio/best[height<=?${height}]`);
     child.emit("close", 0);
 
     expect((await done).success).toBe(true);
@@ -431,3 +448,21 @@ it("follows ordinary ORF redirects without reporting a geo restriction", async (
   expect(await done).toEqual({ success: true, outputPath: "/tmp/result.mkv" });
   expect(child.kill).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["123B/s", 123],
+  ["1KiB/s", 1024],
+  ["1MiB/s", 1024 ** 2],
+  ["1GiB/s", 1024 ** 3],
+  ["1.5KiB/s", 1536],
+  ["11.91MiB/s", 12488540],
+  ["0MiB/s", 0],
+])("rechnet yt-dlp speed string %s in byte/s", (input, expected) => {
+  expect(parseYtdlpSpeed(input)).toBe(expected);
+});
+it.each(["", "bledsin", "123", "1MiB"])(
+  "yt-dlp speed gibt 0 zurück bei falschem input %s",
+  (input) => {
+    expect(parseYtdlpSpeed(input)).toBe(0);
+  }
+);
