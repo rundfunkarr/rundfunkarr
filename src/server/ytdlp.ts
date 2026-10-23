@@ -496,6 +496,12 @@ function parseYtdlpSpeed(speedStr: string): number {
  * own though, so this sidesteps the broken "+" merge entirely by
  * downloading each half separately and combining them with our own
  * ffmpeg pass.
+ *
+ * Some HLS masters (observed on ORF's APA CDN, e.g. on.orf.at content) report
+ * resolution as unkown, in this case the height format condition fails and
+ * yt-dlp fails with "Requested format not available".
+ * "height<=?${maxHeight}" leaves the condition optional and chooses video
+ * with unkown resolution if the condition cant be met
  */
 export async function downloadHlsStream(
   hlsUrl: string,
@@ -540,7 +546,7 @@ export async function downloadHlsStream(
       signal,
       container: "mp4",
       format: maxHeight
-        ? `bestvideo[height<=${maxHeight}]/best[height<=${maxHeight}]`
+        ? `bestvideo[height<=?${maxHeight}]/best[height<=?${maxHeight}]`
         : "bestvideo/best",
       onProgress: forwardProgress(0, 85),
     });
@@ -558,7 +564,7 @@ export async function downloadHlsStream(
       // bare "bestaudio" would have no match there and error out.
       // mergeVideoAudio only ever maps this input's audio stream, so it's
       // safe to hand it a combined video+audio file here too.
-      format: maxHeight ? `bestaudio/best[height<=${maxHeight}]` : "bestaudio/best",
+      format: maxHeight ? `bestaudio/best[height<=?${maxHeight}]` : "bestaudio/best",
       onProgress: forwardProgress(85, 10),
     });
     audioOutputPath = audioResult.outputPath ?? audioTempPath;

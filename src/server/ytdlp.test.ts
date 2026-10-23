@@ -261,13 +261,13 @@ it.each([480, 720, 1080] as const)(
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
     const videoArgs = spawn.mock.calls[0][1];
     expect(videoArgs[videoArgs.indexOf("-f") + 1]).toBe(
-      `bestvideo[height<=${height}]/best[height<=${height}]`
+      `bestvideo[height<=?${height}]/best[height<=?${height}]`
     );
     child.emit("close", 0);
 
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
     const audioArgs = spawn.mock.calls[1][1];
-    expect(audioArgs[audioArgs.indexOf("-f") + 1]).toBe(`bestaudio/best[height<=${height}]`);
+    expect(audioArgs[audioArgs.indexOf("-f") + 1]).toBe(`bestaudio/best[height<=?${height}]`);
     child.emit("close", 0);
 
     expect((await done).success).toBe(true);
