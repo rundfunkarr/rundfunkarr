@@ -260,9 +260,8 @@ function generateTitle(
   // Sonarr folds "ö" to "o" when matching series names, so "Loewenzahn" would miss "Löwenzahn".
   const showName = stripSeriesUmlauts ? stripUmlauts(info.showName) : info.showName;
 
-  if (episodeType === "daily") {
-    const aired = episode.aired ? new Date(episode.aired) : new Date();
-    const dateStr = aired.toISOString().split("T")[0]; // yyyy-MM-dd
+  if (episodeType === "daily" && episode.aired) {
+    const dateStr = new Date(episode.aired).toISOString().split("T")[0]; // yyyy-MM-dd
     return `${showName}.${dateStr}.${episode.name}.${releaseAudioTag(info.item.title)}.${quality}.WEB.h264-MEDiATHEK`.replace(
       / /g,
       "."
@@ -334,8 +333,9 @@ function createRssItems(
     ),
   ];
 
-  // Also create daily type if season is a year
-  if (info.episode.seasonNumber > 1950) {
+  // Also create daily type if season is a year. Without a known air date there is
+  // no date to name the release after; never fall back to today's date.
+  if (info.episode.seasonNumber > 1950 && info.episode.aired) {
     items.push(
       createRssItem(
         info,

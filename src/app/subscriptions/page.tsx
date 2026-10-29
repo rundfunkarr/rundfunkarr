@@ -93,13 +93,15 @@ export default function SubscriptionsPage() {
     return () => clearInterval(timer);
   }, [load]);
   useEffect(() => {
+    // Capture the ref object (not its value): cleanup must bump the latest counter so in-flight responses are ignored.
+    const requests = matchRequest;
     setMatches([]);
     setMatchError("");
     void loadMatches();
     const timer = setInterval(() => void loadMatches(), 15000);
     return () => {
       clearInterval(timer);
-      matchRequest.current++;
+      requests.current++;
     };
   }, [loadMatches]);
   const field = <K extends keyof SubscriptionInput>(key: K, value: SubscriptionInput[K]) =>
