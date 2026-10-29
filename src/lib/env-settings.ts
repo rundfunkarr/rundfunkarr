@@ -8,6 +8,13 @@ const ENV_SETTINGS = {
   TMDB_API_KEY: "api.tmdb.key",
   DOWNLOAD_FOLDER_PATH: "download.path",
   MEDIATHEK_SOURCE: "mediathek.source",
+  NOTIFY_WEBHOOK_URL: "notifications.webhook.url",
+  NOTIFY_NTFY_URL: "notifications.ntfy.url",
+  NOTIFY_NTFY_TOPIC: "notifications.ntfy.topic",
+  NOTIFY_NTFY_TOKEN: "notifications.ntfy.token",
+  NOTIFY_GOTIFY_URL: "notifications.gotify.url",
+  NOTIFY_GOTIFY_TOKEN: "notifications.gotify.token",
+  NOTIFY_DISCORD_WEBHOOK_URL: "notifications.discord.url",
 } as const;
 
 /** Variables with a fixed set of values; anything else is ignored with a warning. */

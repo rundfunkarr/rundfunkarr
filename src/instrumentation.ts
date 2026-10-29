@@ -14,7 +14,7 @@ export async function register() {
         // Required settings/database initialization below retains its own errors.
       }
       for (const [key, value] of Object.entries(process.env)) {
-        if (/KEY|TOKEN|SECRET|PASSWORD|PIN/.test(key)) rememberLogSecret(value);
+        if (/KEY|TOKEN|SECRET|PASSWORD|PIN|WEBHOOK/.test(key)) rememberLogSecret(value);
       }
       installLogger();
     }

@@ -32,6 +32,7 @@ unten in der Seitenleiste oder unter Einstellungen → Darstellung umschalten.
 - **Optionale MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
 - **Flexible Metadaten-Quellen** - Lokale Datenbank, TVDB oder TMDB
 - **Community-Rulesets** - Lokale Rulesets via Pull Request erweiterbar
+- **Benachrichtigungen** - Webhook, ntfy, Gotify und Discord bei fertigen oder fehlgeschlagenen Downloads
 - **Vorschaubilder** - Standbilder der Sendungen in Suche, Filmen und Suchabos, Poster aus TVDB bei Serien
 - **SQLite-Datenbank** - Persistente Speicherung von Cache und Download-Historie
 
@@ -140,6 +141,74 @@ curl -s -d "Fertig: $3 ($5)" https://ntfy.sh/mein-thema
 - Auswählbar sind nur Dateien aus dem Skriptordner. Den Ordner legt ausschließlich
   `POST_PROCESS_SCRIPTS_DIR` fest; über die Weboberfläche lässt er sich nicht ändern.
 
+## Benachrichtigungen
+
+RundfunkArr meldet sich auf Wunsch, wenn etwas passiert. Eingerichtet wird das unter
+Einstellungen → **Benachrichtigungen**. Jedes Ziel hat einen Knopf **Testnachricht senden**,
+der die gerade eingegebenen Werte prüft, ohne sie zu speichern.
+
+**Ereignisse** (einzeln abschaltbar, gelten für alle Ziele):
+
+| Ereignis | Inhalt |
+|----------|--------|
+| Download abgeschlossen | Titel, Sender (falls bekannt) und Dateiname |
+| Download fehlgeschlagen | Titel, Sender (falls bekannt) und Fehlermeldung, z. B. die ORF-Geosperre |
+| Suchabo hat Downloads gestartet | Eine Nachricht pro Prüfung mit allen neu eingereihten Downloads |
+
+Automatische Wiederholungen, Pausen und Abbrüche lösen keine Nachricht aus, erst der
+endgültige Fehlschlag. Den Sender kennt RundfunkArr nur bei Downloads aus Suchabos;
+Sonarr und Radarr übergeben ihn nicht.
+
+**Ziele** (mehrere gleichzeitig möglich):
+
+| Ziel | Einstellungen |
+|------|---------------|
+| Webhook | Adresse; erhält jedes Ereignis als JSON per `POST` (Format unten) |
+| ntfy | Serveradresse (Standard `https://ntfy.sh`), Topic, optional Zugriffstoken |
+| Gotify | Serveradresse und App-Token |
+| Discord | Webhook-Adresse eines Kanals |
+
+Ein Ziel sendet, sobald seine Pflichtfelder ausgefüllt sind und es nicht abgeschaltet ist.
+Webhook-Adressen und Tokens gelten als Zugangsdaten: Die Oberfläche zeigt sie maskiert, und
+das Protokoll schwärzt sie, auch im Export. Nachrichten gehen direkt raus, nicht über
+den Download-Proxy. Jede Nachricht wird einmal gesendet, mit 10 Sekunden Zeitlimit und
+ohne Wiederholung. Ein nicht erreichbares Ziel verzögert keinen Download; der Fehler steht
+im Protokoll.
+
+Webhook-Format (Version 1; neue Felder können hinzukommen, bei inkompatiblen Änderungen
+steigt `version`):
+
+```json
+{
+  "version": 1,
+  "event": "download.completed",
+  "type": "success",
+  "title": "Download abgeschlossen",
+  "body": "Tatort - Murot und das Murmeltier (ARD)\nDatei: Tatort - Murot und das Murmeltier.mkv",
+  "timestamp": "2026-10-29T12:00:00.000Z",
+  "download": {
+    "id": "6f1c…",
+    "title": "Tatort - Murot und das Murmeltier",
+    "channel": "ARD",
+    "category": "tv",
+    "fileName": "Tatort - Murot und das Murmeltier.mkv",
+    "filePath": "/downloads/tv/6f1c…/Tatort - Murot und das Murmeltier.mkv",
+    "size": 1288490188,
+    "warning": null,
+    "error": null
+  },
+  "subscription": null
+}
+```
+
+- `event`: `download.completed`, `download.failed`, `subscription.queued` oder `test`
+- `type`: `success`, `failure` oder `info` (Feldnamen wie bei Apprise: `title`, `body`, `type`)
+- `download`: bei beiden Download-Ereignissen gesetzt, sonst `null`. Bei Fehlschlägen steht
+  die Meldung in `error`; `fileName`, `filePath` und `size` sind dann `null`. `filePath` ist
+  der Pfad aus Sicht von Sonarr/Radarr (siehe `DOWNLOAD_FOLDER_PATH_MAPPING`).
+- `subscription`: nur bei `subscription.queued`, mit `id`, `name`, `query` und
+  `downloads` (Liste aus `id`, `title`, `channel`)
+
 ## Installation mit Docker
 
 ### docker-compose.yml
@@ -234,12 +303,16 @@ npm start
 | `TVDB_PIN` | Optionaler TVDB-PIN für Subscriber-Keys | leer |
 | `TMDB_API_KEY` | TMDB-API-Key zum Initialisieren der Einstellungen | leer |
 | `MEDIATHEK_SOURCE` | Suchquelle zum Initialisieren der Einstellungen: `mediathekviewweb` oder `local` | `mediathekviewweb` |
+| `NOTIFY_WEBHOOK_URL` | Webhook-Adresse für Benachrichtigungen | leer |
+| `NOTIFY_NTFY_URL`, `NOTIFY_NTFY_TOPIC`, `NOTIFY_NTFY_TOKEN` | ntfy-Server, Topic und optionales Token | leer (Server: `https://ntfy.sh`) |
+| `NOTIFY_GOTIFY_URL`, `NOTIFY_GOTIFY_TOKEN` | Gotify-Server und App-Token | leer |
+| `NOTIFY_DISCORD_WEBHOOK_URL` | Discord-Webhook-Adresse | leer |
 | `POST_PROCESS_SCRIPTS_DIR` | Ordner für Post-Processing-Skripte | `scripts` neben der Datenbank (Docker: `/app/prisma/data/scripts`) |
 | `DIAGNOSTICS_ADMIN_KEY` | Admin-Schlüssel für Diagnose, Verbindungstest und Protokoll einschließlich Export; mindestens 32 Zeichen | leer (Zugriff gesperrt) |
 
 Beim Serverstart werden nichtleere Werte aus `TVDB_API_KEY`, `TVDB_PIN`,
-`TMDB_API_KEY`, `DOWNLOAD_FOLDER_PATH` und `MEDIATHEK_SOURCE` in fehlende oder leere
-Datenbank-Einstellungen übernommen. Bereits gespeicherte Werte haben Vorrang.
+`TMDB_API_KEY`, `DOWNLOAD_FOLDER_PATH`, `MEDIATHEK_SOURCE` und den `NOTIFY_*`-Variablen
+in fehlende oder leere Datenbank-Einstellungen übernommen. Bereits gespeicherte Werte haben Vorrang.
 Bei lokalen Installationen können die Variablen in `.env` stehen; Docker benötigt
 sie unter `environment` oder über `env_file`. Nach Änderungen ist ein Neustart
 nötig. Im Build werden keine Werte übernommen. Gespeicherte API-Zugangsdaten

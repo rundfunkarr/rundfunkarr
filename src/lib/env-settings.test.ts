@@ -79,6 +79,26 @@ describe("environment settings initialization", () => {
     warn.mockRestore();
   });
 
+  it("initializes notification targets", async () => {
+    expect(
+      await initSettingsFromEnv({
+        NOTIFY_WEBHOOK_URL: "http://hooks.local/rundfunkarr",
+        NOTIFY_NTFY_URL: "https://ntfy.example.org",
+        NOTIFY_NTFY_TOPIC: "downloads",
+        NOTIFY_NTFY_TOKEN: "tk_env",
+        NOTIFY_GOTIFY_URL: "https://gotify.example.org",
+        NOTIFY_GOTIFY_TOKEN: "gotify-env",
+        NOTIFY_DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/1/env",
+      })
+    ).toBe(7);
+    expect(await getSetting("notifications.webhook.url")).toBe("http://hooks.local/rundfunkarr");
+    expect(await getSetting("notifications.ntfy.topic")).toBe("downloads");
+    expect(await getSetting("notifications.gotify.token")).toBe("gotify-env");
+    expect(await getSetting("notifications.discord.url")).toBe(
+      "https://discord.com/api/webhooks/1/env"
+    );
+  });
+
   it("ignores missing or blank variables", async () => {
     expect(await initSettingsFromEnv({ TVDB_API_KEY: "", TMDB_API_KEY: " \n " })).toBe(0);
     expect(await prisma.config.count()).toBe(0);

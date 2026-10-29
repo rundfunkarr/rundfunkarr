@@ -93,3 +93,25 @@ it.each(["api.tvdb.key", "api.tvdb.pin", "api.tmdb.key", "tvdb_token"])(
     expect(values.get(key)).toBe("");
   }
 );
+
+it("masks notification secrets and keeps them when masked values are saved again", async () => {
+  values.set("notifications.webhook.url", "https://hooks.example.org/private-hook");
+  values.set("notifications.discord.url", "https://discord.com/api/webhooks/1/private-discord");
+  values.set("notifications.ntfy.token", "private-ntfy");
+  values.set("notifications.gotify.token", "private-gotify");
+  values.set("notifications.ntfy.topic", "visible-topic");
+  const all = await (await GET(new NextRequest("http://localhost/api/settings"))).json();
+  expect(JSON.stringify(all)).not.toContain("private-");
+  expect(all["notifications.ntfy.topic"]).toBe("visible-topic");
+  expect(all["notifications.ntfy.url"]).toBe("https://ntfy.sh");
+  expect(all["notifications.event.downloadFailed"]).toBe("true");
+
+  await post({
+    "notifications.webhook.url": all["notifications.webhook.url"],
+    "notifications.gotify.token": all["notifications.gotify.token"],
+    "notifications.ntfy.topic": "new-topic",
+  });
+  expect(values.get("notifications.webhook.url")).toBe("https://hooks.example.org/private-hook");
+  expect(values.get("notifications.gotify.token")).toBe("private-gotify");
+  expect(values.get("notifications.ntfy.topic")).toBe("new-topic");
+});

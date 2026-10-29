@@ -5,6 +5,11 @@ const CREDENTIAL_KEYS = new Set([
   "api.tvdb.pin",
   "api.tmdb.key",
   "tvdb_token",
+  // Notification targets: webhook URLs embed their access token.
+  "notifications.webhook.url",
+  "notifications.discord.url",
+  "notifications.ntfy.token",
+  "notifications.gotify.token",
 ]);
 const MASKED_CREDENTIAL = "••••••••";
 

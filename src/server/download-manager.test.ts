@@ -22,6 +22,8 @@ const {
   convertMp4ToMkv,
   downloadHlsStream,
   fetchSubtitle,
+  notifyDownloadCompleted,
+  notifyDownloadFailed,
 } = vi.hoisted(() => ({
   configFindUnique: vi.fn(),
   downloadCount: vi.fn(),
@@ -32,6 +34,8 @@ const {
   convertMp4ToMkv: vi.fn(),
   downloadHlsStream: vi.fn(),
   fetchSubtitle: vi.fn(),
+  notifyDownloadCompleted: vi.fn(),
+  notifyDownloadFailed: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -54,6 +58,7 @@ vi.mock("./ffmpeg", () => {
 
 vi.mock("./ytdlp", () => ({ downloadHlsStream }));
 vi.mock("./subtitle-fetch", () => ({ fetchSubtitle }));
+vi.mock("./notifications", () => ({ notifyDownloadCompleted, notifyDownloadFailed }));
 
 import { rememberLogSecret } from "@/lib/logger";
 import { clearSettingsCache } from "@/lib/settings";
@@ -130,6 +135,8 @@ beforeEach(async () => {
   convertMp4ToMkv.mockReset();
   fetchSubtitle.mockReset().mockResolvedValue("WEBVTT\n\n00:01.000 --> 00:02.000\nSubtitle\n");
   downloadHlsStream.mockReset();
+  notifyDownloadCompleted.mockReset();
+  notifyDownloadFailed.mockReset();
 
   testRoot = await mkdtemp(path.join(tmpdir(), "rundfunkarr-download-manager-"));
   vi.stubEnv("DOWNLOAD_TEMP_PATH", path.join(testRoot, "incomplete"));
@@ -191,6 +198,17 @@ describe("processDownload", () => {
           filePath: path.join("/mapped/downloads", categoryFolder, "download-1", `${title}.mp4`),
         }),
       });
+      expect(notifyDownloadCompleted).toHaveBeenCalledOnce();
+      expect(notifyDownloadCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "download-1",
+          title,
+          category,
+          size: mediaBytes.byteLength,
+          filePath: path.join("/mapped/downloads", categoryFolder, "download-1", `${title}.mp4`),
+        })
+      );
+      expect(notifyDownloadFailed).not.toHaveBeenCalled();
     }
   );
 
@@ -660,6 +678,9 @@ describe("completed download folders", () => {
       where: { id: downloadId },
       data: expect.objectContaining({ status }),
     });
+    // Only the final failure notifies; pauses, cancellations and retries stay quiet.
+    expect(notifyDownloadFailed).toHaveBeenCalledTimes(outcome === "failure" ? 1 : 0);
+    expect(notifyDownloadCompleted).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(
@@ -701,7 +722,7 @@ it("fails an ORF geo restriction at once instead of retrying it", async () => {
     attempts: 1,
     url: "https://apasfiis.sf.apa.at/ipad/cms-austria/2026/10/16/example_QXA.mp4/chunklist_b6100000.m3u8#rundfunkarr-height=1080",
   });
-  downloadUpdate.mockResolvedValue({});
+  downloadUpdate.mockResolvedValue({ title: "Universum History", category: "tv" });
   downloadHlsStream.mockResolvedValue({ success: false, error: ORF_GEO_BLOCK_ERROR });
 
   await processDownload("orf");
@@ -709,6 +730,12 @@ it("fails an ORF geo restriction at once instead of retrying it", async () => {
   expect(downloadUpdate).toHaveBeenLastCalledWith({
     where: { id: "orf" },
     data: expect.objectContaining({ status: "failed", error: ORF_GEO_BLOCK_ERROR }),
+  });
+  expect(notifyDownloadFailed).toHaveBeenCalledWith({
+    id: "orf",
+    title: "Universum History",
+    category: "tv",
+    error: ORF_GEO_BLOCK_ERROR,
   });
 });
 

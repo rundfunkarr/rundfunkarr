@@ -41,6 +41,22 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "cache.ttl.search": "3600",
   "cache.ttl.metadata": "86400",
 
+  // Notifications: events default on; a target only sends once it is configured.
+  "notifications.event.downloadCompleted": "true",
+  "notifications.event.downloadFailed": "true",
+  "notifications.event.subscriptionQueued": "true",
+  "notifications.webhook.enabled": "true",
+  "notifications.webhook.url": "",
+  "notifications.ntfy.enabled": "true",
+  "notifications.ntfy.url": "https://ntfy.sh",
+  "notifications.ntfy.topic": "",
+  "notifications.ntfy.token": "",
+  "notifications.gotify.enabled": "true",
+  "notifications.gotify.url": "",
+  "notifications.gotify.token": "",
+  "notifications.discord.enabled": "true",
+  "notifications.discord.url": "",
+
   // System
   "system.setupComplete": "false",
 };
