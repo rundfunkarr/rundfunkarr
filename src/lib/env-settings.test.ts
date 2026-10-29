@@ -106,6 +106,26 @@ describe("environment settings initialization", () => {
     );
   });
 
+  it("initializes webhook headers and ignores invalid ones without logging them", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      await initSettingsFromEnv({
+        NOTIFY_WEBHOOK_HEADERS: "Authorization: Bearer env-token\nX-Source: RundfunkArr\n",
+      })
+    ).toBe(1);
+    expect(await getSetting("notifications.webhook.headers")).toBe(
+      "Authorization: Bearer env-token\nX-Source: RundfunkArr"
+    );
+    await prisma.config.deleteMany();
+    clearSettingsCache();
+    expect(await initSettingsFromEnv({ NOTIFY_WEBHOOK_HEADERS: "Host: env-secret-host" })).toBe(0);
+    expect(await getSetting("notifications.webhook.headers")).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(String(warn.mock.lastCall)).toContain("NOTIFY_WEBHOOK_HEADERS ignored");
+    expect(String(warn.mock.lastCall)).not.toContain("env-secret-host");
+    warn.mockRestore();
+  });
+
   it("ignores missing or blank variables", async () => {
     expect(await initSettingsFromEnv({ TVDB_API_KEY: "", TMDB_API_KEY: " \n " })).toBe(0);
     expect(await prisma.config.count()).toBe(0);

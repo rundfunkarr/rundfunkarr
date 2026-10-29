@@ -2,6 +2,7 @@ import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import { prisma } from "./db";
 import { clearSettingsCache } from "./settings";
 import { createLogger } from "@/lib/logger";
+import { parseWebhookHeaders } from "./webhook-headers";
 
 const log = createLogger("Settings");
 
@@ -12,6 +13,7 @@ const ENV_SETTINGS = {
   DOWNLOAD_FOLDER_PATH: "download.path",
   MEDIATHEK_SOURCE: "mediathek.source",
   NOTIFY_WEBHOOK_URL: "notifications.webhook.url",
+  NOTIFY_WEBHOOK_HEADERS: "notifications.webhook.headers",
   NOTIFY_NTFY_URL: "notifications.ntfy.url",
   NOTIFY_NTFY_TOPIC: "notifications.ntfy.topic",
   NOTIFY_NTFY_TOKEN: "notifications.ntfy.token",
@@ -35,6 +37,14 @@ export async function initSettingsFromEnv(
   const entries = Object.entries(ENV_SETTINGS).flatMap(([variable, key]) => {
     const value = env[variable]?.trim();
     if (!value) return [];
+    if (variable === "NOTIFY_WEBHOOK_HEADERS") {
+      // Never log the value: header values usually carry credentials.
+      const { error } = parseWebhookHeaders(value);
+      if (error) {
+        log.warn(`${variable} ignored: ${error}`);
+        return [];
+      }
+    }
     const allowed = ENV_ALLOWED_VALUES[variable as keyof typeof ENV_SETTINGS];
     if (allowed && !allowed.includes(value.toLowerCase())) {
       log.warn(`${variable}=${value} ignored; allowed: ${allowed.join(", ")}`);

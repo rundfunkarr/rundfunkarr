@@ -204,6 +204,44 @@ describe("requests per target", () => {
     expect(json(request.body)).toEqual(completed());
   });
 
+  it("adds custom webhook headers without touching the content type", () => {
+    const request = buildRequest(
+      "webhook",
+      {
+        url: "http://127.0.0.1:9000/hook",
+        headers: "Authorization: Bearer hook-token\nuser-agent: Home Assistant",
+      },
+      completed()
+    );
+    expect(request.headers).toEqual({
+      "Content-Type": "application/json",
+      Authorization: "Bearer hook-token",
+      "user-agent": "Home Assistant",
+    });
+    expect(() =>
+      buildRequest(
+        "webhook",
+        { url: "http://127.0.0.1:9000/hook", headers: "Content-Type: text/plain" },
+        completed()
+      )
+    ).toThrow("Webhook-Header: Zeile 1: „Content-Type“ setzt RundfunkArr selbst.");
+  });
+
+  it("does not send a webhook with invalid headers", async () => {
+    const result = await sendToTarget(
+      "webhook",
+      { url: "http://127.0.0.1:9000/hook", headers: "X-Token: a\rInjected: 1" },
+      completed()
+    );
+    expect(result).toEqual({
+      target: "webhook",
+      success: false,
+      error:
+        "Webhook-Header: Zeile 1: Der Wert darf nur ASCII-Zeichen ohne Steuerzeichen enthalten.",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("publishes JSON to the ntfy server root with optional bearer token", () => {
     const request = buildRequest(
       "ntfy",
@@ -373,6 +411,28 @@ describe("event filtering and targets", () => {
     ]);
     expect(warn).toHaveBeenCalledOnce();
     expect(redactLog(String(warn.mock.lastCall![0]))).not.toContain("gotify-app-token");
+  });
+});
+
+describe("webhook headers from the settings", () => {
+  it("sends stored headers and redacts their values in the log", async () => {
+    values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    values.set(
+      "notifications.webhook.headers",
+      "Authorization: Bearer stored-header-token\nX-Api-Key: stored-api-key"
+    );
+    fetchMock.mockResolvedValue(
+      new Response("denied stored-header-token stored-api-key", { status: 403 })
+    );
+    await dispatchNotification(completed());
+    expect(fetchMock.mock.lastCall![1].headers).toMatchObject({
+      Authorization: "Bearer stored-header-token",
+      "X-Api-Key": "stored-api-key",
+    });
+    const logged = redactLog(String(warn.mock.lastCall![0]));
+    expect(logged).toContain("HTTP 403");
+    expect(logged).not.toContain("stored-header-token");
+    expect(logged).not.toContain("stored-api-key");
   });
 });
 

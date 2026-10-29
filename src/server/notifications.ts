@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { parseMediaMetadata } from "@/lib/media-metadata";
 import { createLogger, rememberLogSecret } from "@/lib/logger";
+import { parseWebhookHeaders, webhookHeaderSecrets } from "@/lib/webhook-headers";
 
 /**
  * Outbound notifications (generic webhook, ntfy, Gotify, Discord).
@@ -66,6 +67,8 @@ export interface TargetConfig {
   url: string;
   topic?: string;
   token?: string;
+  /** Webhook only: extra headers, one `Name: Wert` per line. */
+  headers?: string;
 }
 
 export interface SendResult {
@@ -98,9 +101,9 @@ export const TARGET_LABELS: Record<NotificationTarget, string> = {
 /** Setting keys per target. `enabled` defaults to on; a target is used once it is configured. */
 export const TARGET_SETTINGS: Record<
   NotificationTarget,
-  { url: string; topic?: string; token?: string }
+  { url: string; topic?: string; token?: string; headers?: string }
 > = {
-  webhook: { url: "notifications.webhook.url" },
+  webhook: { url: "notifications.webhook.url", headers: "notifications.webhook.headers" },
   ntfy: {
     url: "notifications.ntfy.url",
     topic: "notifications.ntfy.topic",
@@ -283,9 +286,18 @@ export function buildRequest(
   switch (target) {
     case "webhook": {
       if (!config.url.trim()) throw new Error("Webhook: Adresse fehlt.");
+      const extra = parseWebhookHeaders(config.headers);
+      if (!extra.headers) throw new Error(`Webhook-Header: ${extra.error}`);
+      const headers: Record<string, string> = { ...json };
+      for (const [name, value] of Object.entries(extra.headers)) {
+        // Replace defaults case-insensitively (only User-Agent can be overridden).
+        for (const key of Object.keys(headers))
+          if (key.toLowerCase() === name.toLowerCase()) delete headers[key];
+        headers[name] = value;
+      }
       return {
         url: parseHttpUrl(config.url, label).toString(),
-        headers: json,
+        headers,
         body: JSON.stringify(payload),
       };
     }
@@ -414,6 +426,7 @@ function readTargetConfig(
     url: values[keys.url] ?? "",
     topic: keys.topic ? (values[keys.topic] ?? "") : undefined,
     token: keys.token ? (values[keys.token] ?? "") : undefined,
+    headers: keys.headers ? (values[keys.headers] ?? "") : undefined,
   };
   rememberTargetSecrets(target, config);
   return config;
@@ -425,6 +438,7 @@ export function rememberTargetSecrets(target: NotificationTarget, config: Target
   // or typed into the settings form but not saved yet.
   if (target === "webhook" || target === "discord") rememberLogSecret(config.url);
   rememberLogSecret(config.token);
+  for (const secret of webhookHeaderSecrets(config.headers)) rememberLogSecret(secret);
 }
 
 /** A target is active when it is not switched off and its required fields are filled in. */

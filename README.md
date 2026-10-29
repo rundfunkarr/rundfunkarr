@@ -170,13 +170,29 @@ bleibt `channel` leer.
 
 | Ziel | Einstellungen |
 |------|---------------|
-| Webhook | Adresse; erhält jedes Ereignis als JSON per `POST` (Format unten) |
+| Webhook | Adresse, optional zusätzliche Header; erhält jedes Ereignis als JSON per `POST` (Format unten) |
 | ntfy | Serveradresse (Standard `https://ntfy.sh`), Topic, optional Zugriffstoken |
 | Gotify | Serveradresse und App-Token |
 | Discord | Webhook-Adresse eines Kanals |
 
+Für den Webhook lassen sich zusätzliche Header angeben, einer pro Zeile im Format
+`Name: Wert`, z. B. `Authorization: Bearer …` für einen geschützten Empfänger.
+`Content-Type`, `Content-Length` und `Host` (sowie andere Header, die nur der HTTP-Client
+setzen darf) lassen sich nicht überschreiben; Werte dürfen nur ASCII-Zeichen ohne
+Steuerzeichen enthalten. Ungültige Angaben weist RundfunkArr beim Speichern zurück. Über
+`NOTIFY_WEBHOOK_HEADERS` gehen mehrere Header mit Zeilenumbrüchen, in der
+`docker-compose.yml` etwa als Block:
+
+```yaml
+environment:
+  - NOTIFY_WEBHOOK_URL=https://hooks.example.org/rundfunkarr
+  - |
+    NOTIFY_WEBHOOK_HEADERS=Authorization: Bearer geheim
+    X-Quelle: RundfunkArr
+```
+
 Ein Ziel sendet, sobald seine Pflichtfelder ausgefüllt sind und es nicht abgeschaltet ist.
-Webhook-Adressen und Tokens gelten als Zugangsdaten: Die Oberfläche zeigt sie maskiert, und
+Webhook-Adressen, Webhook-Header und Tokens gelten als Zugangsdaten: Die Oberfläche zeigt sie maskiert, und
 das Protokoll schwärzt sie, auch im Export. Nachrichten gehen direkt raus, nicht über
 den Download-Proxy. Jede Nachricht wird einmal gesendet, mit 10 Sekunden Zeitlimit und
 ohne Wiederholung. Ein nicht erreichbares Ziel verzögert keinen Download; der Fehler steht
@@ -316,6 +332,7 @@ npm start
 | `TMDB_API_KEY` | TMDB-API-Key zum Initialisieren der Einstellungen | leer |
 | `MEDIATHEK_SOURCE` | Suchquelle zum Initialisieren der Einstellungen: `mediathekviewweb` oder `local` | `mediathekviewweb` |
 | `NOTIFY_WEBHOOK_URL` | Webhook-Adresse für Benachrichtigungen | leer |
+| `NOTIFY_WEBHOOK_HEADERS` | Zusätzliche Webhook-Header, einer pro Zeile (`Name: Wert`) | leer |
 | `NOTIFY_NTFY_URL`, `NOTIFY_NTFY_TOPIC`, `NOTIFY_NTFY_TOKEN` | ntfy-Server, Topic und optionales Token | leer (Server: `https://ntfy.sh`) |
 | `NOTIFY_GOTIFY_URL`, `NOTIFY_GOTIFY_TOKEN` | Gotify-Server und App-Token | leer |
 | `NOTIFY_DISCORD_WEBHOOK_URL` | Discord-Webhook-Adresse | leer |
