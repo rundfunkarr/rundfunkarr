@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Save } from "lucide-react";
 import { useSettings } from "@/contexts/settings-context";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,13 @@ interface ScriptList {
   scripts: string[];
 }
 
+async function fetchScripts(signal?: AbortSignal): Promise<ScriptList> {
+  const response = await fetch("/api/scripts", { cache: "no-store", signal });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Skripte konnten nicht geladen werden.");
+  return data;
+}
+
 export function PostProcessSettings() {
   const { settings, updateSettings } = useSettings();
   const [script, setScript] = useState<string | null>(null);
@@ -24,20 +31,16 @@ export function PostProcessSettings() {
   const current = script ?? saved;
   const missing = current !== "" && list !== null && !list.scripts.includes(current);
 
-  const loadScripts = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch("/api/scripts", { cache: "no-store", signal });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Skripte konnten nicht geladen werden.");
-    setList(data);
-  }, []);
-
   useEffect(() => {
     const controller = new AbortController();
-    loadScripts(controller.signal).catch((e) => {
-      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
-    });
+    fetchScripts(controller.signal).then(
+      (data) => setList(data),
+      (e) => {
+        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+      }
+    );
     return () => controller.abort();
-  }, [loadScripts]);
+  }, []);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -103,7 +106,7 @@ export function PostProcessSettings() {
               className="shrink-0"
               title="Liste aktualisieren"
               aria-label="Skriptliste aktualisieren"
-              onClick={() => run(() => loadScripts())}
+              onClick={() => run(async () => setList(await fetchScripts()))}
               disabled={busy}
             >
               <RefreshCw />

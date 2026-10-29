@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -29,6 +29,7 @@ import { Page, PageHeader } from "@/components/shared/page";
 import { Notice } from "@/components/shared/notice";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Thumbnail } from "@/components/shared/thumbnail";
+import { usePolling, type PollRun } from "@/hooks/use-polling";
 import { RefreshCw, Search, Settings2, Trash2, ExternalLink, Plus } from "lucide-react";
 
 interface Ruleset {
@@ -60,7 +61,6 @@ export default function RulesetsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rulesets, setRulesets] = useState<Ruleset[]>([]);
-  const [filteredRulesets, setFilteredRulesets] = useState<Ruleset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; ruleset: Ruleset | null }>({
@@ -68,44 +68,41 @@ export default function RulesetsPage() {
     ruleset: null,
   });
 
-  const fetchRulesets = async () => {
-    setIsLoading(true);
+  const loadRulesets = useCallback(async ({ signal, isCurrent }: PollRun) => {
     try {
-      const res = await fetch("/api/rulesets");
+      const res = await fetch("/api/rulesets", { signal });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const data = await res.json();
+      if (!isCurrent()) return;
       setError(null);
       setRulesets(Array.isArray(data) ? data : []);
-      setFilteredRulesets(Array.isArray(data) ? data : []);
     } catch (error) {
+      if (!isCurrent()) return;
       setError(error instanceof Error ? error.message : "Regeln konnten nicht geladen werden.");
       setRulesets([]);
-      setFilteredRulesets([]);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchRulesets();
   }, []);
 
-  useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredRulesets(rulesets);
-    } else {
-      const query = searchQuery.toLowerCase();
-      setFilteredRulesets(
-        rulesets.filter(
-          (rs) =>
-            rs.topic.toLowerCase().includes(query) ||
-            rs.showName.toLowerCase().includes(query) ||
-            (rs.germanName && rs.germanName.toLowerCase().includes(query))
-        )
-      );
-    }
+  const reloadRulesets = usePolling(loadRulesets);
+
+  const fetchRulesets = () => {
+    setIsLoading(true);
+    void reloadRulesets();
+  };
+
+  const filteredRulesets = useMemo(() => {
+    if (searchQuery.trim() === "") return rulesets;
+    const query = searchQuery.toLowerCase();
+    return rulesets.filter(
+      (rs) =>
+        rs.topic.toLowerCase().includes(query) ||
+        rs.showName.toLowerCase().includes(query) ||
+        (rs.germanName && rs.germanName.toLowerCase().includes(query))
+    );
   }, [searchQuery, rulesets]);
 
   const handleDeleteConfirm = async () => {
@@ -158,7 +155,7 @@ export default function RulesetsPage() {
           onSaved={() => {
             setEditing(undefined);
             setMessage("Lokale Regel gespeichert. Sie gilt ab der nächsten Suche.");
-            void fetchRulesets();
+            fetchRulesets();
           }}
         />
       )}

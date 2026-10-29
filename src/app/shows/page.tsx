@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Page, PageHeader } from "@/components/shared/page";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Thumbnail } from "@/components/shared/thumbnail";
+import { usePolling, type PollRun } from "@/hooks/use-polling";
 import { RefreshCw, Search, Tv, ExternalLink } from "lucide-react";
 
 interface Show {
@@ -34,47 +35,42 @@ interface Show {
 
 export default function ShowsPage() {
   const [shows, setShows] = useState<Show[]>([]);
-  const [filteredShows, setFilteredShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const fetchShows = async () => {
-    setIsLoading(true);
+  const loadShows = useCallback(async ({ signal, isCurrent }: PollRun) => {
     try {
-      const res = await fetch("/api/shows");
+      const res = await fetch("/api/shows", { signal });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const data = await res.json();
-      setShows(Array.isArray(data) ? data : []);
-      setFilteredShows(Array.isArray(data) ? data : []);
+      if (isCurrent()) setShows(Array.isArray(data) ? data : []);
     } catch (error) {
+      if (!isCurrent()) return;
       // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to fetch shows:", error);
       setShows([]);
-      setFilteredShows([]);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchShows();
   }, []);
 
-  useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredShows(shows);
-    } else {
-      const query = searchQuery.toLowerCase();
-      setFilteredShows(
-        shows.filter(
-          (show) =>
-            show.name.toLowerCase().includes(query) ||
-            (show.germanName && show.germanName.toLowerCase().includes(query))
-        )
-      );
-    }
+  const reloadShows = usePolling(loadShows);
+
+  const fetchShows = () => {
+    setIsLoading(true);
+    void reloadShows();
+  };
+
+  const filteredShows = useMemo(() => {
+    if (searchQuery.trim() === "") return shows;
+    const query = searchQuery.toLowerCase();
+    return shows.filter(
+      (show) =>
+        show.name.toLowerCase().includes(query) ||
+        (show.germanName && show.germanName.toLowerCase().includes(query))
+    );
   }, [searchQuery, shows]);
 
   return (

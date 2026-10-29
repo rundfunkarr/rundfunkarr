@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -21,6 +21,7 @@ import { Progress } from "@/components/shared/progress";
 import { Download, History, RefreshCw, X, RotateCcw, Pause, Play } from "lucide-react";
 import { formatSize } from "@/lib/formatters";
 import { getStatusBadge } from "@/components/shared/status-badge";
+import { usePolling, type PollRun } from "@/hooks/use-polling";
 
 interface QueueSlot {
   nzo_id: string;
@@ -58,58 +59,51 @@ export default function DownloadsPage() {
   const [history, setHistory] = useState<HistorySlot[]>([]);
   const [historyPage, setHistoryPage] = useState<number | null>(null);
   const [page, setPage] = useState(0);
-  const [refreshVersion, setRefreshVersion] = useState(0);
   const [total, setTotal] = useState(0);
-  const requestSequence = useRef(0);
   const pageSize = 50;
   const [isLoading, setIsLoading] = useState(true);
   // Starts empty so the first successful fetch always changes the rendered text.
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  const fetchData = useCallback(async () => {
-    const sequence = ++requestSequence.current;
-    try {
-      const [queueRes, historyRes, optionsRes] = await Promise.all([
-        fetch("/api/download?mode=queue"),
-        fetch(`/api/download?mode=history&start=${page * pageSize}&limit=${pageSize}`),
-        fetch("/api/download/control"),
-      ]);
-      if (!queueRes.ok || !historyRes.ok || !optionsRes.ok)
-        throw new Error("Downloads konnten nicht geladen werden.");
-      const queueData = await queueRes.json();
-      const historyData = await historyRes.json();
-      const optionsData = await optionsRes.json();
-      if (sequence !== requestSequence.current) return;
-      const count = historyData.history?.noofslots ?? 0;
-      setTotal(count);
-      if (page > 0 && page * pageSize >= count) {
-        setPage(Math.max(0, Math.ceil(count / pageSize) - 1));
-        return;
+  const loadData = useCallback(
+    async ({ signal, isCurrent }: PollRun) => {
+      try {
+        const [queueRes, historyRes, optionsRes] = await Promise.all([
+          fetch("/api/download?mode=queue", { signal }),
+          fetch(`/api/download?mode=history&start=${page * pageSize}&limit=${pageSize}`, {
+            signal,
+          }),
+          fetch("/api/download/control", { signal }),
+        ]);
+        if (!queueRes.ok || !historyRes.ok || !optionsRes.ok)
+          throw new Error("Downloads konnten nicht geladen werden.");
+        const queueData = await queueRes.json();
+        const historyData = await historyRes.json();
+        const optionsData = await optionsRes.json();
+        if (!isCurrent()) return;
+        const count = historyData.history?.noofslots ?? 0;
+        setTotal(count);
+        if (page > 0 && page * pageSize >= count) {
+          setPage(Math.max(0, Math.ceil(count / pageSize) - 1));
+          return;
+        }
+        setLoadError(null);
+        setOptions(optionsData);
+        setQueue(queueData.queue?.slots || []);
+        setHistory(historyData.history?.slots || []);
+        setHistoryPage(page);
+        setLastRefresh(new Date());
+      } catch (error) {
+        if (isCurrent())
+          setLoadError(error instanceof Error ? error.message : "Laden fehlgeschlagen.");
+      } finally {
+        if (isCurrent()) setIsLoading(false);
       }
-      setLoadError(null);
-      setOptions(optionsData);
-      setQueue(queueData.queue?.slots || []);
-      setHistory(historyData.history?.slots || []);
-      setHistoryPage(page);
-      setLastRefresh(new Date());
-    } catch (error) {
-      if (sequence === requestSequence.current)
-        setLoadError(error instanceof Error ? error.message : "Laden fehlgeschlagen.");
-    } finally {
-      if (sequence === requestSequence.current) setIsLoading(false);
-    }
-  }, [page]);
+    },
+    [page]
+  );
 
-  useEffect(() => {
-    // Capture the ref object (not its value): cleanup must bump the latest counter so in-flight responses are ignored.
-    const requests = requestSequence;
-    fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => {
-      clearInterval(interval);
-      requests.current++;
-    };
-  }, [fetchData, refreshVersion]);
+  const refresh = usePolling(loadData, 5000);
 
   const handleAction = async (action: string, extra: Record<string, string | number> = {}) => {
     setBusy(true);
@@ -122,7 +116,7 @@ export default function DownloadsPage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || "Die Aktion ist fehlgeschlagen.");
-      setRefreshVersion((version) => version + 1);
+      void refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Die Aktion ist fehlgeschlagen.");
     } finally {
@@ -140,7 +134,7 @@ export default function DownloadsPage() {
       }
       const data = await res.json();
       if (data.status) {
-        setRefreshVersion((version) => version + 1);
+        void refresh();
       }
     } catch (error) {
       // eslint-disable-next-line no-console -- client component, logs to the browser console
@@ -156,7 +150,7 @@ export default function DownloadsPage() {
       }
       const data = await res.json();
       if (data.status) {
-        setRefreshVersion((version) => version + 1);
+        void refresh();
       }
     } catch (error) {
       // eslint-disable-next-line no-console -- client component, logs to the browser console
@@ -174,7 +168,7 @@ export default function DownloadsPage() {
             <span className="tabular font-mono text-xs text-muted-foreground">
               Stand {lastRefresh ? lastRefresh.toLocaleTimeString("de-DE") : "–"}
             </span>
-            <Button variant="outline" size="sm" onClick={fetchData}>
+            <Button variant="outline" size="sm" onClick={() => void refresh()}>
               <RefreshCw />
               Aktualisieren
             </Button>

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useSettings } from "@/contexts/settings-context";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,13 @@ const formatDate = (milliseconds: number | null) =>
 const formatNumber = (value: number) => value.toLocaleString("de-DE");
 const formatMegabytes = (bytes: number) => `${formatNumber(Math.round(bytes / 1024 / 1024))} MB`;
 
+async function fetchStatus(signal?: AbortSignal): Promise<FilmlisteStatus> {
+  const response = await fetch("/api/filmliste", { cache: "no-store", signal });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Status konnte nicht geladen werden.");
+  return data;
+}
+
 function statusBadge(status: FilmlisteStatus) {
   if (!status.enabled) return <Badge variant="muted">MediathekViewWeb</Badge>;
   if (status.usable) return <Badge variant="ok">Lokal bereit</Badge>;
@@ -48,28 +55,30 @@ export function FilmlisteIndexSettings() {
   const localSelected = currentSource === "local";
   const currentHours = hours ?? settings?.["mediathek.localIndex.updateHours"] ?? "2";
 
-  const loadStatus = useCallback(async (signal?: AbortSignal): Promise<FilmlisteStatus> => {
-    const response = await fetch("/api/filmliste", { cache: "no-store", signal });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Status konnte nicht geladen werden.");
-    setStatus(data);
-    return data;
-  }, []);
-
   useEffect(() => {
     const controller = new AbortController();
-    loadStatus(controller.signal).catch((e) => {
-      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
-    });
+    fetchStatus(controller.signal).then(
+      (data) => setStatus(data),
+      (e) => {
+        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+      }
+    );
     return () => controller.abort();
-  }, [loadStatus]);
+  }, []);
 
   // Follow a running import until it finishes.
   useEffect(() => {
     if (!status?.running) return;
-    const timer = setInterval(() => void loadStatus().catch(() => {}), 3000);
+    const timer = setInterval(
+      () =>
+        void fetchStatus().then(
+          (data) => setStatus(data),
+          () => {}
+        ),
+      3000
+    );
     return () => clearInterval(timer);
-  }, [status?.running, loadStatus]);
+  }, [status?.running]);
 
   async function request(method: "POST" | "DELETE") {
     const response = await fetch("/api/filmliste", { method });
@@ -99,7 +108,8 @@ export function FilmlisteIndexSettings() {
       });
       setSource(null);
       setHours(null);
-      const fresh = await loadStatus();
+      const fresh = await fetchStatus();
+      setStatus(fresh);
       // Build the index right away instead of waiting for the scheduler.
       if (localSelected && !fresh.running && fresh.entryCount === 0) {
         await request("POST");
