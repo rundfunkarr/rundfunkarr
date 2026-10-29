@@ -1,4 +1,5 @@
 import { BaseProvider } from "./base";
+import { createSkipKeywordMatcher } from "./title-filter";
 import { withStreamQuality } from "@/lib/stream-url";
 import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import {
@@ -25,6 +26,7 @@ const DEFAULT_MIN_DURATION = 5 * 60 * 1000; // milliseconds
 
 // Skip keywords (trailers, clips, etc.)
 const SKIP_KEYWORDS = ["Trailer", "Teaser", "Preview", "Clip"];
+const isSkippedTitle = createSkipKeywordMatcher(SKIP_KEYWORDS);
 
 /**
  * SRF Provider
@@ -218,7 +220,7 @@ export class SrfProvider extends BaseProvider {
       }
 
       // Skip items with unwanted keywords in title
-      if (SKIP_KEYWORDS.some((kw) => result.title.toLowerCase().includes(kw.toLowerCase()))) {
+      if (isSkippedTitle(result.title)) {
         continue;
       }
 
