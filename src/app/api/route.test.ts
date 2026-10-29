@@ -14,6 +14,8 @@ vi.mock("@/server/download-queue", async (importOriginal) => ({
 import { GET, POST } from "./route";
 import { POST as webPost } from "./download/route";
 import { GET as generateNzb } from "./newznab/fake_nzb_download/route";
+import { generateRssItems } from "@/services/newznab";
+import type { MatchedEpisodeInfo } from "@/types";
 
 const title = "Checker.Tobi.S14E03.GERMAN.1080p.WEB.h264-MEDiATHEK";
 const url = "https://example.org/video--1080.mp4?token=a&quality=hd";
@@ -73,6 +75,42 @@ describe("SABnzbd addfile compatibility", () => {
       });
     }
   );
+
+  it("carries the broadcaster from the Newznab result into the queued download", async () => {
+    const info: MatchedEpisodeInfo = {
+      showName: "Checker Tobi",
+      matchedTitle: "Folge",
+      tvdbId: 1,
+      episode: { name: "Folge", aired: null, runtime: 25, seasonNumber: 14, episodeNumber: 3 },
+      item: {
+        channel: "KiKA",
+        topic: "Checker Tobi",
+        title: "Folge",
+        description: "",
+        filmlisteTimestamp: 1700000000,
+        duration: 1500,
+        size: 1_000_000,
+        url_website: "https://example.org/folge",
+        url_video: "",
+        url_video_low: "",
+        url_video_hd: url,
+        url_subtitle: "https://example.org/folge.vtt",
+      },
+    };
+    const [release] = generateRssItems(info, "best", true);
+    // Sonarr fetches the enclosure link, then uploads the NZB through SABnzbd addfile.
+    const nzb = await (
+      await generateNzb(new NextRequest(`http://localhost${release.enclosure.url}`))
+    ).text();
+    const response = await POST(upload(nzb, "&output=json&cat=sonarr", `${release.title}.nzb`));
+    expect(await response.json()).toEqual({ status: true, nzo_ids: ["download-id"] });
+    const { data } = create.mock.lastCall![0];
+    expect(data).toMatchObject({ url, category: "sonarr" });
+    expect(JSON.parse(data.mediaMetadata)).toEqual({
+      subtitleUrl: "https://example.org/folge.vtt",
+      channel: "KiKA",
+    });
+  });
 
   it("does not extract URLs from unrelated multipart fields", async () => {
     const form = new FormData();

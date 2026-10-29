@@ -35,7 +35,7 @@ unten in der Seitenleiste oder unter Einstellungen → Darstellung umschalten.
 - **Optionale MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
 - **Flexible Metadaten-Quellen** - Lokale Datenbank, TVDB oder TMDB
 - **Community-Rulesets** - Lokale Rulesets via Pull Request erweiterbar
-- **Benachrichtigungen** - Webhook, ntfy, Gotify und Discord bei fertigen oder fehlgeschlagenen Downloads
+- **Benachrichtigungen** - Webhook, ntfy, Gotify und Discord bei fertigen oder fehlgeschlagenen Downloads und neuen Treffern von Suchabos
 - **Vorschaubilder** - Standbilder der Sendungen in Suche, Filmen und Suchabos, Poster aus TVDB bei Serien
 - **SQLite-Datenbank** - Persistente Speicherung von Cache und Download-Historie
 
@@ -158,25 +158,44 @@ der die gerade eingegebenen Werte prüft, ohne sie zu speichern.
 
 | Ereignis | Inhalt |
 |----------|--------|
-| Download abgeschlossen | Titel, Sender (falls bekannt) und Dateiname |
-| Download fehlgeschlagen | Titel, Sender (falls bekannt) und Fehlermeldung, z. B. die ORF-Geosperre |
+| Download abgeschlossen | Titel, Sender und Dateiname |
+| Download fehlgeschlagen | Titel, Sender und Fehlermeldung, z. B. die ORF-Geosperre |
 | Suchabo hat Downloads gestartet | Eine Nachricht pro Prüfung mit allen neu eingereihten Downloads |
+| Suchabo hat neue Treffer gefunden | Für Suchabos mit der Aktion „Melden“: eine Nachricht pro Prüfung mit allen neuen Treffern |
 
 Automatische Wiederholungen, Pausen und Abbrüche lösen keine Nachricht aus, erst der
-endgültige Fehlschlag. Den Sender kennt RundfunkArr nur bei Downloads aus Suchabos;
-Sonarr und Radarr übergeben ihn nicht.
+endgültige Fehlschlag. Den Sender speichert RundfunkArr beim Anlegen des Downloads, auch bei
+Downloads aus Sonarr, Radarr und der Suche (er steckt in der erzeugten NZB). Nur bei
+Downloads, die vor diesem Update eingereiht wurden, oder bei manuell eingegebenen Links
+bleibt `channel` leer.
 
 **Ziele** (mehrere gleichzeitig möglich):
 
 | Ziel | Einstellungen |
 |------|---------------|
-| Webhook | Adresse; erhält jedes Ereignis als JSON per `POST` (Format unten) |
+| Webhook | Adresse, optional zusätzliche Header; erhält jedes Ereignis als JSON per `POST` (Format unten) |
 | ntfy | Serveradresse (Standard `https://ntfy.sh`), Topic, optional Zugriffstoken |
 | Gotify | Serveradresse und App-Token |
 | Discord | Webhook-Adresse eines Kanals |
 
+Für den Webhook lassen sich zusätzliche Header angeben, einer pro Zeile im Format
+`Name: Wert`, z. B. `Authorization: Bearer …` für einen geschützten Empfänger.
+`Content-Type`, `Content-Length` und `Host` (sowie andere Header, die nur der HTTP-Client
+setzen darf) lassen sich nicht überschreiben; Werte dürfen nur ASCII-Zeichen ohne
+Steuerzeichen enthalten. Ungültige Angaben weist RundfunkArr beim Speichern zurück. Über
+`NOTIFY_WEBHOOK_HEADERS` gehen mehrere Header mit Zeilenumbrüchen, in der
+`docker-compose.yml` etwa als Block:
+
+```yaml
+environment:
+  - NOTIFY_WEBHOOK_URL=https://hooks.example.org/rundfunkarr
+  - |
+    NOTIFY_WEBHOOK_HEADERS=Authorization: Bearer geheim
+    X-Quelle: RundfunkArr
+```
+
 Ein Ziel sendet, sobald seine Pflichtfelder ausgefüllt sind und es nicht abgeschaltet ist.
-Webhook-Adressen und Tokens gelten als Zugangsdaten: Die Oberfläche zeigt sie maskiert, und
+Webhook-Adressen, Webhook-Header und Tokens gelten als Zugangsdaten: Die Oberfläche zeigt sie maskiert, und
 das Protokoll schwärzt sie, auch im Export. Nachrichten gehen direkt raus, nicht über
 den Download-Proxy. Jede Nachricht wird einmal gesendet, mit 10 Sekunden Zeitlimit und
 ohne Wiederholung. Ein nicht erreichbares Ziel verzögert keinen Download; der Fehler steht
@@ -208,13 +227,18 @@ steigt `version`):
 }
 ```
 
-- `event`: `download.completed`, `download.failed`, `subscription.queued` oder `test`
+- `event`: `download.completed`, `download.failed`, `subscription.queued`,
+  `subscription.found` oder `test`
 - `type`: `success`, `failure` oder `info` (Feldnamen wie bei Apprise: `title`, `body`, `type`)
 - `download`: bei beiden Download-Ereignissen gesetzt, sonst `null`. Bei Fehlschlägen steht
   die Meldung in `error`; `fileName`, `filePath` und `size` sind dann `null`. `filePath` ist
   der Pfad aus Sicht von Sonarr/Radarr (siehe `DOWNLOAD_FOLDER_PATH_MAPPING`).
-- `subscription`: nur bei `subscription.queued`, mit `id`, `name`, `query` und
-  `downloads` (Liste aus `id`, `title`, `channel`)
+- `subscription`: bei `subscription.queued` und `subscription.found`, sonst `null`. Enthält
+  `id`, `name`, `query`, `downloads` (eingereihte Downloads aus `id`, `title`, `channel`) und
+  `matches` (neue Treffer eines Suchabos mit „Melden“ aus `id`, `title`, `channel`,
+  `websiteUrl`). Die jeweils nicht zutreffende Liste ist leer.
+- Sammelnachrichten nennen höchstens zehn Titel, danach „… und N weitere“; die Listen in
+  `subscription` sind vollständig.
 
 ## Installation mit Docker
 
@@ -250,13 +274,13 @@ image: ghcr.io/rundfunkarr/rundfunkarr:nightly
 Für reproduzierbare Deployments kann statt `latest` auch eine feste Version verwendet werden:
 
 ```yaml
-image: ghcr.io/rundfunkarr/rundfunkarr:1.4.0
+image: ghcr.io/rundfunkarr/rundfunkarr:1.5.0
 ```
 
 Der Git-Tag-Alias mit `v`-Präfix ist ebenfalls verfügbar:
 
 ```bash
-docker pull ghcr.io/rundfunkarr/rundfunkarr:v1.4.0
+docker pull ghcr.io/rundfunkarr/rundfunkarr:v1.5.0
 ```
 
 Unten in der Seitenleiste und unter Einstellungen → System steht bei Release-Images die
@@ -311,6 +335,7 @@ npm start
 | `TMDB_API_KEY` | TMDB-API-Key zum Initialisieren der Einstellungen | leer |
 | `MEDIATHEK_SOURCE` | Suchquelle zum Initialisieren der Einstellungen: `mediathekviewweb` oder `local` | `mediathekviewweb` |
 | `NOTIFY_WEBHOOK_URL` | Webhook-Adresse für Benachrichtigungen | leer |
+| `NOTIFY_WEBHOOK_HEADERS` | Zusätzliche Webhook-Header, einer pro Zeile (`Name: Wert`) | leer |
 | `NOTIFY_NTFY_URL`, `NOTIFY_NTFY_TOPIC`, `NOTIFY_NTFY_TOKEN` | ntfy-Server, Topic und optionales Token | leer (Server: `https://ntfy.sh`) |
 | `NOTIFY_GOTIFY_URL`, `NOTIFY_GOTIFY_TOKEN` | Gotify-Server und App-Token | leer |
 | `NOTIFY_DISCORD_WEBHOOK_URL` | Discord-Webhook-Adresse | leer |
@@ -612,7 +637,7 @@ src/
 ├── contexts/          # React Context
 │   └── settings-context.tsx
 ├── services/          # Business Logic
-│   ├── mediathek.ts   # MediathekView API
+│   ├── mediathek/     # Mediathek-Suche, Regelabgleich, Filmsuche
 │   ├── shows.ts       # Unified Show Lookup
 │   ├── tvdb.ts        # TVDB API
 │   ├── tmdb.ts        # TMDB API

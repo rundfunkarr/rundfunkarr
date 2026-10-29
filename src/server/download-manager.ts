@@ -154,7 +154,11 @@ async function processDownload(
     const downloadTempPath = path.join(await getDownloadTempPath(), downloadId);
     jobTempPath = downloadTempPath;
     const categoryFolder = download.category || "default";
-    const categoryDir = path.join(downloadBasePath, categoryFolder, downloadId);
+    const categoryDir = path.join(
+      /*turbopackIgnore: true*/ downloadBasePath,
+      categoryFolder,
+      downloadId
+    );
     finalDir = categoryDir;
     await fs.mkdir(downloadTempPath, { recursive: true });
 
@@ -175,8 +179,14 @@ async function processDownload(
           ? download.url.split("#")[0]
           : download.url;
       const container = (await isMkvConversionEnabled()) ? "mkv" : "mp4";
-      const tempMkvPath = path.join(downloadTempPath, `${download.title}.${container}`);
-      const finalMkvPath = path.join(categoryDir, `${download.title}.${container}`);
+      const tempMkvPath = path.join(
+        /*turbopackIgnore: true*/ downloadTempPath,
+        `${download.title}.${container}`
+      );
+      const finalMkvPath = path.join(
+        /*turbopackIgnore: true*/ categoryDir,
+        `${download.title}.${container}`
+      );
 
       const hlsResult = await downloadHlsStream(
         streamUrl,
@@ -214,13 +224,13 @@ async function processDownload(
 
       // Get file size
       const { warning, artifact } = await processSubtitles(finalMkvPath, download.mediaMetadata);
-      const stats = await fs.stat(finalMkvPath);
+      const stats = await fs.stat(/*turbopackIgnore: true*/ finalMkvPath);
 
       // Calculate storage path (may be mapped differently)
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
       const storagePath = downloadFolderMapping
         ? path.join(
-            downloadFolderMapping,
+            /*turbopackIgnore: true*/ downloadFolderMapping,
             categoryFolder,
             downloadId,
             `${download.title}.${container}`
@@ -256,7 +266,10 @@ async function processDownload(
     const urlPath = new URL(download.url).pathname;
     const fileExtension = path.extname(urlPath) || ".mp4";
     // Download to temp folder first
-    const tempMp4Path = path.join(downloadTempPath, `${download.title}${fileExtension}`);
+    const tempMp4Path = path.join(
+      /*turbopackIgnore: true*/ downloadTempPath,
+      `${download.title}${fileExtension}`
+    );
     const mp4Path = tempMp4Path;
 
     // Download the file
@@ -353,17 +366,20 @@ async function processDownload(
       );
     } else {
       // Keep non-MP4 files and MP4 files with disabled conversion unchanged.
-      const finalPath = path.join(categoryDir, `${download.title}${fileExtension}`);
+      const finalPath = path.join(
+        /*turbopackIgnore: true*/ categoryDir,
+        `${download.title}${fileExtension}`
+      );
       signal?.throwIfAborted();
       await moveIntoCategoryDir(mp4Path, finalPath, categoryDir);
 
       const { warning, artifact } = await processSubtitles(finalPath, download.mediaMetadata);
-      const stats = await fs.stat(finalPath);
+      const stats = await fs.stat(/*turbopackIgnore: true*/ finalPath);
 
       const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
       const storagePath = downloadFolderMapping
         ? path.join(
-            downloadFolderMapping,
+            /*turbopackIgnore: true*/ downloadFolderMapping,
             categoryFolder,
             downloadId,
             `${download.title}${fileExtension}`
@@ -436,7 +452,7 @@ async function processDownload(
 }
 
 async function markAsCompleted(
-  download: { id: string; title: string; category: string },
+  download: { id: string; title: string; category: string; mediaMetadata?: string | null },
   result: {
     warning: string | null;
     subtitleArtifact: string | null;
@@ -464,6 +480,7 @@ async function markAsFailed(downloadId: string, error: string): Promise<void> {
     id: downloadId,
     title: download?.title,
     category: download?.category,
+    mediaMetadata: download?.mediaMetadata,
     error,
   });
 }

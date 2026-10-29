@@ -56,6 +56,13 @@ describe("environment settings initialization", () => {
     expect(await getSetting("api.tvdb.key")).toBe("new-key");
   });
 
+  it("makes a value visible that was cached as missing before", async () => {
+    expect(await getSetting("download.path")).toBeNull();
+
+    expect(await initSettingsFromEnv({ DOWNLOAD_FOLDER_PATH: "/env/downloads" })).toBe(1);
+    expect(await getSetting("download.path")).toBe("/env/downloads");
+  });
+
   it("preserves existing values across restarts and environment changes", async () => {
     await initSettingsFromEnv({ TVDB_API_KEY: "original" });
     await prisma.config.create({ data: { key: "download.path", value: "/ui/downloads" } });
@@ -97,6 +104,26 @@ describe("environment settings initialization", () => {
     expect(await getSetting("notifications.discord.url")).toBe(
       "https://discord.com/api/webhooks/1/env"
     );
+  });
+
+  it("initializes webhook headers and ignores invalid ones without logging them", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      await initSettingsFromEnv({
+        NOTIFY_WEBHOOK_HEADERS: "Authorization: Bearer env-token\nX-Source: RundfunkArr\n",
+      })
+    ).toBe(1);
+    expect(await getSetting("notifications.webhook.headers")).toBe(
+      "Authorization: Bearer env-token\nX-Source: RundfunkArr"
+    );
+    await prisma.config.deleteMany();
+    clearSettingsCache();
+    expect(await initSettingsFromEnv({ NOTIFY_WEBHOOK_HEADERS: "Host: env-secret-host" })).toBe(0);
+    expect(await getSetting("notifications.webhook.headers")).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(String(warn.mock.lastCall)).toContain("NOTIFY_WEBHOOK_HEADERS ignored");
+    expect(String(warn.mock.lastCall)).not.toContain("env-secret-host");
+    warn.mockRestore();
   });
 
   it("ignores missing or blank variables", async () => {

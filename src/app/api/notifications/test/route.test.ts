@@ -83,3 +83,24 @@ it("redacts unsaved secrets that a failing target echoes back", async () => {
   await post({ target: "discord", config: { url: secretUrl } });
   expect(redactLog(`HTTP 404 for ${secretUrl}`)).not.toContain("unsaved-secret-path");
 });
+
+it("resolves masked webhook headers and redacts unsaved ones", async () => {
+  values.set("notifications.webhook.headers", "Authorization: Bearer stored-header");
+  await post({
+    target: "webhook",
+    config: {
+      url: "http://127.0.0.1:1/hook",
+      headers: maskSetting("notifications.webhook.headers", "x"),
+    },
+  });
+  expect(sendToTarget).toHaveBeenLastCalledWith(
+    "webhook",
+    { url: "http://127.0.0.1:1/hook", headers: "Authorization: Bearer stored-header" },
+    expect.anything()
+  );
+  await post({
+    target: "webhook",
+    config: { url: "http://127.0.0.1:1/hook", headers: "X-Api-Key: unsaved-header-key" },
+  });
+  expect(redactLog("echo unsaved-header-key")).toBe("echo [vertraulich]");
+});

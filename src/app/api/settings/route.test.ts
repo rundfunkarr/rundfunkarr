@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET, POST, DELETE } from "./route";
+import { redactLog } from "@/lib/logger";
 
 const { values, upsert, clearSrfTokenCache } = vi.hoisted(() => ({
   values: new Map<string, string>(),
@@ -114,4 +115,29 @@ it("masks notification secrets and keeps them when masked values are saved again
   expect(values.get("notifications.webhook.url")).toBe("https://hooks.example.org/private-hook");
   expect(values.get("notifications.gotify.token")).toBe("private-gotify");
   expect(values.get("notifications.ntfy.topic")).toBe("new-topic");
+});
+
+it("masks webhook headers and validates them before saving", async () => {
+  values.set("notifications.webhook.headers", "Authorization: Bearer private-header");
+  const all = await (await GET(new NextRequest("http://localhost/api/settings"))).json();
+  expect(all["notifications.webhook.headers"]).not.toContain("private-");
+
+  const kept = await post({
+    "notifications.webhook.headers": all["notifications.webhook.headers"],
+  });
+  expect(kept.status).toBe(200);
+  expect(values.get("notifications.webhook.headers")).toBe("Authorization: Bearer private-header");
+
+  for (const headers of ["Host: evil.example", "X-A: 1\rX-B: 2", "kein header"]) {
+    const response = await post({ "notifications.webhook.headers": headers });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/^Webhook-Header: Zeile 1: /);
+  }
+  const single = await post({ key: "notifications.webhook.headers", value: "Content-Length: 1" });
+  expect(single.status).toBe(400);
+  expect(upsert).not.toHaveBeenCalled();
+
+  await post({ "notifications.webhook.headers": "X-Api-Key: new-private-key" });
+  expect(values.get("notifications.webhook.headers")).toBe("X-Api-Key: new-private-key");
+  expect(redactLog("key new-private-key")).toBe("key [vertraulich]");
 });

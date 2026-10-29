@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { usePolling, type PollRun } from "@/hooks/use-polling";
 import { maskSetting } from "@/lib/settings-redaction";
 
 interface Settings {
@@ -46,24 +47,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSettings = useCallback(async () => {
+  const loadSettings = useCallback(async ({ signal, isCurrent }: PollRun) => {
     try {
-      setIsLoading(true);
-      setError(null);
-      const res = await fetch("/api/settings");
+      const res = await fetch("/api/settings", { signal });
       if (!res.ok) throw new Error("Failed to fetch settings");
       const data = await res.json();
-      setSettings(data);
+      if (isCurrent()) setSettings(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if (isCurrent()) setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
+  const reloadSettings = usePolling(loadSettings);
+
+  const refreshSettings = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    await reloadSettings();
+  }, [reloadSettings]);
 
   const updateSetting = useCallback(async (key: string, value: string) => {
     try {
@@ -114,7 +117,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         error,
         updateSetting,
         updateSettings,
-        refreshSettings: fetchSettings,
+        refreshSettings,
       }}
     >
       {children}

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Bell, ExternalLink, Plus } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Page, PageHeader } from "@/components/shared/page";
 import { Field } from "@/components/shared/field";
 import { Notice } from "@/components/shared/notice";
 import { EmptyState } from "@/components/shared/empty-state";
+import { usePolling, type PollRun } from "@/hooks/use-polling";
 import { ChannelBadge } from "@/components/shared/channel-badge";
 import { Thumbnail } from "@/components/shared/thumbnail";
 import type { SubscriptionInput } from "@/server/subscriptions";
@@ -51,59 +52,62 @@ export default function SubscriptionsPage() {
     [showForm, setShowForm] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const [listError, setListError] = useState(""),
-    [matchError, setMatchError] = useState("");
-  const visibleError = error || listError || matchError;
-  const [selected, setSelected] = useState<string | null>(null),
-    [matches, setMatches] = useState<Match[]>([]);
+  const [listError, setListError] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [matchTotal, setMatchTotal] = useState(0);
-  const matchRequest = useRef(0);
-  const load = useCallback(async () => {
+  // Matches remember which subscription and page they belong to, so switching either shows an
+  // empty list until the new page has loaded instead of the previous one.
+  const matchKey = selected ? `${selected}:${page}` : null;
+  const [matchResult, setMatchResult] = useState<{
+    key: string | null;
+    matches: Match[];
+    error: string;
+  }>({ key: null, matches: [], error: "" });
+  const matches = matchResult.key === matchKey ? matchResult.matches : [];
+  const matchError = matchResult.key === matchKey ? matchResult.error : "";
+  const visibleError = error || listError || matchError;
+  const load = useCallback(async ({ signal, isCurrent }: PollRun) => {
     try {
-      const res = await fetch("/api/subscriptions");
-      if (!res.ok) throw new Error();
-      setItems((await res.json()).subscriptions);
-      setListError("");
-    } catch {
-      setListError("Suchabos konnten nicht geladen werden.");
-    }
-  }, []);
-  const loadMatches = useCallback(async () => {
-    if (!selected) return;
-    const request = ++matchRequest.current;
-    try {
-      const res = await fetch(
-        `/api/subscriptions?id=${encodeURIComponent(selected)}&offset=${page * 50}`
-      );
+      const res = await fetch("/api/subscriptions", { signal });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      if (request !== matchRequest.current) return;
-      setMatches(data.matches);
-      setMatchError("");
-      setMatchTotal(data.total);
-      if (page > 0 && page * 50 >= data.total) setPage(Math.max(0, Math.ceil(data.total / 50) - 1));
+      if (!isCurrent()) return;
+      setItems(data.subscriptions);
+      setListError("");
     } catch {
-      if (request === matchRequest.current) setMatchError("Treffer konnten nicht geladen werden.");
+      if (isCurrent()) setListError("Suchabos konnten nicht geladen werden.");
     }
-  }, [selected, page]);
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 15000);
-    return () => clearInterval(timer);
-  }, [load]);
-  useEffect(() => {
-    // Capture the ref object (not its value): cleanup must bump the latest counter so in-flight responses are ignored.
-    const requests = matchRequest;
-    setMatches([]);
-    setMatchError("");
-    void loadMatches();
-    const timer = setInterval(() => void loadMatches(), 15000);
-    return () => {
-      clearInterval(timer);
-      requests.current++;
-    };
-  }, [loadMatches]);
+  }, []);
+  const loadMatches = useCallback(
+    async ({ signal, isCurrent }: PollRun) => {
+      if (!selected) return;
+      const key = `${selected}:${page}`;
+      try {
+        const res = await fetch(
+          `/api/subscriptions?id=${encodeURIComponent(selected)}&offset=${page * 50}`,
+          { signal }
+        );
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (!isCurrent()) return;
+        setMatchResult({ key, matches: data.matches, error: "" });
+        setMatchTotal(data.total);
+        if (page > 0 && page * 50 >= data.total)
+          setPage(Math.max(0, Math.ceil(data.total / 50) - 1));
+      } catch {
+        if (!isCurrent()) return;
+        setMatchResult((prev) => ({
+          key,
+          matches: prev.key === key ? prev.matches : [],
+          error: "Treffer konnten nicht geladen werden.",
+        }));
+      }
+    },
+    [selected, page]
+  );
+  const refreshList = usePolling(load, 15000);
+  const refreshMatches = usePolling(loadMatches, 15000);
   const field = <K extends keyof SubscriptionInput>(key: K, value: SubscriptionInput[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
   async function action(body: Record<string, unknown>) {
@@ -117,8 +121,8 @@ export default function SubscriptionsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      await load();
-      await loadMatches();
+      await refreshList();
+      await refreshMatches();
       return true;
     } catch (e) {
       setError(

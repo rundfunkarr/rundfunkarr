@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/db";
 
-// Cache for settings to avoid repeated DB queries
-const settingsCache: Map<string, { value: string; expiry: number }> = new Map();
+// Cache for settings to avoid repeated DB queries. Missing keys are cached as
+// null too, so hot paths that probe unset settings don't hit the DB each time.
+// Every writer calls clearSettingsCache(), which also drops cached misses.
+const settingsCache: Map<string, { value: string | null; expiry: number }> = new Map();
 const CACHE_TTL = 60 * 1000; // 1 minute
 const DEFAULT_MIN_DURATION_SECONDS = 300;
 
@@ -17,15 +19,9 @@ export async function getSetting(key: string): Promise<string | null> {
     where: { key },
   });
 
-  if (config) {
-    settingsCache.set(key, {
-      value: config.value,
-      expiry: Date.now() + CACHE_TTL,
-    });
-    return config.value;
-  }
-
-  return null;
+  const value = config?.value ?? null;
+  settingsCache.set(key, { value, expiry: Date.now() + CACHE_TTL });
+  return value;
 }
 
 export async function getSettings(keys: string[]): Promise<Record<string, string | null>> {
@@ -51,17 +47,10 @@ export async function getSettings(keys: string[]): Promise<Record<string, string
     const configMap = new Map(configs.map((c) => [c.key, c.value]));
 
     for (const key of keysToFetch) {
-      const value = configMap.get(key);
-      if (value !== undefined) {
-        // Cache all values including empty strings
-        settingsCache.set(key, {
-          value,
-          expiry: Date.now() + CACHE_TTL,
-        });
-        result[key] = value;
-      } else {
-        result[key] = null;
-      }
+      // Cache all values including empty strings and missing keys
+      const value = configMap.get(key) ?? null;
+      settingsCache.set(key, { value, expiry: Date.now() + CACHE_TTL });
+      result[key] = value;
     }
   }
 

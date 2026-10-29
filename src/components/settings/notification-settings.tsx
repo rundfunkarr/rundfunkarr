@@ -5,18 +5,22 @@ import { useSettings } from "@/contexts/settings-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/checkbox";
 import { Field, ToggleRow } from "@/components/shared/field";
 import { Notice } from "@/components/shared/notice";
+import { isMaskedSetting } from "@/lib/settings-redaction";
+import { parseWebhookHeaders } from "@/lib/webhook-headers";
 
 type Target = "webhook" | "ntfy" | "gotify" | "discord";
 
 interface TargetField {
-  field: "url" | "topic" | "token";
+  field: "url" | "topic" | "token" | "headers";
   label: string;
   placeholder: string;
   hint?: string;
   secret?: boolean;
+  multiline?: boolean;
 }
 
 const TARGETS: { id: Target; title: string; description: string; fields: TargetField[] }[] = [
@@ -31,6 +35,14 @@ const TARGETS: { id: Target; title: string; description: string; fields: TargetF
         label: "Webhook-Adresse",
         placeholder: "https://example.org/webhook",
         secret: true,
+      },
+      {
+        field: "headers",
+        label: "Zusätzliche Header (optional)",
+        placeholder: "Authorization: Bearer …",
+        hint: "Ein Header pro Zeile im Format „Name: Wert“. Content-Type, Content-Length und Host setzt RundfunkArr selbst. Gespeicherte Header werden verdeckt angezeigt; zum Ändern alle Zeilen neu eingeben.",
+        secret: true,
+        multiline: true,
       },
     ],
   },
@@ -106,11 +118,17 @@ const EVENTS = [
     label: "Suchabo hat Downloads gestartet",
     hint: "Eine Nachricht pro Prüfung mit allen neu eingereihten Downloads.",
   },
+  {
+    key: "notifications.event.subscriptionFound",
+    label: "Suchabo hat neue Treffer gefunden",
+    hint: "Für Suchabos mit der Aktion „Melden“: eine Nachricht pro Prüfung mit allen neuen Treffern.",
+  },
 ];
 
 const enabledKey = (target: Target) => `notifications.${target}.enabled`;
 const fieldKey = (target: Target, field: TargetField["field"]) =>
   `notifications.${target}.${field}`;
+const HEADERS_KEY = fieldKey("webhook", "headers");
 const ALL_KEYS = [
   ...EVENTS.map((event) => event.key),
   ...TARGETS.flatMap((target) => [
@@ -131,6 +149,10 @@ export function NotificationSettings() {
   const value = (key: string) => form[key] ?? settings?.[key] ?? "";
   const set = (key: string, next: string) => setForm((prev) => ({ ...prev, [key]: next }));
   const dirty = ALL_KEYS.some((key) => form[key] !== undefined && form[key] !== settings?.[key]);
+  const headers = value(HEADERS_KEY);
+  const headersError = isMaskedSetting(HEADERS_KEY, headers)
+    ? undefined
+    : parseWebhookHeaders(headers).error;
 
   async function save() {
     setSaving(true);
@@ -218,6 +240,30 @@ export function NotificationSettings() {
               />
               {target.fields.map((field) => {
                 const key = fieldKey(target.id, field.field);
+                if (field.multiline)
+                  return (
+                    <Field key={key} label={field.label} hint={field.hint}>
+                      {(id) => (
+                        <>
+                          <Textarea
+                            id={id}
+                            rows={3}
+                            autoComplete="off"
+                            spellCheck={false}
+                            value={value(key)}
+                            onFocus={field.secret ? (e) => e.currentTarget.select() : undefined}
+                            onChange={(e) => set(key, e.target.value)}
+                            placeholder={field.placeholder}
+                            aria-invalid={key === HEADERS_KEY && Boolean(headersError)}
+                            className="font-mono text-xs md:text-xs"
+                          />
+                          {key === HEADERS_KEY && headersError && (
+                            <Notice tone="danger">{headersError}</Notice>
+                          )}
+                        </>
+                      )}
+                    </Field>
+                  );
                 return (
                   <Field key={key} label={field.label} hint={field.hint}>
                     {(id) => (
@@ -254,7 +300,7 @@ export function NotificationSettings() {
       })}
 
       {saveError && <Notice tone="danger">{saveError}</Notice>}
-      <Button onClick={save} disabled={saving || !dirty}>
+      <Button onClick={save} disabled={saving || !dirty || Boolean(headersError)}>
         {saving ? <Loader2 className="animate-spin" /> : <Save />}
         Benachrichtigungen speichern
       </Button>
