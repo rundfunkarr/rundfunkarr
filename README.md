@@ -609,7 +609,7 @@ src/
 ├── contexts/          # React Context
 │   └── settings-context.tsx
 ├── services/          # Business Logic
-│   ├── mediathek.ts   # MediathekView API
+│   ├── mediathek/     # Mediathek-Suche, Regelabgleich, Filmsuche
 │   ├── shows.ts       # Unified Show Lookup
 │   ├── tvdb.ts        # TVDB API
 │   ├── tmdb.ts        # TMDB API

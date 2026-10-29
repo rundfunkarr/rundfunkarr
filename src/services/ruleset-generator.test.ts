@@ -24,7 +24,7 @@ describe("generateRegexPatterns - ItemTitleIncludes fallback", () => {
   // the topic string, which is common for MediathekView topics with a
   // "Staffel N" suffix (topic "Soko Kitzbühel Staffel 17" vs. title
   // "Soko Kitzbühel (8/15): Schöpfung"). An empty titleRegexRules makes
-  // buildTitleFromRegexRules() in services/mediathek.ts always return "",
+  // buildTitleFromRegexRules() in services/mediathek/item-filters.ts always return "",
   // which matchesItemTitleIncludes() then treats as "no title" and rejects
   // unconditionally - so ruleset auto-generation silently produced a
   // ruleset that could never match a single episode.

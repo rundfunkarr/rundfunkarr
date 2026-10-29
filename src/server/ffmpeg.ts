@@ -201,7 +201,8 @@ export async function convertMp4ToMkv(
   return new Promise((resolve) => {
     // FFmpeg arguments:
     // -i input: input file
-    // -map 0:v -map 0:a: copy video and audio streams
+    // -map 0:v -map 0:a?: copy video and audio streams; the trailing "?"
+    //   keeps sources without an audio track (silent videos) convertible
     // -c copy: stream copy (no re-encoding)
     // Vorhandene Sprachangaben der Quelle bleiben erhalten.
     const args = [
@@ -210,7 +211,7 @@ export async function convertMp4ToMkv(
       "-map",
       "0:v",
       "-map",
-      "0:a",
+      "0:a?",
       "-c",
       "copy",
       "-y", // Overwrite output

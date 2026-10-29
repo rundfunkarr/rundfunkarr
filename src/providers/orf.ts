@@ -1,4 +1,5 @@
 import { BaseProvider } from "./base";
+import { createSkipKeywordMatcher } from "./title-filter";
 import { getMinDurationSeconds, getSetting } from "@/lib/settings";
 import { getDetailedVideoInfo, ensureYtdlpExists } from "@/server/ytdlp";
 import { queryMediathekView } from "@/lib/mediathek-client";
@@ -17,6 +18,7 @@ const DEFAULT_MIN_DURATION = 5 * 60;
 
 // Skip keywords (trailers, clips, etc.)
 const SKIP_KEYWORDS = ["Trailer", "Teaser", "Preview", "Clip", "Ausschnitt"];
+const isSkippedTitle = createSkipKeywordMatcher(SKIP_KEYWORDS);
 
 /**
  * ORF Provider
@@ -236,7 +238,7 @@ export class OrfProvider extends BaseProvider {
     const effectiveMinDuration = this.minDuration;
 
     for (const result of results) {
-      if (SKIP_KEYWORDS.some((kw) => result.title.toLowerCase().includes(kw.toLowerCase()))) {
+      if (isSkippedTitle(result.title)) {
         continue;
       }
 

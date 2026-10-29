@@ -254,12 +254,14 @@ describe("OrfProvider", () => {
     expect(await provider.isEnabled()).toBe(false);
   });
 
-  it("searches only ORF entries and skips clips case-insensitively", async () => {
+  it("searches only ORF entries and skips clips as whole words, case-insensitively", async () => {
     enable();
     queryMediathekView.mockResolvedValue([
       apiItem({ channel: "ORF", title: "Soko Kitzbühel: Schöpfung" }),
       apiItem({ channel: "ORF", title: "TRAILER: Soko Kitzbühel" }),
       apiItem({ channel: "ORF", title: "Soko Kitzbühel - Ausschnitt" }),
+      apiItem({ channel: "ORF", title: "Soko Kitzbühel: Kurzclip" }),
+      apiItem({ channel: "ORF", title: "Soko Kitzbühel: Eclipse" }),
       apiItem({ channel: "ORF", title: "Kurz", duration: 60 }),
     ]);
 
@@ -272,7 +274,10 @@ describe("OrfProvider", () => {
       ],
       150
     );
-    expect(items.map((i) => i.title)).toEqual(["Soko Kitzbühel: Schöpfung"]);
+    expect(items.map((i) => i.title)).toEqual([
+      "Soko Kitzbühel: Schöpfung",
+      "Soko Kitzbühel: Eclipse",
+    ]);
     expect(items[0].providerId).toBe("orf");
   });
 
