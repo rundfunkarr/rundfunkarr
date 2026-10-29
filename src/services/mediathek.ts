@@ -319,11 +319,29 @@ function tryParseDate(dateString: string): Date | null {
   return null;
 }
 
+type ShowLookup = (tvdbId: number) => Promise<TvdbData | null>;
+
+// Memoises show lookups (including misses) for one matching pass. Name searches
+// and RSS sync match every item against every ruleset of its topic, so an
+// uncached miss would otherwise repeat the lookup for each item.
+function createShowLookup(): ShowLookup {
+  const lookups = new Map<number, Promise<TvdbData | null>>();
+  return (tvdbId) => {
+    let lookup = lookups.get(tvdbId);
+    if (!lookup) {
+      lookup = getShowInfoByTvdbId(tvdbId);
+      lookups.set(tvdbId, lookup);
+    }
+    return lookup;
+  };
+}
+
 async function matchesSeasonAndEpisode(
   item: ApiResultItem,
-  ruleset: Ruleset
+  ruleset: Ruleset,
+  getShow: ShowLookup
 ): Promise<MatchedEpisodeInfo | null> {
-  const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
+  const tvdbData = await getShow(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
   const season = await extractValueUsingRegex(item, ruleset.seasonRegex);
@@ -350,9 +368,10 @@ async function matchesSeasonAndEpisode(
 async function matchesItemTitleIncludes(
   item: ApiResultItem,
   ruleset: Ruleset,
+  getShow: ShowLookup,
   threshold: number = 0.7
 ): Promise<MatchedEpisodeInfo | null> {
-  const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
+  const tvdbData = await getShow(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
   const constructedTitle = await buildTitleFromRegexRules(item, ruleset.titleRegexRules);
@@ -391,9 +410,10 @@ async function matchesItemTitleIncludes(
 async function matchesItemTitleExact(
   item: ApiResultItem,
   ruleset: Ruleset,
+  getShow: ShowLookup,
   threshold: number = 0.95
 ): Promise<MatchedEpisodeInfo | null> {
-  const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
+  const tvdbData = await getShow(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
   const constructedTitle = await buildTitleFromRegexRules(item, ruleset.titleRegexRules);
@@ -449,9 +469,10 @@ async function matchesItemTitleExact(
 
 async function matchesItemTitleEqualsAirdate(
   item: ApiResultItem,
-  ruleset: Ruleset
+  ruleset: Ruleset,
+  getShow: ShowLookup
 ): Promise<MatchedEpisodeInfo | null> {
-  const tvdbData = await getShowInfoByTvdbId(ruleset.media.media_tvdbId);
+  const tvdbData = await getShow(ruleset.media.media_tvdbId);
   if (!tvdbData?.episodes?.length) return null;
 
   const constructedTitle = await buildTitleFromRegexRules(item, ruleset.titleRegexRules);
@@ -487,6 +508,7 @@ async function applyRulesetFilters(
 
   const matchedEpisodes: MatchedEpisodeInfo[] = [];
   const unmatchedItems: ApiResultItem[] = [...results];
+  const getShow = createShowLookup();
 
   // Log available rulesets for debugging
   if (tvdbData && !rulesetSnapshot) {
@@ -565,19 +587,19 @@ async function applyRulesetFilters(
 
       switch (ruleset.matchingStrategy) {
         case "SeasonAndEpisodeNumber" as MatchingStrategy:
-          matchInfo = await matchesSeasonAndEpisode(item, ruleset);
+          matchInfo = await matchesSeasonAndEpisode(item, ruleset, getShow);
           break;
         case "ItemTitleIncludes" as MatchingStrategy:
-          matchInfo = await matchesItemTitleIncludes(item, ruleset, threshold);
+          matchInfo = await matchesItemTitleIncludes(item, ruleset, getShow, threshold);
           break;
         case "ItemTitleExact" as MatchingStrategy:
           // For strict strategy, require higher threshold
           const exactThreshold =
             matchingSettings.strategy === "strict" ? Math.max(threshold, 0.95) : threshold;
-          matchInfo = await matchesItemTitleExact(item, ruleset, exactThreshold);
+          matchInfo = await matchesItemTitleExact(item, ruleset, getShow, exactThreshold);
           break;
         case "ItemTitleEqualsAirdate" as MatchingStrategy:
-          matchInfo = await matchesItemTitleEqualsAirdate(item, ruleset);
+          matchInfo = await matchesItemTitleEqualsAirdate(item, ruleset, getShow);
           break;
       }
 
