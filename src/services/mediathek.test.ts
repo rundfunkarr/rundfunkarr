@@ -118,6 +118,12 @@ describe("fetchMovieSearchByQuery – configured minimum duration", () => {
       expect.any(Object)
     );
   });
+  it("passes the broadcaster on in the NZB link", async () => {
+    mockedGetMinDuration.mockResolvedValue(0);
+    mockApi([makeItem({ topic: "Film", title: "Documentary", channel: "ARTE.DE" })]);
+    const xml = await fetchMovieSearchByQuery("Documentary", 100, 0);
+    expect(xml).toContain(`metadata=${encodeURIComponent('{"channel":"ARTE.DE"}')}`);
+  });
 });
 
 describe("fetchMovieSearchByQuery – TMDB IDs", () => {

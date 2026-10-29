@@ -159,5 +159,6 @@ it("preserves subtitle and language metadata through pagination and batch downlo
     expect(addToQueue).toHaveBeenCalledWith(result.url_video_hd, `Wissen - ${result.title}`, "tv", {
       subtitleUrl: result.url_subtitle,
       audioLanguage: "eng",
+      channel: "ZDF",
     });
 });

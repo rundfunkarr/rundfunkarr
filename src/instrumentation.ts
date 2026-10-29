@@ -4,10 +4,11 @@ export async function register() {
     if (process.env.NEXT_PHASE !== "phase-production-build") {
       const { installLogger, rememberLogSecret } = await import("@/lib/logger");
       const { prisma } = await import("@/lib/db");
-      const { maskSetting } = await import("@/lib/settings-redaction");
+      const { settingSecrets } = await import("@/lib/settings-redaction");
+      const { webhookHeaderSecrets } = await import("@/lib/webhook-headers");
       try {
         for (const item of await prisma.config.findMany()) {
-          if (maskSetting(item.key, item.value) !== item.value) rememberLogSecret(item.value);
+          for (const secret of settingSecrets(item.key, item.value)) rememberLogSecret(secret);
         }
       } catch {
         // Optional preload: still install the logger and mask runtime credentials.
@@ -16,6 +17,8 @@ export async function register() {
       for (const [key, value] of Object.entries(process.env)) {
         if (/KEY|TOKEN|SECRET|PASSWORD|PIN|WEBHOOK/.test(key)) rememberLogSecret(value);
       }
+      for (const secret of webhookHeaderSecrets(process.env.NOTIFY_WEBHOOK_HEADERS))
+        rememberLogSecret(secret);
       installLogger();
     }
     const { initSettingsFromEnv } = await import("@/lib/env-settings");

@@ -6,7 +6,13 @@ import { clearSettingsCache } from "@/lib/settings";
 import { clearTTLCache, mediathekCache } from "@/lib/cache";
 import { isTvdbCredentialSettingKey } from "@/lib/tvdb-auth";
 import { clearTvdbTokenCache } from "@/services/tvdb";
-import { isMaskedSetting, maskSetting } from "@/lib/settings-redaction";
+import {
+  isMaskedSetting,
+  maskSetting,
+  settingSecrets,
+  WEBHOOK_HEADERS_SETTING,
+} from "@/lib/settings-redaction";
+import { parseWebhookHeaders } from "@/lib/webhook-headers";
 
 // Default settings
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -45,8 +51,10 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "notifications.event.downloadCompleted": "true",
   "notifications.event.downloadFailed": "true",
   "notifications.event.subscriptionQueued": "true",
+  "notifications.event.subscriptionFound": "true",
   "notifications.webhook.enabled": "true",
   "notifications.webhook.url": "",
+  "notifications.webhook.headers": "",
   "notifications.ntfy.enabled": "true",
   "notifications.ntfy.url": "https://ntfy.sh",
   "notifications.ntfy.topic": "",
@@ -60,6 +68,16 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // System
   "system.setupComplete": "false",
 };
+
+/** Server-side checks for settings with a strict format. Returns a German error or null. */
+function invalidSetting(entries: [string, unknown][]): string | null {
+  for (const [key, value] of entries) {
+    if (key !== WEBHOOK_HEADERS_SETTING || isMaskedSetting(key, value)) continue;
+    const { error } = parseWebhookHeaders(typeof value === "string" ? value : String(value));
+    if (error) return `Webhook-Header: ${error}`;
+  }
+  return null;
+}
 
 // GET /api/settings - Fetch all settings or specific key
 export async function GET(request: NextRequest) {
@@ -98,11 +116,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    for (const [key, value] of Object.entries(
-      body?.key ? { [body.key]: body.value } : body || {}
-    )) {
-      if (typeof value === "string" && maskSetting(key, value) !== value) rememberLogSecret(value);
-    }
+    const submitted = Object.entries(body?.key ? { [body.key]: body.value } : body || {});
+    for (const [key, value] of submitted)
+      for (const secret of settingSecrets(key, value)) rememberLogSecret(secret);
+    const invalid = invalidSetting(submitted);
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
     // Handle single key-value pair
     if (body.key && body.value !== undefined) {

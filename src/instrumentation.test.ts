@@ -69,6 +69,19 @@ it("preloads stored credentials while leaving ordinary setting values visible", 
   expect(mocks.installLogger).toHaveBeenCalledOnce();
 });
 
+it("registers each webhook header value from settings and environment", async () => {
+  mocks.findMany.mockResolvedValueOnce([
+    { key: "notifications.webhook.headers", value: "Authorization: Bearer stored-header" },
+  ]);
+  vi.stubEnv("NOTIFY_WEBHOOK_HEADERS", "X-Api-Key: env-header-key");
+
+  await register();
+
+  expect(mocks.rememberLogSecret).toHaveBeenCalledWith("Bearer stored-header");
+  expect(mocks.rememberLogSecret).toHaveBeenCalledWith("stored-header");
+  expect(mocks.rememberLogSecret).toHaveBeenCalledWith("env-header-key");
+});
+
 it("continues to report failures from required settings initialization", async () => {
   const failure = new Error("settings transaction failed");
   mocks.initSettingsFromEnv.mockRejectedValueOnce(failure);

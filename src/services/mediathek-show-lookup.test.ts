@@ -134,6 +134,20 @@ describe("show lookups during ruleset matching", () => {
     expect(getShowInfoByTvdbId).toHaveBeenCalledTimes(2);
   });
 
+  // Pins current behaviour: a topic with rulesets owns its items. If no ruleset
+  // matches (including a failed show lookup), they are not emitted as generic
+  // results, which would lack TVDB IDs and could be mis-mapped by Sonarr.
+  it("drops items of ruleset topics instead of emitting them as generic results", async () => {
+    vi.mocked(getShowInfoByTvdbId).mockResolvedValue(null);
+    const other = { ...item(0), topic: "Ohne Regel", url_video: "https://example.com/other.mp4" };
+    vi.mocked(queryContent).mockResolvedValue([...items, other]);
+
+    const xml = await fetchSearchResultsByString("Tatort", null, 100, 0);
+
+    expect(xml).toContain("https://example.com/other.mp4");
+    expect(xml).not.toContain("https://example.com/0.mp4");
+  });
+
   it("does not look up shows for items rejected by ruleset filters", async () => {
     vi.mocked(getRulesetsForTopic).mockReturnValue([
       rule(
