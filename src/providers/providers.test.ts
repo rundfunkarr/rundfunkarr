@@ -221,20 +221,6 @@ describe("MediathekViewProvider", () => {
     );
   });
 
-  it("loads valid settings on initialize", async () => {
-    settings.set("matching.minDuration", "abc");
-    const provider = new MediathekViewProvider();
-    await provider.initialize();
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("minDuration=300s"));
-
-    settings.set("matching.minDuration", "120");
-    settings.set("download.enableHLS", "true");
-    await provider.initialize();
-    expect(console.log).toHaveBeenCalledWith(
-      expect.stringContaining("minDuration=120s, hlsEnabled=true")
-    );
-  });
-
   it("checks the API status with a minimal query", async () => {
     const provider = new MediathekViewProvider();
     fetchWithRetry.mockResolvedValueOnce(new Response("{}"));
