@@ -1,5 +1,5 @@
 node_modules
 .next
 prisma/data
-downloads
-ffmpeg
+/downloads
+/ffmpeg

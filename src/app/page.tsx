@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Bell, CheckCircle2, Download, Radio, RefreshCw, Search } from "lucide-react";
@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { LiveDot, Progress } from "@/components/shared/progress";
 import { getStatusBadge } from "@/components/shared/status-badge";
 import { formatSize, formatDateShort } from "@/lib/formatters";
+import { usePolling, type PollRun } from "@/hooks/use-polling";
 
 interface QueueSlot {
   nzo_id: string;
@@ -56,31 +57,34 @@ export default function Dashboard() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchActivity = useCallback(async () => {
+  const loadActivity = useCallback(async ({ signal, isCurrent }: PollRun) => {
     try {
       const [queueRes, historyRes, controlRes] = await Promise.all([
-        fetch("/api/download?mode=queue"),
-        fetch("/api/download?mode=history&limit=6"),
-        fetch("/api/download/control"),
+        fetch("/api/download?mode=queue", { signal }),
+        fetch("/api/download?mode=history&limit=6", { signal }),
+        fetch("/api/download/control", { signal }),
       ]);
       const queueData = await queueRes.json();
       const historyData = await historyRes.json();
+      const control = controlRes.ok ? await controlRes.json() : null;
+      if (!isCurrent()) return;
       setQueue(queueData.queue?.slots || []);
       setHistory((historyData.history?.slots || []).slice(0, 6));
       setHistoryTotal(historyData.history?.noofslots ?? 0);
-      if (controlRes.ok) setQueuePaused(!!(await controlRes.json()).paused);
+      if (control) setQueuePaused(!!control.paused);
     } catch (error) {
+      if (!isCurrent()) return;
       // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to fetch data:", error);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   }, []);
 
-  const fetchOverview = useCallback(async () => {
+  const loadOverview = useCallback(async ({ signal, isCurrent }: PollRun) => {
     try {
       // Each source fails on its own, so a network error never leaves stale values behind.
-      const load = (path: string) => fetch(path).catch(() => null);
+      const load = (path: string) => fetch(path, { signal }).catch(() => null);
       const [systemRes, subscriptionsRes, filmlisteRes] = await Promise.all([
         load("/api/system"),
         load("/api/subscriptions"),
@@ -90,6 +94,7 @@ export default function Dashboard() {
       const subscriptions: { paused: boolean; _count?: { matches: number } }[] | null =
         subscriptionsRes?.ok ? ((await subscriptionsRes.json()).subscriptions ?? []) : null;
       const filmliste = filmlisteRes?.ok ? await filmlisteRes.json() : null;
+      if (!isCurrent()) return;
       setOverview({
         completed: system?.downloads?.completed ?? null,
         failed: system?.downloads?.failed ?? null,
@@ -108,22 +113,14 @@ export default function Dashboard() {
         entries: filmliste?.entryCount ?? 0,
       });
     } catch (error) {
+      if (!isCurrent()) return;
       // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to fetch overview:", error);
     }
   }, []);
 
-  useEffect(() => {
-    fetchActivity();
-    const interval = setInterval(fetchActivity, 5000);
-    return () => clearInterval(interval);
-  }, [fetchActivity]);
-
-  useEffect(() => {
-    fetchOverview();
-    const interval = setInterval(fetchOverview, 30000);
-    return () => clearInterval(interval);
-  }, [fetchOverview]);
+  const refreshActivity = usePolling(loadActivity, 5000);
+  const refreshOverview = usePolling(loadOverview, 30000);
 
   const running = queue.filter((item) => RUNNING.has(item.status.toLowerCase())).length;
 
@@ -137,8 +134,8 @@ export default function Dashboard() {
             variant="outline"
             size="sm"
             onClick={() => {
-              void fetchActivity();
-              void fetchOverview();
+              void refreshActivity();
+              void refreshOverview();
             }}
           >
             <RefreshCw />

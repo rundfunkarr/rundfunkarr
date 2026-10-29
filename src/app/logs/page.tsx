@@ -12,6 +12,7 @@ import { Field } from "@/components/shared/field";
 import { Notice } from "@/components/shared/notice";
 import { EmptyState } from "@/components/shared/empty-state";
 import { cn } from "@/lib/utils";
+import { usePolling, type PollRun } from "@/hooks/use-polling";
 import type { Diagnostic } from "@/server/diagnostics";
 import type { LogEntry } from "@/lib/logger";
 
@@ -144,7 +145,6 @@ function ProtectedLogs({
     [kind, setKind] = useState("sonarr"),
     [url, setUrl] = useState(""),
     [apiKey, setApiKey] = useState("");
-  const sequence = useRef(0);
   const session = useRef(new AbortController());
   useEffect(() => {
     const controller = new AbortController();
@@ -174,31 +174,23 @@ function ProtectedLogs({
     },
     [adminKey, lock]
   );
-  const load = useCallback(async () => {
-    const signal = session.current.signal;
-    const id = ++sequence.current;
-    try {
-      const response = await adminFetch(`/api/logs?${new URLSearchParams({ level, q: query })}`);
-      const data = await response.json();
-      if (!signal.aborted && id === sequence.current) {
-        setEntries(data.entries);
-        setError("");
+  const load = useCallback(
+    async ({ isCurrent }: PollRun) => {
+      const signal = session.current.signal;
+      try {
+        const response = await adminFetch(`/api/logs?${new URLSearchParams({ level, q: query })}`);
+        const data = await response.json();
+        if (!signal.aborted && isCurrent()) {
+          setEntries(data.entries);
+          setError("");
+        }
+      } catch {
+        if (!signal.aborted && isCurrent()) setError("Das Protokoll konnte nicht geladen werden.");
       }
-    } catch {
-      if (!signal.aborted && id === sequence.current)
-        setError("Das Protokoll konnte nicht geladen werden.");
-    }
-  }, [level, query, adminFetch]);
-  useEffect(() => {
-    // Capture the ref object (not its value): cleanup must bump the latest counter so in-flight responses are ignored.
-    const requests = sequence;
-    void load();
-    const timer = automatic ? setInterval(() => void load(), 5000) : undefined;
-    return () => {
-      clearInterval(timer);
-      requests.current++;
-    };
-  }, [load, automatic]);
+    },
+    [level, query, adminFetch]
+  );
+  const refresh = usePolling(load, automatic ? 5000 : null);
   async function diagnose() {
     const signal = session.current.signal;
     setDiagnosing(true);
@@ -393,7 +385,7 @@ function ProtectedLogs({
                 />
               )}
             </Field>
-            <Button variant="outline" onClick={() => void load()}>
+            <Button variant="outline" onClick={() => void refresh()}>
               Aktualisieren
             </Button>
             <Button variant="outline" onClick={() => void exportLogs()}>
