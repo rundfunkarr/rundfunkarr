@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { queryContent } from "@/services/content-search";
 import { getSetting } from "@/lib/settings";
 import { isStreamingUrl, withStreamQuality } from "@/lib/stream-url";
+import { notifySubscriptionQueued, type NotificationSubscription } from "./notifications";
 import type { ApiResultItem } from "@/types";
 import type { Prisma } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
@@ -102,7 +103,7 @@ async function check(id: string) {
             .includes(subscription.channel.toLocaleLowerCase("de"))) &&
         (hls || !isStreamingUrl(item.url_video))
     );
-    let downloads = 0;
+    const queued: NotificationSubscription["downloads"] = [];
     await prisma.$transaction(
       async (tx) => {
         const latest = await tx.searchSubscription.findUnique({ where: { id } });
@@ -144,8 +145,12 @@ async function check(id: string) {
             },
           });
           if (latest.initialized && latest.action === "download") {
-            await queueMatch(tx, match, latest.category);
-            downloads++;
+            const downloadId = await queueMatch(tx, match, latest.category);
+            queued.push({
+              id: downloadId,
+              title: title(match.topic, match.title),
+              channel: match.channel || null,
+            });
           }
         }
         await tx.searchSubscription.update({
@@ -163,7 +168,16 @@ async function check(id: string) {
       },
       { timeout: 20000 }
     );
-    if (downloads) triggerDownloads();
+    if (queued.length) {
+      triggerDownloads();
+      // One aggregated notification per run instead of one per queued item.
+      notifySubscriptionQueued({
+        id,
+        name: subscription.name,
+        query: subscription.query,
+        downloads: queued,
+      });
+    }
   } catch (error) {
     log.error("Prüfung fehlgeschlagen:", error);
     await prisma.searchSubscription.updateMany({

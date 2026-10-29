@@ -10,15 +10,17 @@ import {
   downloadSubscriptionMatch,
   runDueSubscriptions,
 } from "./subscriptions";
-const { folder, queryContent, startDownloadProcessing } = await vi.hoisted(async () => {
-  const { mkdtemp } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  return {
-    folder: await mkdtemp(`${tmpdir()}/rundfunkarr-subscriptions-`),
-    queryContent: vi.fn(),
-    startDownloadProcessing: vi.fn(async () => {}),
-  };
-});
+const { folder, queryContent, startDownloadProcessing, notifySubscriptionQueued } =
+  await vi.hoisted(async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    return {
+      folder: await mkdtemp(`${tmpdir()}/rundfunkarr-subscriptions-`),
+      queryContent: vi.fn(),
+      startDownloadProcessing: vi.fn(async () => {}),
+      notifySubscriptionQueued: vi.fn(),
+    };
+  });
 vi.mock("@/lib/db", async () => {
   const { PrismaClient } = await import("@prisma/client");
   return { prisma: new PrismaClient({ datasourceUrl: `file:${folder}/subscriptions.db` }) };
@@ -26,6 +28,7 @@ vi.mock("@/lib/db", async () => {
 vi.mock("@/services/content-search", () => ({ queryContent }));
 vi.mock("@/lib/settings", () => ({ getSetting: async () => "false" }));
 vi.mock("./download-manager", () => ({ startDownloadProcessing }));
+vi.mock("./notifications", () => ({ notifySubscriptionQueued }));
 const entry = (i: number) => ({
   channel: "ZDF",
   topic: "Natur",
@@ -67,6 +70,7 @@ beforeEach(async () => {
   await prisma.download.deleteMany();
   queryContent.mockReset().mockResolvedValue([entry(1)]);
   startDownloadProcessing.mockClear();
+  notifySubscriptionQueued.mockClear();
 });
 afterAll(async () => {
   await prisma.$disconnect();
@@ -93,6 +97,34 @@ it("merkt den Altbestand vor und lädt nur später neue Treffer einmal herunter,
   ]);
   await checkSubscription(sub.id);
   expect(await prisma.download.count()).toBe(1);
+});
+it("meldet neu eingereihte Downloads gesammelt einmal pro Prüfung, den Altbestand aber nicht", async () => {
+  const sub = await saveSubscription(input());
+  await checkSubscription(sub.id);
+  expect(notifySubscriptionQueued).not.toHaveBeenCalled();
+  queryContent.mockResolvedValue([entry(1), entry(2), entry(3)]);
+  await checkSubscription(sub.id);
+  expect(notifySubscriptionQueued).toHaveBeenCalledOnce();
+  const [notification] = notifySubscriptionQueued.mock.lastCall!;
+  expect(notification).toMatchObject({ id: sub.id, name: "Naturfilme", query: "Natur" });
+  expect(notification.downloads).toHaveLength(2);
+  expect(notification.downloads).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ title: "Natur - Sendung 2", channel: "ZDF" }),
+      expect.objectContaining({ title: "Natur - Sendung 3", channel: "ZDF" }),
+    ])
+  );
+  const ids = (await prisma.download.findMany()).map((d) => d.id).sort();
+  expect(notification.downloads.map((d: { id: string }) => d.id).sort()).toEqual(ids);
+  await checkSubscription(sub.id);
+  expect(notifySubscriptionQueued).toHaveBeenCalledOnce();
+});
+it("meldet bei Suchabos ohne automatischen Download nichts", async () => {
+  const sub = await saveSubscription({ ...input(), action: "notify" });
+  await checkSubscription(sub.id);
+  queryContent.mockResolvedValue([entry(1), entry(2)]);
+  await checkSubscription(sub.id);
+  expect(notifySubscriptionQueued).not.toHaveBeenCalled();
 });
 it("führt gleichzeitige Prüfungen desselben Suchabos zusammen", async () => {
   const sub = await saveSubscription(input());

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SecuritySettings } from "@/components/auth/security-settings";
 import { FilmlisteIndexSettings } from "@/components/settings/filmliste-index-settings";
+import { NotificationSettings } from "@/components/settings/notification-settings";
 import { PostProcessSettings } from "@/components/settings/post-process-settings";
 import { useSettings } from "@/contexts/settings-context";
 import { appVersion } from "@/lib/app-version";
@@ -34,6 +35,7 @@ import {
   Database,
   Info,
   Palette,
+  Bell,
   Check,
   X,
   Loader2,
@@ -267,6 +269,10 @@ export default function SettingsPage() {
           <TabsTrigger value="api">
             <Key />
             API-Keys
+          </TabsTrigger>
+          <TabsTrigger value="notifications">
+            <Bell />
+            Benachrichtigungen
           </TabsTrigger>
           <TabsTrigger value="matching">
             <Sliders />
@@ -662,6 +668,11 @@ export default function SettingsPage() {
           >
             API-Keys speichern
           </SaveButton>
+        </TabsContent>
+
+        {/* Notifications Tab */}
+        <TabsContent value="notifications" className="space-y-4">
+          <NotificationSettings />
         </TabsContent>
 
         {/* Matching Tab */}

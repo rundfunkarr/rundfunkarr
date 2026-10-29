@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSetting, isMkvConversionEnabled } from "@/lib/settings";
 import { downloadHlsStream } from "./ytdlp";
 import { runPostProcessScript } from "./post-process";
+import { notifyDownloadCompleted, notifyDownloadFailed } from "./notifications";
 import { deleteSubtitleSidecar, type SubtitleArtifact } from "./subtitle-artifact";
 import { getStreamHeight, isStreamingUrl, srfUrnFromUrl } from "@/lib/stream-url";
 import * as fs from "fs/promises";
@@ -237,17 +238,11 @@ async function processDownload(
       // Mark as completed
       const downloadTime = Math.floor((Date.now() - startTime) / 1000);
 
-      await prisma.download.update({
-        where: { id: downloadId },
-        data: {
-          status: "completed",
-          warning: joinWarnings(warning, scriptWarning),
-          subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
-          progress: 100,
-          size: stats.size,
-          filePath: storagePath,
-          completedAt: new Date(),
-        },
+      await markAsCompleted(download, {
+        warning: joinWarnings(warning, scriptWarning),
+        subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
+        size: stats.size,
+        filePath: storagePath,
       });
 
       log.info(
@@ -346,17 +341,11 @@ async function processDownload(
       // Mark as completed
       const downloadTime = Math.floor((Date.now() - startTime) / 1000);
 
-      await prisma.download.update({
-        where: { id: downloadId },
-        data: {
-          status: "completed",
-          warning: joinWarnings(warning, scriptWarning),
-          subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
-          progress: 100,
-          size: stats.size,
-          filePath: storagePath,
-          completedAt: new Date(),
-        },
+      await markAsCompleted(download, {
+        warning: joinWarnings(warning, scriptWarning),
+        subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
+        size: stats.size,
+        filePath: storagePath,
       });
 
       log.info(
@@ -389,17 +378,11 @@ async function processDownload(
         signal
       );
 
-      await prisma.download.update({
-        where: { id: downloadId },
-        data: {
-          status: "completed",
-          warning: joinWarnings(warning, scriptWarning),
-          subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
-          progress: 100,
-          size: stats.size,
-          filePath: storagePath,
-          completedAt: new Date(),
-        },
+      await markAsCompleted(download, {
+        warning: joinWarnings(warning, scriptWarning),
+        subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
+        size: stats.size,
+        filePath: storagePath,
       });
 
       log.info(`Completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB)`);
@@ -452,14 +435,36 @@ async function processDownload(
   }
 }
 
-async function markAsFailed(downloadId: string, error: string): Promise<void> {
+async function markAsCompleted(
+  download: { id: string; title: string; category: string },
+  result: {
+    warning: string | null;
+    subtitleArtifact: string | null;
+    size: number;
+    filePath: string;
+  }
+): Promise<void> {
   await prisma.download.update({
+    where: { id: download.id },
+    data: { status: "completed", progress: 100, completedAt: new Date(), ...result },
+  });
+  notifyDownloadCompleted({ ...download, ...result });
+}
+
+async function markAsFailed(downloadId: string, error: string): Promise<void> {
+  const download = await prisma.download.update({
     where: { id: downloadId },
     data: {
       status: "failed",
       error,
       completedAt: new Date(),
     },
+  });
+  notifyDownloadFailed({
+    id: downloadId,
+    title: download?.title,
+    category: download?.category,
+    error,
   });
 }
 
