@@ -40,7 +40,8 @@ export function resolveScriptsDirectory(): string {
   // Prisma resolves a relative DATABASE_URL against prisma/.
   const url = process.env.DATABASE_URL ?? "file:./data/rundfunkarr.db";
   const file = url.replace(/^file:/, "").split("?")[0];
-  return path.join(path.dirname(path.resolve(process.cwd(), "prisma", file)), "scripts");
+  const databasePath = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "prisma", file);
+  return path.join(/*turbopackIgnore: true*/ path.dirname(databasePath), "scripts");
 }
 
 function isScriptName(name: string): boolean {
@@ -62,7 +63,7 @@ export async function listPostProcessScripts(
 ): Promise<string[]> {
   let names: string[];
   try {
-    names = await fs.readdir(directory);
+    names = await fs.readdir(/*turbopackIgnore: true*/ directory);
   } catch {
     return [];
   }

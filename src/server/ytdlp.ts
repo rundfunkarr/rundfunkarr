@@ -220,7 +220,7 @@ export async function getVideoInfo(url: string): Promise<YtdlpVideoInfo | null> 
   return new Promise((resolve) => {
     let resolved = false;
     log.debug(`Getting info for: ${url}`);
-    const proc = spawn(ytdlpPath, args);
+    const proc = spawn(/*turbopackIgnore: true*/ ytdlpPath, args);
 
     let stdout = "";
     let stderr = "";
@@ -350,7 +350,7 @@ export async function downloadVideo(
 
   return new Promise((resolve) => {
     log.debug(`Starting download: ${url} -> ${options.outputPath}`);
-    const proc = spawn(ytdlpPath, args, cancellableProcessOptions);
+    const proc = spawn(/*turbopackIgnore: true*/ ytdlpPath, args, cancellableProcessOptions);
     const stopCancellation = cancelProcessOnAbort(proc, options.signal);
     proc.once("close", stopCancellation);
     proc.once("error", stopCancellation);
@@ -640,7 +640,7 @@ export async function testYtdlp(): Promise<{ success: boolean; version?: string;
   const ytdlpPath = await getConfiguredYtdlpPath();
 
   return new Promise((resolve) => {
-    const proc = spawn(ytdlpPath, ["--version"]);
+    const proc = spawn(/*turbopackIgnore: true*/ ytdlpPath, ["--version"]);
 
     let stdout = "";
     let stderr = "";
@@ -688,7 +688,13 @@ export async function testProxy(
   return new Promise((resolve) => {
     let resolved = false;
     // Use yt-dlp to test connectivity through proxy
-    const proc = spawn(ytdlpPath, ["--proxy", proxyUrl, "--simulate", "--no-warnings", testUrl]);
+    const proc = spawn(/*turbopackIgnore: true*/ ytdlpPath, [
+      "--proxy",
+      proxyUrl,
+      "--simulate",
+      "--no-warnings",
+      testUrl,
+    ]);
 
     let stderr = "";
 
@@ -758,7 +764,7 @@ export async function extractPlaylistEntries(
   return new Promise((resolve) => {
     let resolved = false;
     log.debug(`Extracting playlist entries from: ${url}`);
-    const proc = spawn(ytdlpPath, args);
+    const proc = spawn(/*turbopackIgnore: true*/ ytdlpPath, args);
 
     let stdout = "";
     let stderr = "";
@@ -864,7 +870,7 @@ export async function getDetailedVideoInfo(url: string): Promise<YtdlpVideoInfo 
   return new Promise((resolve) => {
     let resolved = false;
     log.debug(`Getting detailed info for: ${url}`);
-    const proc = spawn(ytdlpPath, args);
+    const proc = spawn(/*turbopackIgnore: true*/ ytdlpPath, args);
 
     let stdout = "";
     let stderr = "";

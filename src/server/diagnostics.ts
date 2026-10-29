@@ -39,7 +39,7 @@ export async function systemDiagnostics(): Promise<Diagnostic[]> {
     ["temporary", "Temporäres Verzeichnis", temporary],
   ]) {
     try {
-      if (!(await stat(folder)).isDirectory()) throw new Error();
+      if (!(await stat(/*turbopackIgnore: true*/ folder)).isDirectory()) throw new Error();
       await access(folder, constants.W_OK | constants.R_OK);
       rows.push({ id, label, status: "ok", message: `Lesbar und beschreibbar: ${folder}` });
     } catch {

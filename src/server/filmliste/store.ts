@@ -68,7 +68,7 @@ interface EntryRow {
 export function resolveFilmlistePath(): string {
   const url = process.env.DATABASE_URL ?? "file:./data/rundfunkarr.db";
   const file = url.replace(/^file:/, "").split("?")[0];
-  const databasePath = path.resolve(process.cwd(), "prisma", file);
+  const databasePath = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "prisma", file);
   const indexPath = path.join(path.dirname(databasePath), "filmliste.db");
   // Deleting or rebuilding the index removes its file; never let it alias the main database.
   return canonicalPath(indexPath) === canonicalPath(databasePath)

@@ -25,7 +25,9 @@ export async function GET() {
     // Database file size
     let dbSizeBytes = 0;
     const dbPath = process.env.DATABASE_URL?.replace("file:", "") || "./prisma/data/rundfunkarr.db";
-    const absoluteDbPath = path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath);
+    const absoluteDbPath = path.isAbsolute(dbPath)
+      ? dbPath
+      : path.join(/*turbopackIgnore: true*/ process.cwd(), dbPath);
     try {
       const stats = fs.statSync(absoluteDbPath);
       dbSizeBytes = stats.size;
