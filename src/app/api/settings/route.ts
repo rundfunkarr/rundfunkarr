@@ -1,4 +1,4 @@
-import { rememberLogSecret } from "@/lib/logger";
+import { rememberLogSecret, logger } from "@/lib/logger";
 import { clearTokenCache as clearSrfTokenCache } from "@/services/srgssr-api";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(settings);
   } catch (error) {
-    console.error("Failed to fetch settings:", error);
+    logger.error("Failed to fetch settings:", error);
     return NextResponse.json({ error: "Failed to fetch settings" }, { status: 500 });
   }
 }
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   } catch (error) {
-    console.error("Failed to update settings:", error);
+    logger.error("Failed to update settings:", error);
     return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
   }
 }

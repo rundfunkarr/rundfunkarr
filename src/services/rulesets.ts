@@ -7,6 +7,9 @@ import {
   generateRulesetForShow,
   getGeneratedRulesetByTvdbId,
 } from "./ruleset-generator";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Rulesets");
 
 // In-memory storage for rulesets indexed by topic
 let rulesetsByTopic: Map<string, Ruleset[]> = new Map();
@@ -22,22 +25,22 @@ const GITHUB_RULESETS_URL =
 
 async function fetchFromGitHub(): Promise<Ruleset[] | null> {
   try {
-    console.log(`[Rulesets] Fetching from GitHub: ${GITHUB_RULESETS_URL}`);
+    log.debug(`Fetching from GitHub: ${GITHUB_RULESETS_URL}`);
     const response = await fetch(GITHUB_RULESETS_URL, {
       headers: { "User-Agent": "RundfunkArr" },
       signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {
-      console.warn(`[Rulesets] GitHub fetch failed: ${response.status}`);
+      log.warn(`GitHub fetch failed: ${response.status}`);
       return null;
     }
 
     const rulesets: Ruleset[] = await response.json();
-    console.log(`[Rulesets] Fetched ${rulesets.length} rulesets from GitHub`);
+    log.info(`Fetched ${rulesets.length} rulesets from GitHub`);
     return rulesets;
   } catch (error) {
-    console.warn("[Rulesets] Error fetching from GitHub:", error);
+    log.warn("Error fetching from GitHub:", error);
     return null;
   }
 }
@@ -46,7 +49,7 @@ async function loadFromLocalFile(): Promise<Ruleset[]> {
   const rulesetsPath = path.join(process.cwd(), "data", "rulesets.json");
   const fileContent = await fs.readFile(rulesetsPath, "utf-8");
   const rulesets: Ruleset[] = JSON.parse(fileContent);
-  console.log(`[Rulesets] Loaded ${rulesets.length} rulesets from local file`);
+  log.info(`Loaded ${rulesets.length} rulesets from local file`);
   return rulesets;
 }
 
@@ -69,9 +72,7 @@ function indexRulesets(allRulesets: Ruleset[]): void {
     );
   }
 
-  console.log(
-    `[Rulesets] Indexed ${allRulesets.length} rulesets for ${rulesetsByTopic.size} topics`
-  );
+  log.debug(`Indexed ${allRulesets.length} rulesets for ${rulesetsByTopic.size} topics`);
 }
 
 export async function loadRulesets(): Promise<void> {
@@ -80,7 +81,7 @@ export async function loadRulesets(): Promise<void> {
     let allRulesets = await fetchFromGitHub();
 
     if (!allRulesets) {
-      console.log("[Rulesets] Falling back to local file");
+      log.info("Falling back to local file");
       allRulesets = await loadFromLocalFile();
     }
 
@@ -92,7 +93,7 @@ export async function loadRulesets(): Promise<void> {
     lastFetchTime = Date.now();
     initialized = true;
   } catch (error) {
-    console.error("[Rulesets] Error loading rulesets:", error);
+    log.error("Error loading rulesets:", error);
   }
 }
 
@@ -108,12 +109,12 @@ async function loadGeneratedRulesets(): Promise<void> {
     }
 
     if (generated.length > 0) {
-      console.log(
-        `[Rulesets] Loaded ${generated.length} generated rulesets for ${generatedRulesetsByTopic.size} topics`
+      log.debug(
+        `Loaded ${generated.length} generated rulesets for ${generatedRulesetsByTopic.size} topics`
       );
     }
   } catch (error) {
-    console.warn("[Rulesets] Error loading generated rulesets:", error);
+    log.warn("Error loading generated rulesets:", error);
   }
 }
 
@@ -122,7 +123,7 @@ let refreshPromise: Promise<void> | null = null;
 export async function refreshRulesetsIfNeeded(): Promise<void> {
   const now = Date.now();
   if (now - lastFetchTime > REFRESH_INTERVAL_MS) {
-    console.log("[Rulesets] Refreshing rulesets (hourly update)");
+    log.debug("Refreshing rulesets (hourly update)");
     if (!refreshPromise) {
       refreshPromise = loadRulesets().finally(() => {
         refreshPromise = null;
@@ -183,7 +184,7 @@ export function addGeneratedRuleset(ruleset: Ruleset): void {
   const existing = generatedRulesetsByTopic.get(ruleset.topic) || [];
   existing.push(ruleset);
   generatedRulesetsByTopic.set(ruleset.topic, existing);
-  console.log(`[Rulesets] Added generated ruleset for topic "${ruleset.topic}"`);
+  log.debug(`Added generated ruleset for topic "${ruleset.topic}"`);
 }
 
 /**
@@ -196,7 +197,7 @@ export async function getOrGenerateRulesetForShow(
 ): Promise<Ruleset | null> {
   // First check if we already have a ruleset (external or generated)
   if (hasRulesetForTvdbId(tvdbId)) {
-    console.log(`[Rulesets] Already have ruleset for TVDB ${tvdbId}`);
+    log.debug(`Already have ruleset for TVDB ${tvdbId}`);
     return null; // Return null to indicate existing ruleset should be used
   }
 
@@ -209,7 +210,7 @@ export async function getOrGenerateRulesetForShow(
   }
 
   // Try to auto-generate a new ruleset
-  console.log(`[Rulesets] No ruleset found for TVDB ${tvdbId}, attempting auto-generation...`);
+  log.debug(`No ruleset found for TVDB ${tvdbId}, attempting auto-generation...`);
   const generated = await generateRulesetForShow(tvdbId, showInfo);
 
   if (generated) {

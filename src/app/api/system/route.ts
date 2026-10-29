@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import { logger } from "@/lib/logger";
 
 // GET /api/system - Get system information
 export async function GET() {
@@ -77,7 +78,7 @@ export async function GET() {
       uptime: uptimeSeconds,
     });
   } catch (error) {
-    console.error("Failed to get system info:", error);
+    logger.error("Failed to get system info:", error);
     return NextResponse.json({ error: "Failed to get system info" }, { status: 500 });
   }
 }

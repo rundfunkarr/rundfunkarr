@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getSetting, clearSettingsCache } from "@/lib/settings";
+import { logger } from "@/lib/logger";
 
 interface Worker {
   controller: AbortController;
@@ -40,7 +41,7 @@ export function startDownloadProcessing(): Promise<void> {
   if (!state.running) {
     state.running = drain().finally(() => {
       state.running = null;
-      if (state.requested) void startDownloadProcessing().catch(console.error);
+      if (state.requested) void startDownloadProcessing().catch(logger.error);
     });
   }
   return state.running;
@@ -68,7 +69,7 @@ async function drain(): Promise<void> {
       worker.done = processDownload(next.id, controller.signal)
         .catch((error) => {
           skippedIds.add(next.id);
-          console.error(error);
+          logger.error(error);
         })
         .finally(() => {
           state.workers.delete(next.id);
@@ -89,7 +90,7 @@ async function drain(): Promise<void> {
       });
       if (delayed?.nextRetryAt) {
         state.timer = setTimeout(
-          () => void startDownloadProcessing().catch(console.error),
+          () => void startDownloadProcessing().catch(logger.error),
           Math.max(100, delayed.nextRetryAt.getTime() - Date.now())
         );
         state.timer.unref?.();
@@ -112,7 +113,7 @@ export async function recoverDownloads(): Promise<void> {
     },
   });
   state.recovered = true;
-  void startDownloadProcessing().catch(console.error);
+  void startDownloadProcessing().catch(logger.error);
 }
 
 export async function setQueuePaused(paused: boolean): Promise<void> {
@@ -122,7 +123,7 @@ export async function setQueuePaused(paused: boolean): Promise<void> {
     update: { value: String(paused) },
   });
   clearSettingsCache();
-  void startDownloadProcessing().catch(console.error);
+  void startDownloadProcessing().catch(logger.error);
 }
 
 export async function controlDownload(
@@ -169,6 +170,6 @@ export async function controlDownload(
           }
         : { priority },
   });
-  if (result.count) void startDownloadProcessing().catch(console.error);
+  if (result.count) void startDownloadProcessing().catch(logger.error);
   return result.count > 0;
 }

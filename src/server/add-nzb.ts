@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addToQueue, parseNzbContent } from "@/services/download";
+import { logger } from "@/lib/logger";
 
 /** Handle both SABnzbd uploads and the web UI's raw NZB requests. */
 export async function addNzb(request: NextRequest, sabnzbd = false) {
@@ -49,7 +50,7 @@ export async function addNzb(request: NextRequest, sabnzbd = false) {
     const item = await addToQueue(parsed.url, parsed.fileName, category, parsed.metadata);
     return NextResponse.json({ status: true, nzo_ids: [item.id] });
   } catch (error) {
-    console.error("Error adding NZB:", error);
+    logger.error("Error adding NZB:", error);
     return fail(error instanceof Error ? error.message : "Unknown error", 500);
   }
 }

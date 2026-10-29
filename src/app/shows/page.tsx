@@ -49,6 +49,7 @@ export default function ShowsPage() {
       setShows(Array.isArray(data) ? data : []);
       setFilteredShows(Array.isArray(data) ? data : []);
     } catch (error) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to fetch shows:", error);
       setShows([]);
       setFilteredShows([]);

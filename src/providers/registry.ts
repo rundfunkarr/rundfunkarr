@@ -6,6 +6,9 @@ import type {
   AggregatedSearchResult,
   ProviderCountry,
 } from "@/types/provider";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ProviderRegistry");
 
 /**
  * Provider Registry
@@ -24,10 +27,10 @@ class ProviderRegistry {
    */
   register(provider: ContentProvider): void {
     if (this.providers.has(provider.id)) {
-      console.warn(`[ProviderRegistry] Provider ${provider.id} already registered, replacing`);
+      log.warn(`Provider ${provider.id} already registered, replacing`);
     }
     this.providers.set(provider.id, provider);
-    console.log(`[ProviderRegistry] Registered provider: ${provider.id} (${provider.name})`);
+    log.debug(`Registered provider: ${provider.id} (${provider.name})`);
   }
 
   /**
@@ -44,19 +47,19 @@ class ProviderRegistry {
   }
 
   private async initializeAll(): Promise<void> {
-    console.log(`[ProviderRegistry] Initializing ${this.providers.size} providers...`);
+    log.debug(`Initializing ${this.providers.size} providers...`);
 
     const initPromises = Array.from(this.providers.values()).map(async (provider) => {
       try {
         await provider.initialize();
       } catch (error) {
-        console.error(`[ProviderRegistry] Failed to initialize ${provider.id}:`, error);
+        log.error(`Failed to initialize ${provider.id}:`, error);
       }
     });
 
     await Promise.all(initPromises);
     this.initialized = true;
-    console.log(`[ProviderRegistry] All providers initialized`);
+    log.info(`All providers initialized`);
   }
 
   /**
@@ -107,9 +110,7 @@ class ProviderRegistry {
     const providerCounts: Record<string, number> = {};
     const errors: Array<{ providerId: string; error: string }> = [];
 
-    console.log(
-      `[ProviderRegistry] Searching ${enabledProviders.length} providers for: "${query.query}"`
-    );
+    log.debug(`Searching ${enabledProviders.length} providers for: "${query.query}"`);
 
     const searchPromises = enabledProviders.map(async (provider) => {
       try {
@@ -118,7 +119,7 @@ class ProviderRegistry {
         return items;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        console.error(`[ProviderRegistry] Search failed for ${provider.id}:`, errorMessage);
+        log.error(`Search failed for ${provider.id}:`, errorMessage);
         errors.push({ providerId: provider.id, error: errorMessage });
         providerCounts[provider.id] = 0;
         return [];
@@ -136,8 +137,8 @@ class ProviderRegistry {
     // Apply limit if specified
     const limitedResults = query.limit ? results.slice(0, query.limit) : results;
 
-    console.log(
-      `[ProviderRegistry] Search complete: ${limitedResults.length} results from ${enabledProviders.length} providers`
+    log.debug(
+      `Search complete: ${limitedResults.length} results from ${enabledProviders.length} providers`
     );
 
     return {
@@ -166,7 +167,7 @@ class ProviderRegistry {
 
     const enabled = await provider.isEnabled();
     if (!enabled) {
-      console.warn(`[ProviderRegistry] Provider ${providerId} is disabled`);
+      log.warn(`Provider ${providerId} is disabled`);
       return [];
     }
 

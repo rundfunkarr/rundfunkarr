@@ -4,6 +4,7 @@ import { fetchWithRetry } from "@/lib/fetch-retry";
 import { getSettings } from "@/lib/settings";
 import { buildTvdbLoginPayload } from "@/lib/tvdb-auth";
 import type { TvdbData, TvdbEpisode, TvdbAlias } from "@/types";
+import { logger } from "@/lib/logger";
 
 const TVDB_API_URL = "https://api4.thetvdb.com/v4";
 
@@ -125,7 +126,7 @@ async function refreshToken(): Promise<string | null> {
   const payload = buildTvdbLoginPayload(apiKey, pin);
 
   if (!payload) {
-    console.error("TVDB API key not configured in settings");
+    logger.error("TVDB API key not configured in settings");
     return null;
   }
 
@@ -161,10 +162,10 @@ async function refreshToken(): Promise<string | null> {
       return token;
     }
 
-    console.error("Failed to get TVDB token:", data);
+    logger.error("Failed to get TVDB token:", data);
     return null;
   } catch (error) {
-    console.error("Error refreshing TVDB token:", error);
+    logger.error("Error refreshing TVDB token:", error);
     return null;
   }
 }
@@ -232,7 +233,7 @@ async function fetchAndCacheSeriesData(tvdbId: number): Promise<TvdbData | null>
     const data = await response.json();
 
     if (!data || data.status !== "success") {
-      console.error("Failed to fetch data from TVDB:", data);
+      logger.error("Failed to fetch data from TVDB:", data);
       return null;
     }
 
@@ -336,7 +337,7 @@ async function fetchAndCacheSeriesData(tvdbId: number): Promise<TvdbData | null>
 
     return tvdbData;
   } catch (error) {
-    console.error("Error fetching TVDB data:", error);
+    logger.error("Error fetching TVDB data:", error);
     return null;
   }
 }

@@ -8,6 +8,9 @@ import {
 } from "@/server/download-queue";
 import { prisma } from "@/lib/db";
 import { clearSettingsCache } from "@/lib/settings";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Warteschlange");
 
 const input = z.discriminatedUnion("action", [
   z.object({
@@ -47,7 +50,7 @@ export async function POST(request: NextRequest) {
         )
       );
       clearSettingsCache();
-      void startDownloadProcessing().catch(console.error);
+      void startDownloadProcessing().catch(log.error);
     } else if (action.action === "pauseQueue" || action.action === "resumeQueue")
       await setQueuePaused(action.action === "pauseQueue");
     else if (
@@ -63,7 +66,7 @@ export async function POST(request: NextRequest) {
       );
     return NextResponse.json({ status: true });
   } catch (error) {
-    console.error("[Warteschlange] Aktion fehlgeschlagen:", error);
+    log.error("Aktion fehlgeschlagen:", error);
     return NextResponse.json(
       { error: "Die Warteschlange konnte nicht geändert werden." },
       { status: 500 }

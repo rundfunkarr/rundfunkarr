@@ -7,6 +7,9 @@ import {
 import { getSetting } from "@/lib/settings";
 import { srfProvider } from "@/providers/srf";
 import type { ApiResultItem } from "@/types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ContentSearch");
 
 /** Shared source for UI, Newznab and ruleset discovery, before episode/movie matching. */
 export async function queryContent(
@@ -85,7 +88,7 @@ export async function queryContent(
     // until callers finish matching and deduplicating their metadata records.
     return options.deduplicate === false ? sortedResults : sortedResults.slice(0, size);
   } catch (error) {
-    console.error("[ContentSearch] Provider failed:", error);
+    log.error("Provider failed:", error);
     return null;
   }
 }

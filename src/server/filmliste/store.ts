@@ -190,8 +190,7 @@ export class FilmlisteStore {
   private readSchemaVersion(db: DatabaseSync): string | null {
     try {
       const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
-        | { value: string }
-        | undefined;
+        { value: string } | undefined;
       return row?.value ?? null;
     } catch {
       return null;
@@ -200,8 +199,7 @@ export class FilmlisteStore {
 
   private getMeta(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
-      | { value: string }
-      | undefined;
+      { value: string } | undefined;
     return row?.value ?? null;
   }
 

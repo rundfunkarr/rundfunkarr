@@ -10,6 +10,7 @@ import type {
   ProviderSearchQuery,
   ProviderStatus,
 } from "@/types/provider";
+import { logger } from "@/lib/logger";
 
 // Minimum duration for content (5 minutes by default), in seconds.
 const DEFAULT_MIN_DURATION = 5 * 60;
@@ -67,7 +68,7 @@ export class OrfProvider extends BaseProvider {
       }
     }
 
-    console.log(`[${this.id}] Settings: minDuration=${this.minDuration}s`);
+    logger.debug(`[${this.id}] Settings: minDuration=${this.minDuration}s`);
   }
 
   /**
@@ -90,7 +91,7 @@ export class OrfProvider extends BaseProvider {
     // Check if HLS is enabled (required for ORF)
     const hlsEnabled = await getSetting("download.enableHLS");
     if (hlsEnabled !== "true") {
-      console.log(`[${this.id}] HLS not enabled - provider disabled`);
+      logger.debug(`[${this.id}] HLS not enabled - provider disabled`);
       return false;
     }
 
@@ -108,11 +109,11 @@ export class OrfProvider extends BaseProvider {
 
     const enabled = await this.isEnabled();
     if (!enabled) {
-      console.log(`[${this.id}] Provider not enabled`);
+      logger.debug(`[${this.id}] Provider not enabled`);
       return [];
     }
 
-    console.log(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
+    logger.debug(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
 
     try {
       const results = await queryMediathekView(
@@ -126,11 +127,11 @@ export class OrfProvider extends BaseProvider {
       if (results === null) throw new Error("MediathekView search failed");
       const items = this.filterResults(results, query.type);
 
-      console.log(`[${this.id}] Found ${items.length} items after filtering`);
+      logger.debug(`[${this.id}] Found ${items.length} items after filtering`);
 
       return items.slice(0, limit);
     } catch (error) {
-      console.error(`[${this.id}] Search error:`, error);
+      logger.error(`[${this.id}] Search error:`, error);
       throw error;
     }
   }
@@ -211,7 +212,7 @@ export class OrfProvider extends BaseProvider {
           };
         }
       } catch (error) {
-        console.error(`[${this.id}] Failed to get video info for ${videoUrl}:`, error);
+        logger.error(`[${this.id}] Failed to get video info for ${videoUrl}:`, error);
       }
     }
 

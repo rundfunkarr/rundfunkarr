@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { testProxy, testYtdlp } from "@/server/ytdlp";
+import { logger } from "@/lib/logger";
 
 // POST /api/proxy-test - Test proxy connection
 export async function POST() {
@@ -17,7 +18,7 @@ export async function POST() {
     const proxyResult = await testProxy();
     return NextResponse.json(proxyResult);
   } catch (error) {
-    console.error("Proxy test failed:", error);
+    logger.error("Proxy test failed:", error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
@@ -31,7 +32,7 @@ export async function GET() {
     const result = await testYtdlp();
     return NextResponse.json(result);
   } catch (error) {
-    console.error("yt-dlp test failed:", error);
+    logger.error("yt-dlp test failed:", error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
