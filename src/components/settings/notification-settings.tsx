@@ -106,6 +106,11 @@ const EVENTS = [
     label: "Suchabo hat Downloads gestartet",
     hint: "Eine Nachricht pro Prüfung mit allen neu eingereihten Downloads.",
   },
+  {
+    key: "notifications.event.subscriptionFound",
+    label: "Suchabo hat neue Treffer gefunden",
+    hint: "Für Suchabos mit der Aktion „Melden“: eine Nachricht pro Prüfung mit allen neuen Treffern.",
+  },
 ];
 
 const enabledKey = (target: Target) => `notifications.${target}.enabled`;

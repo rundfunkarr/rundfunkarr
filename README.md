@@ -32,7 +32,7 @@ unten in der Seitenleiste oder unter Einstellungen → Darstellung umschalten.
 - **Optionale MKV-Konvertierung** - FFmpeg-Integration mit deutschen Sprachmetadaten
 - **Flexible Metadaten-Quellen** - Lokale Datenbank, TVDB oder TMDB
 - **Community-Rulesets** - Lokale Rulesets via Pull Request erweiterbar
-- **Benachrichtigungen** - Webhook, ntfy, Gotify und Discord bei fertigen oder fehlgeschlagenen Downloads
+- **Benachrichtigungen** - Webhook, ntfy, Gotify und Discord bei fertigen oder fehlgeschlagenen Downloads und neuen Treffern von Suchabos
 - **Vorschaubilder** - Standbilder der Sendungen in Suche, Filmen und Suchabos, Poster aus TVDB bei Serien
 - **SQLite-Datenbank** - Persistente Speicherung von Cache und Download-Historie
 
@@ -158,6 +158,7 @@ der die gerade eingegebenen Werte prüft, ohne sie zu speichern.
 | Download abgeschlossen | Titel, Sender und Dateiname |
 | Download fehlgeschlagen | Titel, Sender und Fehlermeldung, z. B. die ORF-Geosperre |
 | Suchabo hat Downloads gestartet | Eine Nachricht pro Prüfung mit allen neu eingereihten Downloads |
+| Suchabo hat neue Treffer gefunden | Für Suchabos mit der Aktion „Melden“: eine Nachricht pro Prüfung mit allen neuen Treffern |
 
 Automatische Wiederholungen, Pausen und Abbrüche lösen keine Nachricht aus, erst der
 endgültige Fehlschlag. Den Sender speichert RundfunkArr beim Anlegen des Downloads, auch bei
@@ -207,13 +208,18 @@ steigt `version`):
 }
 ```
 
-- `event`: `download.completed`, `download.failed`, `subscription.queued` oder `test`
+- `event`: `download.completed`, `download.failed`, `subscription.queued`,
+  `subscription.found` oder `test`
 - `type`: `success`, `failure` oder `info` (Feldnamen wie bei Apprise: `title`, `body`, `type`)
 - `download`: bei beiden Download-Ereignissen gesetzt, sonst `null`. Bei Fehlschlägen steht
   die Meldung in `error`; `fileName`, `filePath` und `size` sind dann `null`. `filePath` ist
   der Pfad aus Sicht von Sonarr/Radarr (siehe `DOWNLOAD_FOLDER_PATH_MAPPING`).
-- `subscription`: nur bei `subscription.queued`, mit `id`, `name`, `query` und
-  `downloads` (Liste aus `id`, `title`, `channel`)
+- `subscription`: bei `subscription.queued` und `subscription.found`, sonst `null`. Enthält
+  `id`, `name`, `query`, `downloads` (eingereihte Downloads aus `id`, `title`, `channel`) und
+  `matches` (neue Treffer eines Suchabos mit „Melden“ aus `id`, `title`, `channel`,
+  `websiteUrl`). Die jeweils nicht zutreffende Liste ist leer.
+- Sammelnachrichten nennen höchstens zehn Titel, danach „… und N weitere“; die Listen in
+  `subscription` sind vollständig.
 
 ## Installation mit Docker
 

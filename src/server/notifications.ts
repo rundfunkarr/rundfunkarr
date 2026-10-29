@@ -17,7 +17,7 @@ import { createLogger, rememberLogSecret } from "@/lib/logger";
 export const NOTIFICATION_TARGETS = ["webhook", "ntfy", "gotify", "discord"] as const;
 export type NotificationTarget = (typeof NOTIFICATION_TARGETS)[number];
 export type NotificationEventName =
-  "download.completed" | "download.failed" | "subscription.queued" | "test";
+  "download.completed" | "download.failed" | "subscription.queued" | "subscription.found" | "test";
 /** Severity in Apprise naming, so the webhook payload fits Apprise-style receivers. */
 export type NotificationType = "success" | "failure" | "info";
 
@@ -33,11 +33,21 @@ export interface NotificationDownload {
   error: string | null;
 }
 
+export interface NotificationSubscriptionMatch {
+  id: string;
+  title: string;
+  channel: string | null;
+  websiteUrl: string | null;
+}
+
 export interface NotificationSubscription {
   id: string;
   name: string;
   query: string;
+  /** Downloads queued by this run (`subscription.queued`), otherwise empty. */
   downloads: { id: string; title: string; channel: string | null }[];
+  /** New hits of a report-only subscription (`subscription.found`), otherwise empty. */
+  matches: NotificationSubscriptionMatch[];
 }
 
 /** Stable webhook payload. Fields are only ever added; `version` changes on breaking changes. */
@@ -75,6 +85,7 @@ const EVENT_SETTINGS: Record<Exclude<NotificationEventName, "test">, string> = {
   "download.completed": "notifications.event.downloadCompleted",
   "download.failed": "notifications.event.downloadFailed",
   "subscription.queued": "notifications.event.subscriptionQueued",
+  "subscription.found": "notifications.event.subscriptionFound",
 };
 
 export const TARGET_LABELS: Record<NotificationTarget, string> = {
@@ -167,24 +178,52 @@ export function buildDownloadFailedPayload(
   };
 }
 
+/** Bullet list with at most MAX_LISTED_DOWNLOADS entries and a German "… und N weitere". */
+function listItems(items: { title: string; channel: string | null }[]) {
+  const listed = items
+    .slice(0, MAX_LISTED_DOWNLOADS)
+    .map((item) => `• ${withChannel(item.title, item.channel)}`);
+  if (items.length > MAX_LISTED_DOWNLOADS)
+    listed.push(`… und ${items.length - MAX_LISTED_DOWNLOADS} weitere`);
+  return truncate(listed.join("\n"), MAX_BODY_LENGTH);
+}
+
+function subscriptionInfo(subscription: NotificationSubscription): NotificationSubscription {
+  const { id, name, query, downloads, matches } = subscription;
+  return { id, name, query, downloads, matches };
+}
+
 export function buildSubscriptionQueuedPayload(
-  subscription: NotificationSubscription,
+  subscription: Omit<NotificationSubscription, "matches">,
   now = new Date()
 ): NotificationPayload {
   const count = subscription.downloads.length;
-  const listed = subscription.downloads
-    .slice(0, MAX_LISTED_DOWNLOADS)
-    .map((item) => `• ${withChannel(item.title, item.channel)}`);
-  if (count > MAX_LISTED_DOWNLOADS) listed.push(`… und ${count - MAX_LISTED_DOWNLOADS} weitere`);
   return {
     version: 1,
     event: "subscription.queued",
     type: "info",
     title: `Suchabo „${subscription.name}“: ${count === 1 ? "1 neuer Download" : `${count} neue Downloads`}`,
-    body: truncate(listed.join("\n"), MAX_BODY_LENGTH),
+    body: listItems(subscription.downloads),
     timestamp: now.toISOString(),
     download: null,
-    subscription,
+    subscription: subscriptionInfo({ ...subscription, matches: [] }),
+  };
+}
+
+export function buildSubscriptionFoundPayload(
+  subscription: Omit<NotificationSubscription, "downloads">,
+  now = new Date()
+): NotificationPayload {
+  const count = subscription.matches.length;
+  return {
+    version: 1,
+    event: "subscription.found",
+    type: "info",
+    title: `Suchabo „${subscription.name}“: ${count === 1 ? "1 neuer Treffer" : `${count} neue Treffer`}`,
+    body: listItems(subscription.matches),
+    timestamp: now.toISOString(),
+    download: null,
+    subscription: subscriptionInfo({ ...subscription, downloads: [] }),
   };
 }
 
@@ -503,7 +542,13 @@ export function notifyDownloadFailed(download: {
   );
 }
 
-export function notifySubscriptionQueued(subscription: NotificationSubscription) {
+export function notifySubscriptionQueued(subscription: Omit<NotificationSubscription, "matches">) {
   if (subscription.downloads.length === 0) return;
   fireAndForget(async () => buildSubscriptionQueuedPayload(subscription));
+}
+
+/** New hits of a subscription with the action "Melden" (report only, no download). */
+export function notifySubscriptionFound(subscription: Omit<NotificationSubscription, "downloads">) {
+  if (subscription.matches.length === 0) return;
+  fireAndForget(async () => buildSubscriptionFoundPayload(subscription));
 }

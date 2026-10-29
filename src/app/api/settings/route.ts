@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "notifications.event.downloadCompleted": "true",
   "notifications.event.downloadFailed": "true",
   "notifications.event.subscriptionQueued": "true",
+  "notifications.event.subscriptionFound": "true",
   "notifications.webhook.enabled": "true",
   "notifications.webhook.url": "",
   "notifications.ntfy.enabled": "true",

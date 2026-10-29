@@ -5,7 +5,11 @@ import { queryContent } from "@/services/content-search";
 import { getSetting } from "@/lib/settings";
 import { isStreamingUrl, withStreamQuality } from "@/lib/stream-url";
 import { mediaMetadata } from "@/lib/media-metadata";
-import { notifySubscriptionQueued, type NotificationSubscription } from "./notifications";
+import {
+  notifySubscriptionFound,
+  notifySubscriptionQueued,
+  type NotificationSubscription,
+} from "./notifications";
 import type { ApiResultItem } from "@/types";
 import type { Prisma } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
@@ -111,6 +115,7 @@ async function check(id: string) {
         (hls || !isStreamingUrl(item.url_video))
     );
     const queued: NotificationSubscription["downloads"] = [];
+    const found: NotificationSubscription["matches"] = [];
     await prisma.$transaction(
       async (tx) => {
         const latest = await tx.searchSubscription.findUnique({ where: { id } });
@@ -158,6 +163,13 @@ async function check(id: string) {
               title: title(match.topic, match.title),
               channel: match.channel || null,
             });
+          } else if (latest.initialized) {
+            found.push({
+              id: match.id,
+              title: title(match.topic, match.title),
+              channel: match.channel || null,
+              websiteUrl: match.websiteUrl || null,
+            });
           }
         }
         await tx.searchSubscription.update({
@@ -175,16 +187,13 @@ async function check(id: string) {
       },
       { timeout: 20000 }
     );
+    const info = { id, name: subscription.name, query: subscription.query };
+    // One aggregated notification per run instead of one per item.
     if (queued.length) {
       triggerDownloads();
-      // One aggregated notification per run instead of one per queued item.
-      notifySubscriptionQueued({
-        id,
-        name: subscription.name,
-        query: subscription.query,
-        downloads: queued,
-      });
+      notifySubscriptionQueued({ ...info, downloads: queued });
     }
+    if (found.length) notifySubscriptionFound({ ...info, matches: found });
   } catch (error) {
     log.error("Prüfung fehlgeschlagen:", error);
     await prisma.searchSubscription.updateMany({
