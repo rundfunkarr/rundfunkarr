@@ -26,6 +26,7 @@ const strategies = {
   ItemTitleIncludes: "Episodentitel enthält den ermittelten Titel",
   ItemTitleExact: "Episodentitel vergleichen",
   ItemTitleEqualsAirdate: "Ausstrahlungsdatum",
+  ByAbsoluteEpisodeNumber: "Fortlaufende Folgennummer",
 };
 
 export function RulesetEditor({

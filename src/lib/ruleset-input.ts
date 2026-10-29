@@ -73,6 +73,7 @@ export const rulesetInput = z.object({
     "ItemTitleIncludes",
     "ItemTitleExact",
     "ItemTitleEqualsAirdate",
+    "ByAbsoluteEpisodeNumber",
   ]),
   filters: jsonField(filters),
   titleRegexRules: jsonField(titleRules),

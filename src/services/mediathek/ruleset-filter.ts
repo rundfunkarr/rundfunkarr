@@ -21,6 +21,7 @@ import { getMatchingSettings, isHlsEnabled } from "./preferences";
 import { firstRejectedFilter, shouldSkipItem } from "./item-filters";
 import {
   createShowLookup,
+  matchesAbsoluteEpisodeNumber,
   matchesItemTitleEqualsAirdate,
   matchesItemTitleExact,
   matchesItemTitleIncludes,
@@ -134,6 +135,9 @@ export async function applyRulesetFilters(
           break;
         case "ItemTitleEqualsAirdate" as MatchingStrategy:
           matchInfo = await matchesItemTitleEqualsAirdate(item, ruleset, getShow);
+          break;
+        case "ByAbsoluteEpisodeNumber" as MatchingStrategy:
+          matchInfo = await matchesAbsoluteEpisodeNumber(item, ruleset, getShow);
           break;
       }
 

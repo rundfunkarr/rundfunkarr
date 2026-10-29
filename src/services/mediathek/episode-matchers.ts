@@ -1,6 +1,10 @@
 import { getShowInfoByTvdbId } from "../shows";
 import type { ApiResultItem, TvdbData, TvdbEpisode, Ruleset, MatchedEpisodeInfo } from "@/types";
-import { findEpisodeByAirDate, findEpisodeBySeasonAndNumber } from "@/types";
+import {
+  findEpisodeByAbsoluteNumber,
+  findEpisodeByAirDate,
+  findEpisodeBySeasonAndNumber,
+} from "@/types";
 import { buildTitleFromRegexRules, extractValueUsingRegex } from "./item-filters";
 import { formatTitle, stringSimilarity, tryParseDate } from "./title-parsing";
 
@@ -46,6 +50,32 @@ export async function matchesSeasonAndEpisode(
     item,
     showName: tvdbData.name || tvdbData.germanName || "",
     matchedTitle: `S${season}E${episode}`,
+    tvdbId: ruleset.media.media_tvdbId,
+  };
+}
+
+export async function matchesAbsoluteEpisodeNumber(
+  item: ApiResultItem,
+  ruleset: Ruleset,
+  getShow: ShowLookup
+): Promise<MatchedEpisodeInfo | null> {
+  const tvdbData = await getShow(ruleset.media.media_tvdbId);
+  if (!tvdbData?.episodes?.length) return null;
+
+  const episode = await extractValueUsingRegex(item, ruleset.episodeRegex);
+  if (!episode) return null;
+
+  const absoluteNumber = parseInt(episode, 10);
+  if (!Number.isSafeInteger(absoluteNumber) || absoluteNumber < 1) return null;
+
+  const matchedEpisode = findEpisodeByAbsoluteNumber(tvdbData, absoluteNumber);
+  if (!matchedEpisode) return null;
+
+  return {
+    episode: matchedEpisode,
+    item,
+    showName: tvdbData.name || tvdbData.germanName || "",
+    matchedTitle: `#${absoluteNumber}`,
     tvdbId: ruleset.media.media_tvdbId,
   };
 }
