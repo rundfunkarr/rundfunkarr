@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ApiKeySettings } from "@/components/settings/api-key-settings";
 import { CacheSettings } from "@/components/settings/cache-settings";
 import { DisplaySettings } from "@/components/settings/display-settings";
@@ -11,12 +12,30 @@ import { SystemSettings, useSystemInfo } from "@/components/settings/system-sett
 import { useSettings } from "@/contexts/settings-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Page, PageHeader } from "@/components/shared/page";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/shared/field";
 import { Settings, Key, Sliders, Database, Info, Palette, Bell, Loader2 } from "lucide-react";
+
+const sections = [
+  { value: "general", label: "Allgemein", icon: Settings },
+  { value: "display", label: "Darstellung", icon: Palette },
+  { value: "api", label: "API-Keys", icon: Key },
+  { value: "notifications", label: "Benachrichtigungen", icon: Bell },
+  { value: "matching", label: "Matching", icon: Sliders },
+  { value: "cache", label: "Cache", icon: Database },
+  { value: "system", label: "System", icon: Info },
+] as const;
 
 export default function SettingsPage() {
   const { isLoading } = useSettings();
   const form = useSettingsForm();
   const { systemInfo, fetchSystemInfo } = useSystemInfo();
+  const [tab, setTab] = useState<string>("general");
+
+  const changeTab = (value: string) => {
+    setTab(value);
+    if (value === "system") void fetchSystemInfo();
+  };
 
   if (isLoading) {
     return (
@@ -33,39 +52,36 @@ export default function SettingsPage() {
         description="Pfade, Quellen, Schlüssel und Abgleich von RundfunkArr konfigurieren."
       />
 
-      <Tabs
-        defaultValue="general"
-        onValueChange={(value) => value === "system" && fetchSystemInfo()}
-      >
-        <TabsList>
-          <TabsTrigger value="general">
-            <Settings />
-            Allgemein
-          </TabsTrigger>
-          <TabsTrigger value="display">
-            <Palette />
-            Darstellung
-          </TabsTrigger>
-          <TabsTrigger value="api">
-            <Key />
-            API-Keys
-          </TabsTrigger>
-          <TabsTrigger value="notifications">
-            <Bell />
-            Benachrichtigungen
-          </TabsTrigger>
-          <TabsTrigger value="matching">
-            <Sliders />
-            Matching
-          </TabsTrigger>
-          <TabsTrigger value="cache">
-            <Database />
-            Cache
-          </TabsTrigger>
-          <TabsTrigger value="system">
-            <Info />
-            System
-          </TabsTrigger>
+      <Tabs value={tab} onValueChange={changeTab} className="@container">
+        {/* Phones get a native select; seven tabs never fit in one row there. */}
+        <Field
+          label="Bereich"
+          htmlFor="settings-section"
+          srOnlyLabel
+          className="@min-[28rem]:hidden"
+        >
+          <Select id="settings-section" value={tab} onChange={(e) => changeTab(e.target.value)}>
+            {sections.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {/*
+          The bar adapts to its own width: icons and labels when everything fits, labels only
+          from 44rem (desktop with sidebar), and below that only the active tab keeps its label.
+          Hidden labels stay the accessible name; the title shows them on hover.
+        */}
+        <TabsList className="hidden @min-[28rem]:flex">
+          {sections.map(({ value, label, icon: Icon }) => (
+            <TabsTrigger key={value} value={value} title={label} className="group/tab">
+              <Icon aria-hidden className="@min-[44rem]:hidden @min-[54rem]:block" />
+              <span className="sr-only group-data-[state=active]/tab:not-sr-only @min-[44rem]:not-sr-only">
+                {label}
+              </span>
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
