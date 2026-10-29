@@ -349,7 +349,9 @@ export default function DownloadsPage() {
                                 </p>
                               )}
                             </TableCell>
-                            <TableCell className="tabular whitespace-nowrap">{item.mb} MB</TableCell>
+                            <TableCell className="tabular whitespace-nowrap">
+                              {item.mb} MB
+                            </TableCell>
                             <TableCell>
                               <div className="flex justify-end gap-0.5">
                                 <Button
