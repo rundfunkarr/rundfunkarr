@@ -103,7 +103,7 @@ describe("show lookups during ruleset matching", () => {
   it("looks up each unresolvable show once per name search, not once per item", async () => {
     vi.mocked(getShowInfoByTvdbId).mockResolvedValue(null);
 
-    const xml = await fetchSearchResultsByString("Tatort", null, 100, 0);
+    await fetchSearchResultsByString("Tatort", null, 100, 0);
 
     expect(getShowInfoByTvdbId).toHaveBeenCalledTimes(2);
     expect(
