@@ -101,11 +101,13 @@ export default function DownloadsPage() {
   }, [page]);
 
   useEffect(() => {
+    // Capture the ref object (not its value): cleanup must bump the latest counter so in-flight responses are ignored.
+    const requests = requestSequence;
     fetchData();
     const interval = setInterval(fetchData, 5000);
     return () => {
       clearInterval(interval);
-      requestSequence.current++;
+      requests.current++;
     };
   }, [fetchData, refreshVersion]);
 
