@@ -1,0 +1,32 @@
+/* Farben aus der App (src/app/globals.css) und dem Logo. */
+:root {
+  --vp-c-brand-1: oklch(0.55 0.2 35);
+  --vp-c-brand-2: oklch(0.6 0.2 35);
+  --vp-c-brand-3: oklch(0.6 0.2 35);
+  --vp-c-brand-soft: color-mix(in oklab, oklch(0.6 0.2 35) 14%, transparent);
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #ff7043 20%, #e53935);
+  --vp-home-hero-image-background-image: linear-gradient(135deg, #ff704355 30%, #e5393555);
+  --vp-home-hero-image-filter: blur(56px);
+}
+
+.dark {
+  --vp-c-brand-1: oklch(0.78 0.15 42);
+  --vp-c-brand-2: oklch(0.73 0.17 42);
+  --vp-c-brand-3: oklch(0.62 0.18 40);
+  --vp-c-brand-soft: color-mix(in oklab, oklch(0.73 0.17 42) 16%, transparent);
+}
+
+.screenshot {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  box-shadow: var(--vp-shadow-3);
+}
+
+.screenshot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}

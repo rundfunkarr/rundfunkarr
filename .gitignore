@@ -49,3 +49,8 @@ next-env.d.ts
 *.swp
 *.swo
 data/rundfunkarr.db
+
+# Documentation site (VitePress)
+/docs/node_modules/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/
