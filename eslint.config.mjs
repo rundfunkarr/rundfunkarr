@@ -16,7 +16,13 @@ const eslintConfig = [
         },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
-      // Allow console for server-side logging
+      // Server code logs through src/lib/logger.ts (levels, redaction, log viewer).
+      "no-console": "error",
+    },
+  },
+  {
+    files: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/lib/logger.ts"],
+    rules: {
       "no-console": "off",
     },
   },

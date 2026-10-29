@@ -44,6 +44,9 @@ import {
   findEpisodesBySeason,
   findEpisodeBySeasonAndNumber,
 } from "@/types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Mediathek");
 
 const QUERY_FIELDS = ["topic", "title"];
 const VALID_QUALITIES: QualityPreference[] = ["all", "best", "1080p", "720p", "480p"];
@@ -478,8 +481,8 @@ async function applyRulesetFilters(
   const minDuration = await getMinDurationSeconds();
   const matchingSettings = await getMatchingSettings();
   const hlsEnabled = await isHlsEnabled();
-  console.log(
-    `[Mediathek] Matching settings: strategy=${matchingSettings.strategy}, threshold=${matchingSettings.threshold}, minDuration=${minDuration}s, hlsEnabled=${hlsEnabled}`
+  log.debug(
+    `Matching settings: strategy=${matchingSettings.strategy}, threshold=${matchingSettings.threshold}, minDuration=${minDuration}s, hlsEnabled=${hlsEnabled}`
   );
 
   const matchedEpisodes: MatchedEpisodeInfo[] = [];
@@ -488,33 +491,33 @@ async function applyRulesetFilters(
   // Log available rulesets for debugging
   if (tvdbData && !rulesetSnapshot) {
     const allTopics = getAllTopics();
-    console.log(`[Mediathek] Rulesets available: ${allTopics.length} topics`);
+    log.debug(`Rulesets available: ${allTopics.length} topics`);
 
     // Check if any ruleset exists for this TVDB ID
     let foundRulesetForTvdbId = false;
     for (const topic of allTopics) {
       const rulesets = getRulesetsForTopicAndTvdbId(topic, tvdbData.id);
       if (rulesets.length > 0) {
-        console.log(
-          `[Mediathek] Found ${rulesets.length} ruleset(s) for topic "${topic}" with tvdbId ${tvdbData.id}`
+        log.debug(
+          `Found ${rulesets.length} ruleset(s) for topic "${topic}" with tvdbId ${tvdbData.id}`
         );
         foundRulesetForTvdbId = true;
       }
     }
     if (!foundRulesetForTvdbId) {
-      console.log(
-        `[Mediathek] No rulesets found for tvdbId ${tvdbData.id} (${tvdbData.name}), attempting auto-generation...`
+      log.debug(
+        `No rulesets found for tvdbId ${tvdbData.id} (${tvdbData.name}), attempting auto-generation...`
       );
 
       // Try to auto-generate a ruleset
       const generatedRuleset = await getOrGenerateRulesetForShow(tvdbData.id, tvdbData);
       if (generatedRuleset) {
-        console.log(
-          `[Mediathek] Auto-generated ruleset for topic "${generatedRuleset.topic}" -> TVDB ${tvdbData.id}`
+        log.debug(
+          `Auto-generated ruleset for topic "${generatedRuleset.topic}" -> TVDB ${tvdbData.id}`
         );
         foundRulesetForTvdbId = true;
       } else {
-        console.log(`[Mediathek] Could not auto-generate ruleset for ${tvdbData.name}`);
+        log.debug(`Could not auto-generate ruleset for ${tvdbData.name}`);
       }
     }
   }
@@ -534,8 +537,8 @@ async function applyRulesetFilters(
 
     // Log first few items to show what's being checked
     if (checkedCount < 5) {
-      console.log(
-        `[Mediathek] Checking item: topic="${item.topic}", title="${item.title}", rulesets found: ${rulesets.length}`
+      log.debug(
+        `Checking item: topic="${item.topic}", title="${item.title}", rulesets found: ${rulesets.length}`
       );
       checkedCount++;
     }
@@ -721,22 +724,22 @@ export async function fetchSearchResultsById(
     { fields: QUERY_FIELDS, query: searchQuery },
     ...topics.map((topic) => ({ fields: ["topic"], query: topic })),
   ];
-  console.log(
-    `[Mediathek] fetchSearchResultsById: tvdbId=${tvdbData.id}, name="${tvdbData.name}", germanName="${tvdbData.germanName}", season=${season}, episode=${episodeNumber}, quality=${quality}, minDuration=${minDuration}`
+  log.debug(
+    `fetchSearchResultsById: tvdbId=${tvdbData.id}, name="${tvdbData.name}", germanName="${tvdbData.germanName}", season=${season}, episode=${episodeNumber}, quality=${quality}, minDuration=${minDuration}`
   );
 
   const cacheKey = `tvdb_${tvdbData.id}_${season ?? "null"}_${episodeNumber ?? "null"}_${limit}_${offset}_${quality}_${minDuration}_${matchingSettings.threshold}_${JSON.stringify(searchQueries)}_${JSON.stringify([...rulesetSnapshot])}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
-    console.log(`[Mediathek] Returning cached response for ${cacheKey}`);
+    log.debug(`Returning cached response for ${cacheKey}`);
     return (cached as { response: string }).response;
   }
 
   const desiredEpisodes = getDesiredEpisodes(tvdbData, season, episodeNumber);
-  console.log(`[Mediathek] Desired episodes: ${desiredEpisodes?.length ?? 0}`);
+  log.debug(`Desired episodes: ${desiredEpisodes?.length ?? 0}`);
   if (season && desiredEpisodes?.length === 0) {
-    console.log(`[Mediathek] No desired episodes found for season=${season}, returning empty`);
+    log.debug(`No desired episodes found for season=${season}, returning empty`);
     const response = serializeRss(getEmptyRssResult());
     mediathekCache.set(cacheKey, { response });
     return response;
@@ -750,13 +753,13 @@ export async function fetchSearchResultsById(
         return (cachedApi as { results: ApiResultItem[] }).results;
       }
 
-      console.log(`[Mediathek] Searching MediathekView API with query: "${query.query}"`);
+      log.debug(`Searching MediathekView API with query: "${query.query}"`);
       try {
         const results = await queryContent([query], 10000, { deduplicate: false });
         if (results !== null) mediathekCache.set(apiCacheKey, { results });
         return results;
       } catch (error) {
-        console.error(`[Mediathek] Query failed for "${query.query}":`, error);
+        log.error(`Query failed for "${query.query}":`, error);
         return null;
       }
     })
@@ -772,11 +775,11 @@ export async function fetchSearchResultsById(
     return response;
   }
 
-  console.log(`[Mediathek] API returned ${results.length} results`);
+  log.debug(`API returned ${results.length} results`);
   if (results.length > 0) {
     const uniqueTopics = [...new Set(results.map((r) => r.topic))];
-    console.log(
-      `[Mediathek] Unique topics in results: ${uniqueTopics.slice(0, 10).join(", ")}${uniqueTopics.length > 10 ? ` ... (${uniqueTopics.length} total)` : ""}`
+    log.debug(
+      `Unique topics in results: ${uniqueTopics.slice(0, 10).join(", ")}${uniqueTopics.length > 10 ? ` ... (${uniqueTopics.length} total)` : ""}`
     );
   }
 
@@ -795,10 +798,10 @@ export async function fetchSearchResultsById(
     }
   }
   const { matchedEpisodes } = await applyRulesetFilters(results, tvdbData, rulesetSnapshot);
-  console.log(`[Mediathek] Matched episodes after ruleset filtering: ${matchedEpisodes.length}`);
+  log.debug(`Matched episodes after ruleset filtering: ${matchedEpisodes.length}`);
 
   const matchedDesiredEpisodes = applyDesiredEpisodeFilter(matchedEpisodes, desiredEpisodes);
-  console.log(`[Mediathek] Matched desired episodes: ${matchedDesiredEpisodes.length}`);
+  log.debug(`Matched desired episodes: ${matchedDesiredEpisodes.length}`);
 
   // A duplicate URL can carry different metadata: keep all candidates until
   // ruleset, skip and desired-episode filtering have selected valid matches.
@@ -811,7 +814,7 @@ export async function fetchSearchResultsById(
   const newznabItems: NewznabItem[] = uniqueEpisodes.flatMap((info) =>
     generateRssItems(info, quality, stripSeriesUmlauts)
   );
-  console.log(`[Mediathek] Generated ${newznabItems.length} Newznab items (quality: ${quality})`);
+  log.info(`Generated ${newznabItems.length} Newznab items (quality: ${quality})`);
 
   const response = convertItemsToRss(newznabItems, limit, offset);
 
@@ -937,15 +940,15 @@ export async function fetchMovieSearchResults(
 ): Promise<string> {
   const quality = await getQualityPreference();
   const minDuration = await getMinDurationSeconds();
-  console.log(
-    `[Mediathek] fetchMovieSearchResults: tmdbId=${movieData.tmdbId}, title="${movieData.title}", germanTitle="${movieData.germanTitle}", runtime=${movieData.runtime} min, quality=${quality}, minDuration=${minDuration}s`
+  log.debug(
+    `fetchMovieSearchResults: tmdbId=${movieData.tmdbId}, title="${movieData.title}", germanTitle="${movieData.germanTitle}", runtime=${movieData.runtime} min, quality=${quality}, minDuration=${minDuration}s`
   );
 
   const cacheKey = `movie_${movieData.tmdbId}_${limit}_${offset}_${quality}_${minDuration}`;
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
-    console.log(`[Mediathek] Returning cached movie response for ${cacheKey}`);
+    log.debug(`Returning cached movie response for ${cacheKey}`);
     return (cached as { response: string }).response;
   }
 
@@ -961,14 +964,14 @@ export async function fetchMovieSearchResults(
     const cachedApi = mediathekCache.get(apiCacheKey);
 
     if (cachedApi) {
-      console.log(`[Mediathek] Using cached API response for movie search: "${searchTerm}"`);
+      log.debug(`Using cached API response for movie search: "${searchTerm}"`);
       return (cachedApi as { results: ApiResultItem[] }).results;
     }
 
-    console.log(`[Mediathek] Searching MediathekView API for movie: "${searchTerm}"`);
+    log.debug(`Searching MediathekView API for movie: "${searchTerm}"`);
     const results = await queryContent([{ fields: QUERY_FIELDS, query: searchTerm }], 500);
     if (results === null) return null;
-    console.log(`[Mediathek] API returned ${results.length} results for "${searchTerm}"`);
+    log.debug(`API returned ${results.length} results for "${searchTerm}"`);
     mediathekCache.set(apiCacheKey, { results });
     return results;
   }
@@ -991,22 +994,22 @@ export async function fetchMovieSearchResults(
   }
 
   if (allResults.length === 0) {
-    console.log(`[Mediathek] No results found for movie`);
+    log.debug(`No results found for movie`);
     const response = serializeRss(getEmptyRssResult());
     if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
     return response;
   }
 
-  console.log(`[Mediathek] Total results for movie matching: ${allResults.length}`);
+  log.debug(`Total results for movie matching: ${allResults.length}`);
 
   // Filter out trailers and other non-movie content
   const filteredResults = allResults.filter(
     (item) => !SKIP_KEYWORDS.some((kw) => item.title.includes(kw))
   );
-  console.log(`[Mediathek] Results after filtering: ${filteredResults.length}`);
+  log.debug(`Results after filtering: ${filteredResults.length}`);
 
   if (filteredResults.length === 0) {
-    console.log(`[Mediathek] No results after filtering for movie`);
+    log.debug(`No results after filtering for movie`);
     const response = serializeRss(getEmptyRssResult());
     if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
     return response;
@@ -1016,7 +1019,7 @@ export async function fetchMovieSearchResults(
   const matchResults = await matchMovieItems(filteredResults, movieData, minDuration);
 
   if (matchResults.length === 0) {
-    console.log(`[Mediathek] No matches found for movie`);
+    log.debug(`No matches found for movie`);
     const response = serializeRss(getEmptyRssResult());
     if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
     return response;
@@ -1028,9 +1031,7 @@ export async function fetchMovieSearchResults(
     generateMovieRssItems(match, movieData, quality, hlsEnabled)
   );
 
-  console.log(
-    `[Mediathek] Generated ${newznabItems.length} Newznab items for movie (quality: ${quality})`
-  );
+  log.info(`Generated ${newznabItems.length} Newznab items for movie (quality: ${quality})`);
 
   const response = convertItemsToRss(newznabItems, limit, offset);
   if (!hasFailedTerm) mediathekCache.set(cacheKey, { response });
@@ -1054,15 +1055,15 @@ export async function fetchMovieSearchByQuery(
   const yearMatch = query.match(/\s+(\d{4})$/);
   const searchYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
 
-  console.log(
-    `[Mediathek] fetchMovieSearchByQuery: query="${query}", cleanedQuery="${cleanedQuery}", year=${searchYear}, quality=${quality}, minDuration=${minDuration}s`
+  log.debug(
+    `fetchMovieSearchByQuery: query="${query}", cleanedQuery="${cleanedQuery}", year=${searchYear}, quality=${quality}, minDuration=${minDuration}s`
   );
 
   // Try to find the movie on TMDB to get IDs for Radarr matching
   const tmdbMovie = await searchMovieByTitle(cleanedQuery, searchYear);
   if (tmdbMovie) {
-    console.log(
-      `[Mediathek] Found TMDB match: "${tmdbMovie.germanTitle}" (TMDB: ${tmdbMovie.tmdbId}, IMDB: ${tmdbMovie.imdbId})`
+    log.debug(
+      `Found TMDB match: "${tmdbMovie.germanTitle}" (TMDB: ${tmdbMovie.tmdbId}, IMDB: ${tmdbMovie.imdbId})`
     );
   }
 
@@ -1070,7 +1071,7 @@ export async function fetchMovieSearchByQuery(
 
   const cached = mediathekCache.get(cacheKey);
   if (cached && typeof cached === "object" && "response" in cached) {
-    console.log(`[Mediathek] Returning cached movie query response for ${cacheKey}`);
+    log.debug(`Returning cached movie query response for ${cacheKey}`);
     return (cached as { response: string }).response;
   }
 
@@ -1080,22 +1081,20 @@ export async function fetchMovieSearchByQuery(
   const cachedApi = mediathekCache.get(apiCacheKey);
 
   if (cachedApi) {
-    console.log(`[Mediathek] Using cached API response for movie query: "${cleanedQuery}"`);
+    log.debug(`Using cached API response for movie query: "${cleanedQuery}"`);
     results = (cachedApi as { results: ApiResultItem[] }).results;
   } else {
-    console.log(`[Mediathek] Searching MediathekView API for movie query: "${cleanedQuery}"`);
+    log.debug(`Searching MediathekView API for movie query: "${cleanedQuery}"`);
     results = await queryContent([{ fields: QUERY_FIELDS, query: cleanedQuery }], 500);
     if (results === null) {
       return serializeRss(getEmptyRssResult());
     }
-    console.log(
-      `[Mediathek] API returned ${results.length} results for movie query "${cleanedQuery}"`
-    );
+    log.debug(`API returned ${results.length} results for movie query "${cleanedQuery}"`);
     mediathekCache.set(apiCacheKey, { results });
   }
 
   if (results.length === 0) {
-    console.log(`[Mediathek] No API response for movie query`);
+    log.debug(`No API response for movie query`);
     const response = serializeRss(getEmptyRssResult());
     mediathekCache.set(cacheKey, { response });
     return response;
@@ -1110,12 +1109,10 @@ export async function fetchMovieSearchByQuery(
     return true;
   });
 
-  console.log(
-    `[Mediathek] Results after movie filtering (min ${minDuration}s): ${filteredResults.length}`
-  );
+  log.debug(`Results after movie filtering (min ${minDuration}s): ${filteredResults.length}`);
 
   if (filteredResults.length === 0) {
-    console.log(`[Mediathek] No movie results after filtering`);
+    log.debug(`No movie results after filtering`);
     const response = serializeRss(getEmptyRssResult());
     mediathekCache.set(cacheKey, { response });
     return response;
@@ -1215,9 +1212,7 @@ export async function fetchMovieSearchByQuery(
     }
   }
 
-  console.log(
-    `[Mediathek] Generated ${newznabItems.length} Newznab items for movie query (quality: ${quality})`
-  );
+  log.info(`Generated ${newznabItems.length} Newznab items for movie query (quality: ${quality})`);
 
   const response = convertItemsToRss(newznabItems, limit, offset);
   mediathekCache.set(cacheKey, { response });

@@ -8,6 +8,9 @@ import { getStreamHeight, isStreamingUrl, srfUrnFromUrl } from "@/lib/stream-url
 import * as fs from "fs/promises";
 import { createWriteStream } from "fs";
 import * as path from "path";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Download");
 
 export { startDownloadProcessing } from "./download-queue";
 class DownloadFailure extends Error {
@@ -135,8 +138,8 @@ async function processDownload(
       return;
     }
 
-    console.log(`[Download] Starting: ${download.title}`);
-    console.log(`[Download] URL: ${download.url}`);
+    log.info(`Starting: ${download.title}`);
+    log.debug(`URL: ${download.url}`);
 
     signal?.throwIfAborted();
     const claimed = await prisma.download.updateMany({
@@ -159,7 +162,7 @@ async function processDownload(
 
     if (isHls) {
       // HLS download path - use yt-dlp
-      console.log(`[Download] Detected HLS stream, using yt-dlp`);
+      log.debug(`Detected HLS stream, using yt-dlp`);
 
       // Resolve stable SRF references at download time. The SRGSSR extractor
       // also obtains Akamai tokens and uses the configured proxy for metadata.
@@ -205,7 +208,7 @@ async function processDownload(
       signal?.throwIfAborted();
       // Move to final location
       const outputPath = hlsResult.outputPath || tempMkvPath;
-      console.log(`[Download] Moving HLS result to final location: ${finalMkvPath}`);
+      log.debug(`Moving HLS result to final location: ${finalMkvPath}`);
       await moveIntoCategoryDir(outputPath, finalMkvPath, categoryDir);
 
       // Get file size
@@ -247,8 +250,8 @@ async function processDownload(
         },
       });
 
-      console.log(
-        `[Download] HLS completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB in ${downloadTime}s)`
+      log.info(
+        `HLS completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB in ${downloadTime}s)`
       );
       return;
     }
@@ -285,7 +288,7 @@ async function processDownload(
     }
 
     signal?.throwIfAborted();
-    console.log(`[Download] File downloaded to temp: ${mp4Path}`);
+    log.debug(`File downloaded to temp: ${mp4Path}`);
 
     // Convert MP4 files to MKV unless the user disabled this step.
     if (fileExtension.toLowerCase() === ".mp4" && (await isMkvConversionEnabled())) {
@@ -293,7 +296,7 @@ async function processDownload(
       const tempMkvPath = path.join(downloadTempPath, `${download.title}.mkv`);
       const finalMkvPath = path.join(categoryDir, `${download.title}.mkv`);
 
-      console.log(`[Download] Converting to MKV: ${tempMkvPath}`);
+      log.debug(`Converting to MKV: ${tempMkvPath}`);
 
       await prisma.download.update({
         where: { id: downloadId },
@@ -316,7 +319,7 @@ async function processDownload(
       signal?.throwIfAborted();
       // Move completed MKV to final location; see moveIntoCategoryDir for why
       // the category directory is re-created here.
-      console.log(`[Download] Moving to final location: ${finalMkvPath}`);
+      log.debug(`Moving to final location: ${finalMkvPath}`);
       await moveIntoCategoryDir(tempMkvPath, finalMkvPath, categoryDir);
 
       // Clean up temp MP4 file
@@ -356,8 +359,8 @@ async function processDownload(
         },
       });
 
-      console.log(
-        `[Download] Completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB in ${downloadTime}s)`
+      log.info(
+        `Completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB in ${downloadTime}s)`
       );
     } else {
       // Keep non-MP4 files and MP4 files with disabled conversion unchanged.
@@ -399,12 +402,10 @@ async function processDownload(
         },
       });
 
-      console.log(
-        `[Download] Completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB)`
-      );
+      log.info(`Completed: ${download.title} (${Math.round(stats.size / 1024 / 1024)}MB)`);
     }
   } catch (error) {
-    console.error(`[Download] Error processing download ${downloadId}:`, error);
+    log.error(`Error processing download ${downloadId}:`, error);
     if (signal?.aborted) {
       await prisma.download.update({
         where: { id: downloadId },
@@ -493,7 +494,7 @@ async function downloadFile(
   const resetStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = setTimeout(() => {
-      console.error(`[Download] No data received for ${STALL_TIMEOUT_MS / 1000}s, aborting`);
+      log.error(`No data received for ${STALL_TIMEOUT_MS / 1000}s, aborting`);
       abortController.abort();
     }, STALL_TIMEOUT_MS);
   };
@@ -556,7 +557,7 @@ async function downloadFile(
     completed = await new Promise<boolean>((resolve) => {
       fileStream!.once("finish", () => resolve(true));
       fileStream!.once("error", (err) => {
-        console.error(`[Download] Write error: ${err}`);
+        log.error(`Write error: ${err}`);
         resolve(false);
       });
       fileStream!.end();

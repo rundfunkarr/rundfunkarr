@@ -7,6 +7,7 @@ import type { ProviderContentItem } from "@/types/provider";
 
 import { queryContent } from "@/services/content-search";
 import { isStreamingUrl } from "@/lib/stream-url";
+import { logger } from "@/lib/logger";
 
 async function isHlsEnabled(): Promise<boolean> {
   const setting = await getSetting("download.enableHLS");
@@ -139,7 +140,7 @@ async function handleProviderSearch(
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {
-    console.error("Provider search error:", error);
+    logger.error("Provider search error:", error);
     return NextResponse.json({ results: [], error: "Search failed" }, { status: 500 });
   }
 }
@@ -221,7 +222,7 @@ async function handleDefaultSearch(
 
     return NextResponse.json({ results });
   } catch (error) {
-    console.error("Search error:", error);
+    logger.error("Search error:", error);
     return NextResponse.json({ results: [], error: "Search failed" }, { status: 500 });
   }
 }
