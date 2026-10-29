@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Ruleset, TvdbData } from "@/types";
+import { MatchingStrategy, type Ruleset, type TvdbData } from "@/types";
 
 const { getGeneratedRulesets, generateRulesetForShow, getGeneratedRulesetByTvdbId } = vi.hoisted(
   () => ({
@@ -24,7 +24,7 @@ function rule(topic: string, tvdbId: number, priority = 0, id = tvdbId * 10 + pr
     titleRegexRules: "[]",
     episodeRegex: null,
     seasonRegex: null,
-    matchingStrategy: "SeasonAndEpisodeNumber",
+    matchingStrategy: MatchingStrategy.SeasonAndEpisodeNumber,
     media: {
       media_id: tvdbId,
       media_name: topic,
