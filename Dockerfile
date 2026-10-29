@@ -77,7 +77,9 @@ WORKDIR /app
 
 # Install runtime dependencies for FFmpeg, user management, and DB init
 # Note: yt-dlp standalone binary includes bundled Python, no separate install needed
+# curl stays for user post-processing scripts (documented in the README)
 RUN apk add --no-cache \
+    curl \
     tar \
     xz \
     wget \
