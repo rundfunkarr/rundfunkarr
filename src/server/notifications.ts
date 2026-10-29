@@ -1,7 +1,7 @@
 import * as path from "path";
 import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
-import { rememberLogSecret } from "@/lib/logger";
+import { createLogger, rememberLogSecret } from "@/lib/logger";
 
 /**
  * Outbound notifications (generic webhook, ntfy, Gotify, Discord).
@@ -16,10 +16,7 @@ import { rememberLogSecret } from "@/lib/logger";
 export const NOTIFICATION_TARGETS = ["webhook", "ntfy", "gotify", "discord"] as const;
 export type NotificationTarget = (typeof NOTIFICATION_TARGETS)[number];
 export type NotificationEventName =
-  | "download.completed"
-  | "download.failed"
-  | "subscription.queued"
-  | "test";
+  "download.completed" | "download.failed" | "subscription.queued" | "test";
 /** Severity in Apprise naming, so the webhook payload fits Apprise-style receivers. */
 export type NotificationType = "success" | "failure" | "info";
 
@@ -110,9 +107,7 @@ const shared = globalThis as typeof globalThis & {
 };
 const state = (shared.rundfunkarrNotifications ??= { inFlight: 0 });
 
-function logWarning(message: string) {
-  console.warn(`[Benachrichtigungen] ${message}`);
-}
+const log = createLogger("Benachrichtigungen");
 
 function truncate(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
@@ -422,7 +417,7 @@ export async function dispatchNotification(payload: NotificationPayload): Promis
   try {
     targets = await activeTargets(payload.event);
   } catch (error) {
-    logWarning(`Einstellungen konnten nicht gelesen werden: ${(error as Error)?.message}`);
+    log.warn(`Einstellungen konnten nicht gelesen werden: ${(error as Error)?.message}`);
     return [];
   }
   const results = await Promise.all(
@@ -430,7 +425,7 @@ export async function dispatchNotification(payload: NotificationPayload): Promis
   );
   for (const result of results)
     if (!result.success)
-      logWarning(`${TARGET_LABELS[result.target]} (${payload.event}): ${result.error}`);
+      log.warn(`${TARGET_LABELS[result.target]} (${payload.event}): ${result.error}`);
   return results;
 }
 
@@ -439,9 +434,9 @@ function fireAndForget(build: () => Promise<NotificationPayload>) {
   try {
     void build()
       .then(dispatchNotification)
-      .catch((error) => logWarning(`Versand fehlgeschlagen: ${(error as Error)?.message}`));
+      .catch((error) => log.warn(`Versand fehlgeschlagen: ${(error as Error)?.message}`));
   } catch (error) {
-    logWarning(`Versand fehlgeschlagen: ${(error as Error)?.message}`);
+    log.warn(`Versand fehlgeschlagen: ${(error as Error)?.message}`);
   }
 }
 

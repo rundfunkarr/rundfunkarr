@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLogger } from "@/lib/logger";
 import { getSetting } from "@/lib/settings";
 import { isMaskedSetting } from "@/lib/settings-redaction";
 import {
@@ -10,6 +11,8 @@ import {
   type NotificationTarget,
   type TargetConfig,
 } from "@/server/notifications";
+
+const log = createLogger("Benachrichtigungen");
 
 // POST /api/notifications/test - Send a test message to one target using the form values.
 // Masked secrets (unchanged password fields) are resolved from the stored settings.
@@ -38,6 +41,6 @@ export async function POST(request: NextRequest) {
     resolved,
     buildTestPayload(target as NotificationTarget)
   );
-  if (!result.success) console.warn(`[Benachrichtigungen] Testnachricht: ${result.error}`);
+  if (!result.success) log.warn(`Testnachricht: ${result.error}`);
   return NextResponse.json({ success: result.success, error: result.error });
 }
