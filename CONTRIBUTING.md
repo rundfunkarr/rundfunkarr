@@ -202,6 +202,14 @@ Die Web-Oberfläche folgt einem kleinen Baukasten, damit neue Seiten gleich auss
   Seitenleiste und unter Einstellungen → Darstellung. Neue reine Anzeigeoptionen gehören in
   diesen Tab, mit Schlüsseln unter `ui.` und Standardwert in `src/app/api/settings/route.ts`.
 
+## Dokumentation
+
+Die Dokumentation unter [rundfunkarr.github.io](https://rundfunkarr.github.io/) hat ein eigenes
+Repository: [rundfunkarr/rundfunkarr.github.io](https://github.com/rundfunkarr/rundfunkarr.github.io).
+Ändert ein Pull Request hier Verhalten, Einstellungen oder Umgebungsvariablen, die im README
+beschrieben sind, bitte auch die passende Seite dort anpassen. Screenshots bleiben in
+`docs/screenshots` dieses Repositorys; die Dokumentation bindet sie direkt von dort ein.
+
 ## Issues
 
 ### Bug Reports

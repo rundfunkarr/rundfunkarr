@@ -8,11 +8,11 @@
 [![License](https://img.shields.io/github/license/rundfunkarr/rundfunkarr?label=License)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/rundfunkarr/rundfunkarr?style=flat&logo=github&label=Stars)](https://github.com/rundfunkarr/rundfunkarr)
 [![GitHub Issues](https://img.shields.io/github/issues/rundfunkarr/rundfunkarr?logo=github&label=Issues)](https://github.com/rundfunkarr/rundfunkarr/issues)
-[![Dokumentation](https://img.shields.io/badge/Doku-rundfunkarr.github.io-orange)](https://rundfunkarr.github.io/rundfunkarr/)
+[![Dokumentation](https://img.shields.io/badge/Doku-rundfunkarr.github.io-orange)](https://rundfunkarr.github.io/)
 
 Rundfunk-Indexer für Sonarr/Radarr - Automatischer Download von ARD, ZDF und anderen deutschen Mediatheken.
 
-**Dokumentation:** [rundfunkarr.github.io/rundfunkarr](https://rundfunkarr.github.io/rundfunkarr/)
+**Dokumentation:** [rundfunkarr.github.io](https://rundfunkarr.github.io/)
 
 ## Screenshots
 

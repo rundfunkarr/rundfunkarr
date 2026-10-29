@@ -48,7 +48,6 @@ docker-compose*
 # Documentation
 README.md
 *.md
-docs
 
 # Keep only the server-side authentication recovery command.
 scripts/*
