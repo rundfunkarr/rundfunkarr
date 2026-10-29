@@ -78,6 +78,21 @@ describe("findEpisodeByAbsoluteNumber", () => {
     });
     expect(findEpisodeByAbsoluteNumber(restarting, 6)).toBeUndefined();
   });
+
+  it("zählt nicht, wenn Staffeln oder Folgen in den Metadaten fehlen", () => {
+    // Staffel 1 fehlt, etwa weil TMDB sie nicht geliefert hat.
+    const missingSeason = show([episode(2, 1), episode(2, 2), episode(3, 1)]);
+    expect(findEpisodeByAbsoluteNumber(missingSeason, 1)).toBeUndefined();
+    const onlyLaterSeason = show([episode(2, 1), episode(2, 2)]);
+    expect(findEpisodeByAbsoluteNumber(onlyLaterSeason, 1)).toBeUndefined();
+    const missingEpisode = show([episode(1, 1), episode(1, 3), episode(2, 1)]);
+    expect(findEpisodeByAbsoluteNumber(missingEpisode, 2)).toBeUndefined();
+  });
+
+  it("findet fortlaufende Nummern auch bei fehlenden Staffeln", () => {
+    const partial = show([episode(22, 4662), episode(22, 4663), episode(23, 4666)]);
+    expect(findEpisodeByAbsoluteNumber(partial, 4666)).toMatchObject({ seasonNumber: 23 });
+  });
 });
 
 describe("Zuordnung über fortlaufende Folgennummern", () => {
