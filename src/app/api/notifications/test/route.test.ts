@@ -13,6 +13,7 @@ vi.mock("@/server/notifications", async (importOriginal) => ({
   sendToTarget,
 }));
 
+import { redactLog } from "@/lib/logger";
 import { maskSetting } from "@/lib/settings-redaction";
 import { POST } from "./route";
 
@@ -70,4 +71,15 @@ it.each([{ target: "email" }, "kein json"])("rejects invalid requests", async (b
   const response = await post(body);
   expect(response.status).toBe(400);
   expect(sendToTarget).not.toHaveBeenCalled();
+});
+
+it("redacts unsaved secrets that a failing target echoes back", async () => {
+  const secretUrl = "https://hooks.example.org/api/webhooks/123/unsaved-secret-path";
+  sendToTarget.mockResolvedValue({
+    target: "discord",
+    success: false,
+    error: `HTTP 404 for ${secretUrl}`,
+  });
+  await post({ target: "discord", config: { url: secretUrl } });
+  expect(redactLog(`HTTP 404 for ${secretUrl}`)).not.toContain("unsaved-secret-path");
 });

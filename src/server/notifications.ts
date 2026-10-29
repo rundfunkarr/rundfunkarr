@@ -380,10 +380,16 @@ function readTargetConfig(
     topic: keys.topic ? (values[keys.topic] ?? "") : undefined,
     token: keys.token ? (values[keys.token] ?? "") : undefined,
   };
-  // Make sure secrets never show up verbatim in the log, even if read from env-initialized rows.
+  rememberTargetSecrets(target, config);
+  return config;
+}
+
+/** Registers a target's secret fields for log redaction before anything is sent. */
+export function rememberTargetSecrets(target: NotificationTarget, config: TargetConfig) {
+  // Make sure secrets never show up verbatim in the log, even if read from env-initialized rows
+  // or typed into the settings form but not saved yet.
   if (target === "webhook" || target === "discord") rememberLogSecret(config.url);
   rememberLogSecret(config.token);
-  return config;
 }
 
 /** A target is active when it is not switched off and its required fields are filled in. */

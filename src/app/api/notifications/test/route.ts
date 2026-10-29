@@ -4,6 +4,7 @@ import { isMaskedSetting } from "@/lib/settings-redaction";
 import {
   buildTestPayload,
   NOTIFICATION_TARGETS,
+  rememberTargetSecrets,
   sendToTarget,
   TARGET_SETTINGS,
   type NotificationTarget,
@@ -31,6 +32,7 @@ export async function POST(request: NextRequest) {
     const value = typeof input[field] === "string" ? (input[field] as string) : "";
     resolved[field] = isMaskedSetting(key, value) ? (await getSetting(key)) || "" : value;
   }
+  rememberTargetSecrets(target as NotificationTarget, resolved);
   const result = await sendToTarget(
     target as NotificationTarget,
     resolved,
