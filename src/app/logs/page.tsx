@@ -190,11 +190,13 @@ function ProtectedLogs({
     }
   }, [level, query, adminFetch]);
   useEffect(() => {
+    // Capture the ref object (not its value): cleanup must bump the latest counter so in-flight responses are ignored.
+    const requests = sequence;
     void load();
     const timer = automatic ? setInterval(() => void load(), 5000) : undefined;
     return () => {
       clearInterval(timer);
-      sequence.current++;
+      requests.current++;
     };
   }, [load, automatic]);
   async function diagnose() {
