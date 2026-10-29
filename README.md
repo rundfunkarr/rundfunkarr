@@ -147,6 +147,10 @@ RundfunkArr meldet sich auf Wunsch, wenn etwas passiert. Eingerichtet wird das u
 Einstellungen → **Benachrichtigungen**. Jedes Ziel hat einen Knopf **Testnachricht senden**,
 der die gerade eingegebenen Werte prüft, ohne sie zu speichern.
 
+<p align="center">
+  <img src="docs/screenshots/benachrichtigungen.png" alt="ntfy-Ziel in den Benachrichtigungs-Einstellungen nach erfolgreicher Testnachricht" width="600">
+</p>
+
 **Ereignisse** (einzeln abschaltbar, gelten für alle Ziele):
 
 | Ereignis | Inhalt |
@@ -447,6 +451,7 @@ RundfunkArr bietet eine vollständige Web-Oberfläche mit:
   - Download-Pfad, Qualitäts-Präferenzen, Untertitel und optionale MKV-Konvertierung
   - API Keys für TVDB/TMDB/SRG-SSR
   - Matching-Strategie und Schwellwerte
+  - Benachrichtigungen per Webhook, ntfy, Gotify und Discord
   - Cache-TTL Einstellungen
   - Darstellung: Farbschema, Vorschaubilder und Serienposter
 - **Diagnose & Protokoll** - Systemdiagnose, Verbindungstest und Serverprotokoll
