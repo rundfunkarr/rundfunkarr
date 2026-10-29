@@ -1,6 +1,9 @@
 import { isStreamingUrl } from "@/lib/stream-url";
 import type { ApiResultItem, TmdbMovieData } from "@/types";
 import { getSetting } from "@/lib/settings";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("MovieMatcher");
 
 async function isHlsEnabled(): Promise<boolean> {
   const setting = await getSetting("download.enableHLS");
@@ -251,8 +254,8 @@ export async function matchMovieItems(
   const maxRuntimeDifference = getMaxRuntimeDifference(movieRuntimeMinutes, durationTolerance);
   let rejectedByRuntime = 0;
 
-  console.log(
-    `[MovieMatcher] Matching ${items.length} items against "${movieData.germanTitle}" (original: "${movieData.title}"), runtime: ${movieRuntimeMinutes} min, hlsEnabled: ${hlsEnabled}`
+  log.debug(
+    `Matching ${items.length} items against "${movieData.germanTitle}" (original: "${movieData.title}"), runtime: ${movieRuntimeMinutes} min, hlsEnabled: ${hlsEnabled}`
   );
 
   for (const item of items) {
@@ -331,15 +334,15 @@ export async function matchMovieItems(
   results.sort((a, b) => b.score - a.score);
 
   if (rejectedByRuntime > 0) {
-    console.log(
-      `[MovieMatcher] Rejected ${rejectedByRuntime} title matches whose duration does not confirm the TMDB runtime`
+    log.debug(
+      `Rejected ${rejectedByRuntime} title matches whose duration does not confirm the TMDB runtime`
     );
   }
-  console.log(`[MovieMatcher] Found ${results.length} matches`);
+  log.debug(`Found ${results.length} matches`);
   if (results.length > 0) {
     const best = results[0];
-    console.log(
-      `[MovieMatcher] Best match: "${best.item.topic}" - "${best.item.title}" (score: ${best.score.toFixed(1)}, duration diff: ${best.durationDiff} min)`
+    log.debug(
+      `Best match: "${best.item.topic}" - "${best.item.title}" (score: ${best.score.toFixed(1)}, duration diff: ${best.durationDiff} min)`
     );
   }
 

@@ -5,13 +5,14 @@ import {
   isLocalIndexEnabled,
   updateFilmliste,
 } from "@/server/filmliste";
+import { logger } from "@/lib/logger";
 
 // GET /api/filmliste - Status of the local Filmliste index
 export async function GET() {
   try {
     return NextResponse.json(await getFilmlisteStatus());
   } catch (error) {
-    console.error("Failed to read Filmliste status:", error);
+    logger.error("Failed to read Filmliste status:", error);
     return NextResponse.json({ error: "Status konnte nicht gelesen werden." }, { status: 500 });
   }
 }

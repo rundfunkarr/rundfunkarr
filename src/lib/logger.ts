@@ -6,11 +6,14 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
 }
+type ConsoleMethod = "log" | "info" | "warn" | "error" | "debug";
 interface LogState {
   entries: LogEntry[];
   secrets: Set<string>;
   next: number;
   installed: boolean;
+  // Unpatched console methods, kept so logger output is not captured twice.
+  console?: Record<ConsoleMethod, (...args: unknown[]) => void>;
 }
 const shared = globalThis as typeof globalThis & { rundfunkarrLogs?: LogState };
 const state = (shared.rundfunkarrLogs ??= {
@@ -75,6 +78,66 @@ export function appendLog(level: LogLevel, ...args: unknown[]) {
   if (state.entries.length > 500) state.entries.splice(0, state.entries.length - 500);
   return entry;
 }
+const levelRank: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+export const DEFAULT_LOG_LEVEL: LogLevel = "info";
+
+export function parseLogLevel(value: string | undefined): LogLevel | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && Object.hasOwn(levelRank, normalized) ? (normalized as LogLevel) : null;
+}
+
+/** Minimum level from LOG_LEVEL; read on every call so tests can switch it. */
+export function getLogLevel(): LogLevel {
+  return parseLogLevel(process.env.LOG_LEVEL) ?? DEFAULT_LOG_LEVEL;
+}
+
+export function isLogLevelEnabled(level: LogLevel) {
+  return levelRank[level] >= levelRank[getLogLevel()];
+}
+
+const outputMethod: Record<LogLevel, ConsoleMethod> = {
+  debug: "debug",
+  info: "log",
+  warn: "warn",
+  error: "error",
+};
+
+function writeLog(level: LogLevel, args: unknown[]) {
+  if (!isLogLevelEnabled(level)) return;
+  const entry = appendLog(level, ...args);
+  const method = outputMethod[level];
+  (state.console?.[method] ?? console[method])(entry.message);
+}
+
+export interface Logger {
+  debug: (...args: unknown[]) => void;
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+}
+
+/**
+ * Creates a logger that prefixes messages with "[scope]". Methods are bound,
+ * so they can be passed directly as callbacks, e.g. `.catch(log.error)`.
+ */
+export function createLogger(scope?: string): Logger {
+  const withScope = (args: unknown[]) => {
+    if (!scope) return args;
+    const [first, ...rest] = args;
+    // Prepending to a string keeps util.format placeholders in the first argument working.
+    return typeof first === "string" ? [`[${scope}] ${first}`, ...rest] : [`[${scope}]`, ...args];
+  };
+  return {
+    debug: (...args) => writeLog("debug", withScope(args)),
+    info: (...args) => writeLog("info", withScope(args)),
+    warn: (...args) => writeLog("warn", withScope(args)),
+    error: (...args) => writeLog("error", withScope(args)),
+  };
+}
+
+/** Unscoped logger for messages without a fixed "[Scope]" prefix. */
+export const logger = createLogger();
+
 export function readLogs(level?: string, query = "") {
   const needle = query.toLocaleLowerCase("de");
   return state.entries
@@ -88,11 +151,24 @@ export function readLogs(level?: string, query = "") {
 export function installLogger() {
   if (state.installed) return;
   state.installed = true;
-  for (const method of ["log", "info", "warn", "error", "debug"] as const) {
-    const original = console[method].bind(console);
+  const methods = ["log", "info", "warn", "error", "debug"] as const;
+  const originals = Object.fromEntries(
+    methods.map((method) => [method, console[method].bind(console)])
+  ) as Record<ConsoleMethod, (...args: unknown[]) => void>;
+  state.console = originals;
+  // Remaining console calls (Next.js, libraries) share redaction, buffer and level filter.
+  for (const method of methods) {
+    const level: LogLevel = method === "log" ? "info" : method;
     console[method] = (...args: unknown[]) => {
-      const entry = appendLog(method === "log" ? "info" : method, ...args);
-      original(entry.message);
+      if (!isLogLevelEnabled(level)) return;
+      const entry = appendLog(level, ...args);
+      originals[method](entry.message);
     };
+  }
+  const configured = process.env.LOG_LEVEL;
+  if (configured?.trim() && !parseLogLevel(configured)) {
+    createLogger("Logger").warn(
+      `LOG_LEVEL=${configured} ignored; allowed: debug, info, warn, error (using ${DEFAULT_LOG_LEVEL})`
+    );
   }
 }

@@ -2,11 +2,13 @@ import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { MEDIATHEK_API_URL } from "@/lib/mediathek-client";
 import { getFilmlisteStatus } from "@/server/filmliste";
-import { rememberLogSecret } from "@/lib/logger";
+import { rememberLogSecret, createLogger } from "@/lib/logger";
 import { access, constants, stat } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+
+const log = createLogger("Diagnose");
 const run = promisify(execFile);
 export interface Diagnostic {
   id: string;
@@ -141,7 +143,7 @@ export async function systemDiagnostics(): Promise<Diagnostic[]> {
       ? "HLS aktiviert. SRF und ORF müssen zusätzlich in der Quellenkonfiguration aktiviert sein."
       : "HLS deaktiviert; Stream-Downloads sind nicht verfügbar.",
   });
-  console.info("[Diagnose] Systemprüfung abgeschlossen.");
+  log.info("Systemprüfung abgeschlossen.");
   return rows;
 }
 async function filmlisteDiagnostic(): Promise<Diagnostic> {

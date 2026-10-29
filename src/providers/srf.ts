@@ -16,6 +16,7 @@ import type {
   ProviderSearchQuery,
   ProviderStatus,
 } from "@/types/provider";
+import { logger } from "@/lib/logger";
 
 // Minimum duration for content (5 minutes by default)
 // Note: SRG-SSR API returns duration in MILLISECONDS, so we use ms here
@@ -60,7 +61,7 @@ export class SrfProvider extends BaseProvider {
       }
     }
 
-    console.log(`[${this.id}] Settings: minDuration=${this.minDuration}ms`);
+    logger.debug(`[${this.id}] Settings: minDuration=${this.minDuration}ms`);
   }
 
   /**
@@ -96,11 +97,11 @@ export class SrfProvider extends BaseProvider {
     // Check if enabled
     const enabled = await this.isEnabled();
     if (!enabled) {
-      console.log(`[${this.id}] Provider not enabled (missing API credentials)`);
+      logger.debug(`[${this.id}] Provider not enabled (missing API credentials)`);
       return [];
     }
 
-    console.log(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
+    logger.debug(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
 
     try {
       // Search SRF videos
@@ -110,20 +111,20 @@ export class SrfProvider extends BaseProvider {
         : await getLatestVideos("SRF", Math.min(limit, 100));
 
       if (!results || results.length === 0) {
-        console.log(`[${this.id}] No results found`);
+        logger.debug(`[${this.id}] No results found`);
         return [];
       }
 
-      console.log(`[${this.id}] API returned ${results.length} results`);
+      logger.debug(`[${this.id}] API returned ${results.length} results`);
 
       // Filter and map results
       const items = this.filterAndMapResults(results, query.type);
 
-      console.log(`[${this.id}] Found ${items.length} items after filtering`);
+      logger.debug(`[${this.id}] Found ${items.length} items after filtering`);
 
       return items.slice(0, limit);
     } catch (error) {
-      console.error(`[${this.id}] Search error:`, error);
+      logger.error(`[${this.id}] Search error:`, error);
       throw error;
     }
   }
@@ -181,7 +182,7 @@ export class SrfProvider extends BaseProvider {
           }
         }
       } catch (error) {
-        console.error(`[${this.id}] Failed to get media composition for ${urn}:`, error);
+        logger.error(`[${this.id}] Failed to get media composition for ${urn}:`, error);
       }
     }
 

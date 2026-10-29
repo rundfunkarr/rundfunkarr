@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/db";
 import { queryContent } from "./content-search";
 import type { Ruleset, TvdbData, ApiResultItem } from "@/types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RulesetGenerator");
 
 // Common German show name patterns in MediathekView
 const SEASON_EPISODE_PATTERNS = [
@@ -57,7 +60,7 @@ function findBestMatchingTopic(results: ApiResultItem[], showInfo: TvdbData): st
     const topicLower = topic.toLowerCase();
     for (const name of searchNames) {
       if (topicLower === name) {
-        console.log(`[RulesetGenerator] Exact topic match: "${topic}"`);
+        log.debug(`Exact topic match: "${topic}"`);
         return topic;
       }
     }
@@ -68,7 +71,7 @@ function findBestMatchingTopic(results: ApiResultItem[], showInfo: TvdbData): st
     const topicLower = topic.toLowerCase();
     for (const name of searchNames) {
       if (topicLower.includes(name) || name.includes(topicLower)) {
-        console.log(`[RulesetGenerator] Partial topic match: "${topic}"`);
+        log.debug(`Partial topic match: "${topic}"`);
         return topic;
       }
     }
@@ -76,11 +79,11 @@ function findBestMatchingTopic(results: ApiResultItem[], showInfo: TvdbData): st
 
   // If only one topic in results, use it
   if (topics.length === 1) {
-    console.log(`[RulesetGenerator] Using single topic: "${topics[0]}"`);
+    log.debug(`Using single topic: "${topics[0]}"`);
     return topics[0];
   }
 
-  console.log(`[RulesetGenerator] No matching topic found. Available: ${topics.join(", ")}`);
+  log.debug(`No matching topic found. Available: ${topics.join(", ")}`);
   return null;
 }
 
@@ -157,31 +160,29 @@ function detectMatchingStrategy(results: ApiResultItem[], topic: string): string
   const analysis = analyzeResults(results, topic);
   const total = results.slice(0, 15).length;
 
-  console.log(
-    `[RulesetGenerator] Analysis: seasonEp=${analysis.seasonEpisodeCount}, date=${analysis.dateCount}, ` +
+  log.debug(
+    `Analysis: seasonEp=${analysis.seasonEpisodeCount}, date=${analysis.dateCount}, ` +
       `absEp=${analysis.absoluteEpisodeCount}, topicPrefix=${analysis.topicPrefixCount}, colon=${analysis.colonSeparatorCount}`
   );
 
   // Clear season/episode pattern wins
   if (analysis.seasonEpisodeCount >= 3 && analysis.seasonEpisodeCount > analysis.dateCount) {
-    console.log(
-      `[RulesetGenerator] Detected strategy: SeasonAndEpisodeNumber (${analysis.seasonEpisodeCount}/${total} matches)`
+    log.debug(
+      `Detected strategy: SeasonAndEpisodeNumber (${analysis.seasonEpisodeCount}/${total} matches)`
     );
     return "SeasonAndEpisodeNumber";
   }
 
   // Clear date pattern wins
   if (analysis.dateCount >= 3 && analysis.dateCount > analysis.seasonEpisodeCount) {
-    console.log(
-      `[RulesetGenerator] Detected strategy: ItemTitleEqualsAirdate (${analysis.dateCount}/${total} matches)`
-    );
+    log.debug(`Detected strategy: ItemTitleEqualsAirdate (${analysis.dateCount}/${total} matches)`);
     return "ItemTitleEqualsAirdate";
   }
 
   // Absolute episode number pattern (daily shows like Sturm der Liebe)
   if (analysis.absoluteEpisodeCount >= 3) {
-    console.log(
-      `[RulesetGenerator] Detected strategy: ByAbsoluteEpisodeNumber (${analysis.absoluteEpisodeCount}/${total} matches)`
+    log.debug(
+      `Detected strategy: ByAbsoluteEpisodeNumber (${analysis.absoluteEpisodeCount}/${total} matches)`
     );
     return "ByAbsoluteEpisodeNumber";
   }
@@ -189,14 +190,14 @@ function detectMatchingStrategy(results: ApiResultItem[], topic: string): string
   // Topic prefix with colon separator suggests extractable episode titles
   // Lower threshold - if at least 20% have topic prefix and 30% have colon separator
   if (analysis.topicPrefixCount >= 3 && analysis.colonSeparatorCount >= total * 0.3) {
-    console.log(
-      `[RulesetGenerator] Detected strategy: ItemTitleExact (topic prefix pattern, ${analysis.topicPrefixCount}/${total})`
+    log.debug(
+      `Detected strategy: ItemTitleExact (topic prefix pattern, ${analysis.topicPrefixCount}/${total})`
     );
     return "ItemTitleExact";
   }
 
   // Default to ItemTitleIncludes - most flexible for matching
-  console.log(`[RulesetGenerator] Detected strategy: ItemTitleIncludes (default fallback)`);
+  log.debug(`Detected strategy: ItemTitleIncludes (default fallback)`);
   return "ItemTitleIncludes";
 }
 
@@ -445,8 +446,8 @@ export async function generateRulesetForShow(
   tvdbId: number,
   showInfo: TvdbData
 ): Promise<Ruleset | null> {
-  console.log(
-    `[RulesetGenerator] Attempting to generate ruleset for "${showInfo.germanName || showInfo.name}" (TVDB: ${tvdbId})`
+  log.debug(
+    `Attempting to generate ruleset for "${showInfo.germanName || showInfo.name}" (TVDB: ${tvdbId})`
   );
 
   // Check if we already have a generated ruleset for this TVDB ID
@@ -455,29 +456,27 @@ export async function generateRulesetForShow(
   });
 
   if (existingByTvdbId) {
-    console.log(
-      `[RulesetGenerator] Found existing ruleset for TVDB ${tvdbId}: topic="${existingByTvdbId.topic}"`
-    );
+    log.debug(`Found existing ruleset for TVDB ${tvdbId}: topic="${existingByTvdbId.topic}"`);
     return convertToRuleset(existingByTvdbId);
   }
 
   // Search MediathekView for the show
   const searchQuery = showInfo.germanName || showInfo.name;
-  console.log(`[RulesetGenerator] Searching MediathekView for: "${searchQuery}"`);
+  log.debug(`Searching MediathekView for: "${searchQuery}"`);
 
   const results = await searchMediathekApi(searchQuery);
-  console.log(`[RulesetGenerator] MediathekView returned ${results.length} results`);
+  log.debug(`MediathekView returned ${results.length} results`);
 
   if (results.length === 0) {
     // Try English name if German search failed
     if (showInfo.germanName && showInfo.name !== showInfo.germanName) {
-      console.log(`[RulesetGenerator] Trying English name: "${showInfo.name}"`);
+      log.debug(`Trying English name: "${showInfo.name}"`);
       const englishResults = await searchMediathekApi(showInfo.name);
       if (englishResults.length > 0) {
         return generateRulesetFromResults(tvdbId, showInfo, englishResults);
       }
     }
-    console.log("[RulesetGenerator] No results found in MediathekView");
+    log.debug("No results found in MediathekView");
     return null;
   }
 
@@ -492,7 +491,7 @@ async function generateRulesetFromResults(
   // Find the best matching topic
   const matchingTopic = findBestMatchingTopic(results, showInfo);
   if (!matchingTopic) {
-    console.log("[RulesetGenerator] Could not find matching topic");
+    log.debug("Could not find matching topic");
     return null;
   }
 
@@ -504,8 +503,8 @@ async function generateRulesetFromResults(
   if (existingByTopic) {
     // Update TVDB ID if different
     if (existingByTopic.tvdbId !== tvdbId) {
-      console.log(
-        `[RulesetGenerator] Topic "${matchingTopic}" exists with different TVDB ID (${existingByTopic.tvdbId} vs ${tvdbId})`
+      log.debug(
+        `Topic "${matchingTopic}" exists with different TVDB ID (${existingByTopic.tvdbId} vs ${tvdbId})`
       );
     }
     return convertToRuleset(existingByTopic);
@@ -517,9 +516,7 @@ async function generateRulesetFromResults(
   const patterns = generateRegexPatterns(topicResults, strategy, matchingTopic);
 
   // Create new ruleset
-  console.log(
-    `[RulesetGenerator] Creating new ruleset: topic="${matchingTopic}", strategy="${strategy}"`
-  );
+  log.info(`Creating new ruleset: topic="${matchingTopic}", strategy="${strategy}"`);
 
   const newRuleset = await prisma.generatedRuleset.create({
     data: {
@@ -535,7 +532,7 @@ async function generateRulesetFromResults(
     },
   });
 
-  console.log(`[RulesetGenerator] Created ruleset with ID: ${newRuleset.id}`);
+  log.debug(`Created ruleset with ID: ${newRuleset.id}`);
   return convertToRuleset(newRuleset);
 }
 

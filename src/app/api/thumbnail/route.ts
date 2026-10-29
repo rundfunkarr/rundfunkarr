@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting } from "@/lib/settings";
 import { getWebsitePreview, normalizePreviewUrl } from "@/server/website-preview";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
   try {
     return NextResponse.json({ imageUrl: await getWebsitePreview(url) });
   } catch (error) {
-    console.error("Preview lookup failed:", error);
+    logger.error("Preview lookup failed:", error);
     return NextResponse.json({ imageUrl: null });
   }
 }
