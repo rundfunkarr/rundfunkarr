@@ -309,6 +309,7 @@ npm start
 | `NOTIFY_DISCORD_WEBHOOK_URL` | Discord-Webhook-Adresse | leer |
 | `POST_PROCESS_SCRIPTS_DIR` | Ordner für Post-Processing-Skripte | `scripts` neben der Datenbank (Docker: `/app/prisma/data/scripts`) |
 | `DIAGNOSTICS_ADMIN_KEY` | Admin-Schlüssel für Diagnose, Verbindungstest und Protokoll einschließlich Export; mindestens 32 Zeichen | leer (Zugriff gesperrt) |
+| `LOG_LEVEL` | Mindeststufe für Server-Logs und das Protokoll: `debug`, `info`, `warn` oder `error` | `info` |
 
 Beim Serverstart werden nichtleere Werte aus `TVDB_API_KEY`, `TVDB_PIN`,
 `TMDB_API_KEY`, `DOWNLOAD_FOLDER_PATH`, `MEDIATHEK_SOURCE` und den `NOTIFY_*`-Variablen
@@ -317,6 +318,12 @@ Bei lokalen Installationen können die Variablen in `.env` stehen; Docker benöt
 sie unter `environment` oder über `env_file`. Nach Änderungen ist ein Neustart
 nötig. Im Build werden keine Werte übernommen. Gespeicherte API-Zugangsdaten
 werden in der Settings-API maskiert; die Verbindungstests prüfen sie serverseitig.
+
+`LOG_LEVEL` steuert, wie ausführlich der Server in die Container-Logs und in das
+Protokoll unter **Diagnose & Protokoll** schreibt. Mit `info` erscheinen
+eingehende Suchanfragen, Ergebnisse, Downloads, Skripte und Imports; `debug`
+ergänzt Details zu Suchschritten, Regelwerken, Metadaten-Abfragen und
+Downloadschritten. Ungültige Werte werden mit einer Warnung ignoriert.
 
 ### Diagnose und Protokoll schützen
 

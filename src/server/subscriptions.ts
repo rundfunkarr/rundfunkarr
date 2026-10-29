@@ -7,6 +7,9 @@ import { isStreamingUrl, withStreamQuality } from "@/lib/stream-url";
 import { notifySubscriptionQueued, type NotificationSubscription } from "./notifications";
 import type { ApiResultItem } from "@/types";
 import type { Prisma } from "@prisma/client";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Suchabos");
 export const subscriptionInput = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -29,7 +32,7 @@ interface Scheduler {
 const shared = globalThis as typeof globalThis & { rundfunkarrSubscriptions?: Scheduler };
 const scheduler: Scheduler = (shared.rundfunkarrSubscriptions ??= { running: new Map() });
 function triggerDownloads() {
-  void import("./download-manager").then((m) => m.startDownloadProcessing()).catch(console.error);
+  void import("./download-manager").then((m) => m.startDownloadProcessing()).catch(log.error);
 }
 function title(topic: string, name: string) {
   return `${topic} - ${name}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 180);
@@ -176,7 +179,7 @@ async function check(id: string) {
       });
     }
   } catch (error) {
-    console.error("[Suchabos] Prüfung fehlgeschlagen:", error);
+    log.error("Prüfung fehlgeschlagen:", error);
     await prisma.searchSubscription.updateMany({
       where: { id },
       data: {
@@ -202,8 +205,8 @@ export async function runDueSubscriptions() {
 }
 export function startSubscriptionScheduler() {
   if (scheduler.timer) return;
-  void runDueSubscriptions().catch(console.error);
-  scheduler.timer = setInterval(() => void runDueSubscriptions().catch(console.error), 60000);
+  void runDueSubscriptions().catch(log.error);
+  scheduler.timer = setInterval(() => void runDueSubscriptions().catch(log.error), 60000);
   scheduler.timer.unref?.();
 }
 export async function downloadSubscriptionMatch(id: string) {

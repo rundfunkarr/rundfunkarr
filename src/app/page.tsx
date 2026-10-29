@@ -70,6 +70,7 @@ export default function Dashboard() {
       setHistoryTotal(historyData.history?.noofslots ?? 0);
       if (controlRes.ok) setQueuePaused(!!(await controlRes.json()).paused);
     } catch (error) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to fetch data:", error);
     } finally {
       setIsLoading(false);
@@ -107,6 +108,7 @@ export default function Dashboard() {
         entries: filmliste?.entryCount ?? 0,
       });
     } catch (error) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to fetch overview:", error);
     }
   }, []);

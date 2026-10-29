@@ -3,6 +3,7 @@ import { parseMediaMetadata, type MediaMetadata } from "@/lib/media-metadata";
 import { randomUUID } from "crypto";
 import * as path from "path";
 import type { HistoryPage } from "@/lib/history-pagination";
+import { logger } from "@/lib/logger";
 
 /**
  * Format seconds remaining as SABnzbd's strict "H:MM:SS" timeleft format.
@@ -143,10 +144,10 @@ function triggerDownloadProcessing(): void {
   // Use dynamic import to load the download manager only on server-side
   import("@/server/download-manager")
     .then(({ startDownloadProcessing }) => {
-      startDownloadProcessing().catch(console.error);
+      startDownloadProcessing().catch(logger.error);
     })
     .catch((err) => {
-      console.error("Failed to load download manager:", err);
+      logger.error("Failed to load download manager:", err);
     });
 }
 

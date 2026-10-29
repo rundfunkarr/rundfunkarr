@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { providerRegistry, initializeProviders } from "@/providers";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/providers - List all providers and their status
@@ -18,7 +19,7 @@ export async function GET() {
 
     return NextResponse.json({ providers });
   } catch (error) {
-    console.error("Failed to get providers:", error);
+    logger.error("Failed to get providers:", error);
     return NextResponse.json({ error: "Failed to get providers" }, { status: 500 });
   }
 }

@@ -9,6 +9,9 @@ import {
   getConfigResponse,
   retryDownload,
 } from "@/services/download";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("API");
 
 // SABnzbd-compatible API endpoint at /api
 // Sonarr/Radarr expect the API at /api?mode=...
@@ -20,7 +23,7 @@ export async function GET(request: NextRequest) {
   const value = searchParams.get("value");
   const delFiles = searchParams.get("del_files") === "1";
 
-  console.log(`[API] GET request: mode=${mode}, name=${name}, value=${value}`);
+  log.debug(`GET request: mode=${mode}, name=${name}, value=${value}`);
 
   const command = await handleQueueCommand(searchParams);
   if (command) return command;
@@ -84,7 +87,7 @@ export async function GET(request: NextRequest) {
     }
 
     default:
-      console.log(`[API] Unknown mode: ${mode}`);
+      log.warn(`Unknown mode: ${mode}`);
       return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
   }
 }

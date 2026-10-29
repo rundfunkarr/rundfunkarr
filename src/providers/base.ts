@@ -10,6 +10,7 @@ import type {
   ProviderSearchQuery,
   ProviderStatus,
 } from "@/types/provider";
+import { logger } from "@/lib/logger";
 
 /**
  * Base class for content providers
@@ -30,7 +31,7 @@ export abstract class BaseProvider implements ContentProvider {
    */
   async initialize(): Promise<void> {
     this.initialized = true;
-    console.log(`[${this.id}] Provider initialized`);
+    logger.debug(`[${this.id}] Provider initialized`);
   }
 
   /**

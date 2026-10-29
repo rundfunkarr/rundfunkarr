@@ -10,6 +10,7 @@ import type {
   ProviderSearchQuery,
   ProviderStatus,
 } from "@/types/provider";
+import { logger } from "@/lib/logger";
 
 // Keywords that are always skipped (trailers, outtakes, etc.)
 const SKIP_KEYWORDS = ["Trailer", "Outtakes:", "(klare Sprache)"];
@@ -50,7 +51,7 @@ export class MediathekViewProvider extends BaseProvider {
     const hlsSetting = await getSetting("download.enableHLS");
     this.hlsEnabled = hlsSetting === "true";
 
-    console.log(
+    logger.debug(
       `[${this.id}] Settings: minDuration=${this.minDuration}s, hlsEnabled=${this.hlsEnabled}`
     );
   }
@@ -65,7 +66,7 @@ export class MediathekViewProvider extends BaseProvider {
       return [];
     }
 
-    console.log(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
+    logger.debug(`[${this.id}] Searching for: "${searchQuery}" (limit: ${limit})`);
 
     try {
       const results = await queryMediathekView(
@@ -76,11 +77,11 @@ export class MediathekViewProvider extends BaseProvider {
       if (results === null) throw new Error("MediathekView search failed");
       const items = this.filterResults(results, query.type);
 
-      console.log(`[${this.id}] Found ${items.length} items after filtering`);
+      logger.debug(`[${this.id}] Found ${items.length} items after filtering`);
 
       return items.slice(0, limit);
     } catch (error) {
-      console.error(`[${this.id}] Search error:`, error);
+      logger.error(`[${this.id}] Search error:`, error);
       throw error;
     }
   }

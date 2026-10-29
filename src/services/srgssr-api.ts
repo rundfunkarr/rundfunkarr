@@ -9,6 +9,9 @@
  */
 
 import { getSetting } from "@/lib/settings";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("SRG-SSR");
 
 // API Base URLs
 const API_BASE_URL = "https://api.srgssr.ch";
@@ -51,7 +54,7 @@ async function getAccessToken(): Promise<string | null> {
 
   const credentials = await getApiCredentials();
   if (!credentials) {
-    console.error("[SRG-SSR] No API credentials configured");
+    log.error("No API credentials configured");
     return null;
   }
 
@@ -73,7 +76,7 @@ async function getAccessToken(): Promise<string | null> {
     );
 
     if (!response.ok) {
-      console.error(`[SRG-SSR] Token request failed: ${response.status} ${response.statusText}`);
+      log.error(`Token request failed: ${response.status} ${response.statusText}`);
       return null;
     }
 
@@ -81,7 +84,7 @@ async function getAccessToken(): Promise<string | null> {
 
     // Validate token response
     if (!data || typeof data.access_token !== "string") {
-      console.error("[SRG-SSR] Token response missing access_token");
+      log.error("Token response missing access_token");
       return null;
     }
 
@@ -94,10 +97,10 @@ async function getAccessToken(): Promise<string | null> {
       expiresAt: Date.now() + expiresIn * 1000,
     };
 
-    console.log(`[SRG-SSR] Obtained access token, expires in ${expiresIn}s`);
+    log.debug(`Obtained access token, expires in ${expiresIn}s`);
     return token;
   } catch (error) {
-    console.error("[SRG-SSR] Token request error:", error);
+    log.error("Token request error:", error);
     return null;
   }
 }
@@ -116,7 +119,7 @@ async function apiRequest<T>(
 
   try {
     const url = `${baseUrl}${endpoint}`;
-    console.log(`[SRG-SSR] API request: ${url}`);
+    log.debug(`API request: ${url}`);
 
     const response = await fetch(url, {
       signal: AbortSignal.timeout(15000),
@@ -127,13 +130,13 @@ async function apiRequest<T>(
     });
 
     if (!response.ok) {
-      console.error(`[SRG-SSR] API request failed: ${response.status} ${response.statusText}`);
+      log.error(`API request failed: ${response.status} ${response.statusText}`);
       return null;
     }
 
     return (await response.json()) as T;
   } catch (error) {
-    console.error("[SRG-SSR] API request error:", error);
+    log.error("API request error:", error);
     return null;
   }
 }

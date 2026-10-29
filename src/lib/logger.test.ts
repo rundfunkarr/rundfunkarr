@@ -1,5 +1,14 @@
-import { expect, it } from "vitest";
-import { appendLog, readLogs, redactLog, rememberLogSecret } from "./logger";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  appendLog,
+  createLogger,
+  getLogLevel,
+  logger,
+  parseLogLevel,
+  readLogs,
+  redactLog,
+  rememberLogSecret,
+} from "./logger";
 it("entfernt gespeicherte Zugangsdaten, Bearer-Header, URL-Parameter und Proxy-Passwörter", () => {
   rememberLogSecret("gespeicherter-geheimer-wert");
   const text = redactLog(
@@ -78,4 +87,61 @@ it("redacts admin credentials even before their values have been registered", ()
   expect(redactLog("DIAGNOSTICS_ADMIN_KEY=another-sensitive-value")).not.toContain(
     "another-sensitive-value"
   );
+});
+
+describe("log levels", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("reads LOG_LEVEL case-insensitively and falls back to info for invalid values", () => {
+    vi.stubEnv("LOG_LEVEL", "");
+    expect(getLogLevel()).toBe("info");
+    vi.stubEnv("LOG_LEVEL", " DEBUG ");
+    expect(getLogLevel()).toBe("debug");
+    vi.stubEnv("LOG_LEVEL", "verbose");
+    expect(getLogLevel()).toBe("info");
+    expect(parseLogLevel("warn")).toBe("warn");
+    expect(parseLogLevel("constructor")).toBeNull();
+  });
+
+  it("drops messages below the configured level from output and buffer", () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const scoped = createLogger("LevelTest");
+    vi.stubEnv("LOG_LEVEL", "info");
+    scoped.debug("hidden detail");
+    scoped.info("visible summary");
+    expect(debug).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith("[LevelTest] visible summary");
+    expect(readLogs("all", "hidden detail")).toHaveLength(0);
+
+    vi.stubEnv("LOG_LEVEL", "debug");
+    scoped.debug("shown detail");
+    expect(debug).toHaveBeenCalledWith("[LevelTest] shown detail");
+    expect(readLogs("debug", "shown detail")).toHaveLength(1);
+
+    vi.stubEnv("LOG_LEVEL", "error");
+    scoped.info("muted summary");
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefixes the scope, keeps format placeholders and redacts output", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const scoped = createLogger("Scope");
+    scoped.warn("%d items via %s", 3, "https://host/api?apikey=abc123");
+    expect(warn).toHaveBeenCalledWith("[Scope] 3 items via https://host/api?vertraulich");
+    expect(readLogs("warn").at(-1)?.message).toBe(
+      "[Scope] 3 items via https://host/api?vertraulich"
+    );
+
+    // Methods are bound, so they can be passed as promise callbacks.
+    const failure = new Error("boom");
+    [failure].forEach(scoped.error);
+    expect(error.mock.calls.at(-1)?.[0]).toMatch(/^\[Scope\] Error: boom\n\s+at /);
+    logger.error({ token: "abc" });
+    expect(error.mock.calls.at(-1)?.[0]).toBe("{ token: [vertraulich] }");
+  });
 });

@@ -21,10 +21,12 @@ export async function register() {
     const { initSettingsFromEnv } = await import("@/lib/env-settings");
     const initialized = await initSettingsFromEnv();
     if (initialized > 0) {
+      // eslint-disable-next-line no-console -- also runs during the build, where the logger is not installed
       console.log(`Initialized ${initialized} empty settings from environment variables`);
     }
     const { initCacheTTL } = await import("@/lib/cache");
     await initCacheTTL();
+    // eslint-disable-next-line no-console -- also runs during the build, where the logger is not installed
     console.log("Cache TTL initialized from database");
     if (process.env.NEXT_PHASE !== "phase-production-build") {
       const { recoverDownloads } = await import("@/server/download-queue");

@@ -137,6 +137,7 @@ export default function SettingsPage() {
       const data = await res.json();
       setSystemInfo(data);
     } catch (error) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to fetch system info:", error);
     }
   };
@@ -225,6 +226,7 @@ export default function SettingsPage() {
         });
       }
     } catch (error) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Failed to clear cache:", error);
       setClearResult({
         show: true,

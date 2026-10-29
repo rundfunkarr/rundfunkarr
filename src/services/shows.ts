@@ -5,6 +5,9 @@ import { getSetting } from "@/lib/settings";
 import type { TvdbData } from "@/types";
 import { getShowInfoByTvdbId as getTvdbShow } from "./tvdb";
 import { getShowInfoByTvdbId as getTmdbShow } from "./tmdb";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Shows");
 
 // Local shows data
 interface LocalShow {
@@ -33,21 +36,21 @@ const GITHUB_SHOWS_URL =
 
 async function fetchShowsFromGitHub(): Promise<LocalShow[] | null> {
   try {
-    console.log(`[Shows] Fetching from GitHub: ${GITHUB_SHOWS_URL}`);
+    log.debug(`Fetching from GitHub: ${GITHUB_SHOWS_URL}`);
     const response = await fetch(GITHUB_SHOWS_URL, {
       headers: { "User-Agent": "RundfunkArr" },
     });
 
     if (!response.ok) {
-      console.warn(`[Shows] GitHub fetch failed: ${response.status}`);
+      log.warn(`GitHub fetch failed: ${response.status}`);
       return null;
     }
 
     const shows: LocalShow[] = await response.json();
-    console.log(`[Shows] Fetched ${shows.length} shows from GitHub`);
+    log.info(`Fetched ${shows.length} shows from GitHub`);
     return shows;
   } catch (error) {
-    console.warn("[Shows] Error fetching from GitHub:", error);
+    log.warn("Error fetching from GitHub:", error);
     return null;
   }
 }
@@ -64,11 +67,11 @@ async function loadLocalShows(): Promise<void> {
     let shows = await fetchShowsFromGitHub();
 
     if (!shows) {
-      console.log("[Shows] Falling back to local file");
+      log.info("Falling back to local file");
       const showsPath = path.join(process.cwd(), "data", "shows.json");
       const fileContent = await fs.readFile(showsPath, "utf-8");
       shows = JSON.parse(fileContent);
-      console.log(`[Shows] Loaded ${shows!.length} shows from local file`);
+      log.info(`Loaded ${shows!.length} shows from local file`);
     }
 
     localShows = new Map();
@@ -76,11 +79,11 @@ async function loadLocalShows(): Promise<void> {
       localShows.set(show.tvdbId, show);
     }
 
-    console.log(`[Shows] Indexed ${localShows.size} local shows`);
+    log.debug(`Indexed ${localShows.size} local shows`);
     localShowsLoaded = true;
     lastShowsFetchTime = now;
   } catch (error) {
-    console.error("[Shows] Error loading local shows:", error);
+    log.error("Error loading local shows:", error);
   }
 }
 
@@ -125,7 +128,7 @@ export async function getShowInfoByTvdbId(tvdbId: number): Promise<TvdbData | nu
   await loadLocalShows();
   const localShow = getLocalShow(tvdbId);
   if (localShow) {
-    console.log(`[Shows] Found "${localShow.name}" in local database`);
+    log.debug(`Found "${localShow.name}" in local database`);
     tvdbCache.set(cacheKey, localShow);
     return localShow;
   }
@@ -133,10 +136,10 @@ export async function getShowInfoByTvdbId(tvdbId: number): Promise<TvdbData | nu
   // 2. Try TVDB if API key is configured
   const tvdbApiKey = await getSetting("api.tvdb.key");
   if (tvdbApiKey) {
-    console.log(`[Shows] Trying TVDB for ID ${tvdbId}`);
+    log.debug(`Trying TVDB for ID ${tvdbId}`);
     const tvdbResult = await getTvdbShow(tvdbId);
     if (tvdbResult) {
-      console.log(`[Shows] Found "${tvdbResult.name}" via TVDB`);
+      log.debug(`Found "${tvdbResult.name}" via TVDB`);
       tvdbCache.set(cacheKey, tvdbResult);
       return tvdbResult;
     }
@@ -145,15 +148,15 @@ export async function getShowInfoByTvdbId(tvdbId: number): Promise<TvdbData | nu
   // 3. Try TMDB if API key is configured
   const tmdbApiKey = await getSetting("api.tmdb.key");
   if (tmdbApiKey) {
-    console.log(`[Shows] Trying TMDB for ID ${tvdbId}`);
+    log.debug(`Trying TMDB for ID ${tvdbId}`);
     const tmdbResult = await getTmdbShow(tvdbId);
     if (tmdbResult) {
-      console.log(`[Shows] Found "${tmdbResult.name}" via TMDB`);
+      log.debug(`Found "${tmdbResult.name}" via TMDB`);
       tvdbCache.set(cacheKey, tmdbResult);
       return tmdbResult;
     }
   }
 
-  console.log(`[Shows] No show found for TVDB ID ${tvdbId} in any source`);
+  log.debug(`No show found for TVDB ID ${tvdbId} in any source`);
   return null;
 }

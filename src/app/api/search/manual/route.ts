@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { manualDownload, ManualDownloadError } from "@/services/manual-download";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ManualDownload");
 const schema = z.object({
   url: z.string().trim().url().max(4096),
   quality: z.enum(["low", "standard", "high"]),
@@ -14,7 +17,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof ManualDownloadError)
       return NextResponse.json({ error: error.message }, { status: 422 });
-    console.error("[ManualDownload] failed:", error);
+    log.error("failed:", error);
     return NextResponse.json(
       { error: "Der Download konnte nicht hinzugefügt werden." },
       { status: 500 }
