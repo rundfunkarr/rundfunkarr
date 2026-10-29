@@ -1,6 +1,9 @@
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import { prisma } from "./db";
 import { clearSettingsCache } from "./settings";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Settings");
 
 const ENV_SETTINGS = {
   TVDB_API_KEY: "api.tvdb.key",
@@ -27,7 +30,7 @@ export async function initSettingsFromEnv(
     if (!value) return [];
     const allowed = ENV_ALLOWED_VALUES[variable as keyof typeof ENV_SETTINGS];
     if (allowed && !allowed.includes(value.toLowerCase())) {
-      console.warn(`[Settings] ${variable}=${value} ignored; allowed: ${allowed.join(", ")}`);
+      log.warn(`${variable}=${value} ignored; allowed: ${allowed.join(", ")}`);
       return [];
     }
     return [{ key, value: allowed ? value.toLowerCase() : value }];

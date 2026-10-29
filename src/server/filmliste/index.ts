@@ -18,6 +18,9 @@ import {
   resolveFilmlistePath,
   type FilmlisteIndexInfo,
 } from "./store";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Filmliste");
 
 export const FILMLISTE_URL = "https://liste.mediathekview.de/Filmliste-akt.xz";
 export const DEFAULT_UPDATE_HOURS = 2;
@@ -98,7 +101,7 @@ export async function searchLocalFilmliste(
     if (!isUsable(store.info())) return undefined;
     return store.search(queries, size, options);
   } catch (error) {
-    console.error("[Filmliste] Local search failed, using MediathekViewWeb:", error);
+    log.warn("Local search failed, using MediathekViewWeb:", error);
     return undefined;
   }
 }
@@ -232,8 +235,8 @@ async function runUpdate(force: boolean): Promise<UpdateResult> {
     );
   }
   store.finishImport(generation, listTimestamp, lastModified);
-  console.log(
-    `[Filmliste] Imported ${state.processedEntries} entries` +
+  log.info(
+    `Imported ${state.processedEntries} entries` +
       (stats.skipped ? `, skipped ${stats.skipped} malformed` : "")
   );
   return "updated";
@@ -250,7 +253,7 @@ export function updateFilmliste(options: { force?: boolean } = {}): Promise<Upda
     .catch((error: unknown) => {
       state.lastError = error instanceof Error ? error.message : String(error);
       state.lastErrorAt = Date.now();
-      console.error("[Filmliste] Update failed:", error);
+      log.error("Update failed:", error);
       return "failed" as const;
     })
     .finally(() => {
@@ -278,10 +281,7 @@ export async function runScheduledUpdate() {
 
 export function startFilmlisteScheduler() {
   if (state.timer) return;
-  state.timer = setInterval(
-    () => void runScheduledUpdate().catch(console.error),
-    SCHEDULER_TICK_MS
-  );
+  state.timer = setInterval(() => void runScheduledUpdate().catch(log.error), SCHEDULER_TICK_MS);
   state.timer.unref?.();
 }
 

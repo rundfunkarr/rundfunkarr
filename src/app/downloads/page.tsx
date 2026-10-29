@@ -143,6 +143,7 @@ export default function DownloadsPage() {
         setRefreshVersion((version) => version + 1);
       }
     } catch (error) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Delete failed:", error);
     }
   };
@@ -158,6 +159,7 @@ export default function DownloadsPage() {
         setRefreshVersion((version) => version + 1);
       }
     } catch (error) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Retry failed:", error);
     }
   };

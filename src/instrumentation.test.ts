@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: { config: { findMany: mocks.findMany } } }));
-vi.mock("@/lib/logger", () => ({
+vi.mock("@/lib/logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/logger")>()),
   installLogger: mocks.installLogger,
   rememberLogSecret: mocks.rememberLogSecret,
 }));

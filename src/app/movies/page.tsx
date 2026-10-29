@@ -78,6 +78,7 @@ export default function MoviesPage() {
       setSearchResults(data.results || []);
       setSearched(true);
     } catch (err) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Search failed:", err);
       setSearchResults([]);
       setError("Die Suche ist fehlgeschlagen. Bitte später erneut versuchen.");
@@ -129,6 +130,7 @@ export default function MoviesPage() {
       if (!data.status) throw new Error("Download wurde nicht angenommen.");
       setMessage(`„${result.topic}“ wurde zur Warteschlange hinzugefügt.`);
     } catch (err) {
+      // eslint-disable-next-line no-console -- client component, logs to the browser console
       console.error("Download failed:", err);
       setError("Der Download konnte nicht hinzugefügt werden.");
     } finally {

@@ -16,6 +16,9 @@ import {
   isMovieCategoryRequest,
   parseNewznabCategoryIds,
 } from "@/services/newznab";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Newznab");
 
 export async function GET(request: NextRequest) {
   const response = await getResults(request);
@@ -73,19 +76,17 @@ async function getResults(request: NextRequest) {
 
   // Handle movie search requests
   if (t === "movie") {
-    console.log(
-      `[Newznab] Movie search request: t=${t}, q=${q}, tmdbid=${tmdbid}, imdbid=${imdbid}`
-    );
+    log.info(`Movie search request: t=${t}, q=${q}, tmdbid=${tmdbid}, imdbid=${imdbid}`);
 
     try {
       // Search by TMDB ID
       if (tmdbid) {
         const parsedTmdbId = parseInt(tmdbid, 10);
-        console.log(`[Newznab] Searching movie by TMDB ID: ${parsedTmdbId}`);
+        log.debug(`Searching movie by TMDB ID: ${parsedTmdbId}`);
         if (!isNaN(parsedTmdbId)) {
           const movieData = await getMovieInfoByTmdbId(parsedTmdbId);
-          console.log(
-            `[Newznab] TMDB lookup result: ${movieData ? `Found "${movieData.germanTitle}" (Original: "${movieData.title}")` : "Not found"}`
+          log.debug(
+            `TMDB lookup result: ${movieData ? `Found "${movieData.germanTitle}" (Original: "${movieData.title}")` : "Not found"}`
           );
 
           if (!movieData) {
@@ -106,10 +107,10 @@ async function getResults(request: NextRequest) {
 
       // Search by IMDB ID
       if (imdbid) {
-        console.log(`[Newznab] Searching movie by IMDB ID: ${imdbid}`);
+        log.debug(`Searching movie by IMDB ID: ${imdbid}`);
         const movieData = await getMovieInfoByImdbId(imdbid);
-        console.log(
-          `[Newznab] IMDB lookup result: ${movieData ? `Found "${movieData.germanTitle}" (Original: "${movieData.title}")` : "Not found"}`
+        log.debug(
+          `IMDB lookup result: ${movieData ? `Found "${movieData.germanTitle}" (Original: "${movieData.title}")` : "Not found"}`
         );
 
         if (!movieData) {
@@ -142,7 +143,7 @@ async function getResults(request: NextRequest) {
         headers: { "Content-Type": "application/xml; charset=utf-8" },
       });
     } catch (error) {
-      console.error("Movie search error:", error);
+      log.error("Movie search error:", error);
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Unknown error" },
         { status: 400 }
@@ -156,9 +157,7 @@ async function getResults(request: NextRequest) {
     const isMovieSearch = isMovieCategoryRequest(categoryIds);
 
     if (isMovieSearch && q) {
-      console.log(
-        `[Newznab] Movie search via t=search detected: q=${q}, cat=${categoryIds.join(",")}`
-      );
+      log.info(`Movie search via t=search detected: q=${q}, cat=${categoryIds.join(",")}`);
 
       try {
         const searchResults = await fetchMovieSearchByQuery(q, limit, offset);
@@ -167,7 +166,7 @@ async function getResults(request: NextRequest) {
           headers: { "Content-Type": "application/xml; charset=utf-8" },
         });
       } catch (error) {
-        console.error("Movie search by query error:", error);
+        log.error("Movie search by query error:", error);
         return NextResponse.json(
           { error: error instanceof Error ? error.message : "Unknown error" },
           { status: 400 }
@@ -175,19 +174,19 @@ async function getResults(request: NextRequest) {
       }
     }
 
-    console.log(
-      `[Newznab] TV search request: t=${t}, q=${q}, tvdbid=${tvdbid}, season=${season}, episode=${episode}`
+    log.info(
+      `TV search request: t=${t}, q=${q}, tvdbid=${tvdbid}, season=${season}, episode=${episode}`
     );
 
     try {
       // Search by TVDB ID
       if (tvdbid) {
         const parsedTvdbId = parseInt(tvdbid, 10);
-        console.log(`[Newznab] Searching by TVDB ID: ${parsedTvdbId}`);
+        log.debug(`Searching by TVDB ID: ${parsedTvdbId}`);
         if (!isNaN(parsedTvdbId)) {
           const tvdbData = await getShowInfoByTvdbId(parsedTvdbId);
-          console.log(
-            `[Newznab] TVDB lookup result: ${tvdbData ? `Found "${tvdbData.name}" (German: "${tvdbData.germanName}")` : "Not found"}`
+          log.debug(
+            `TVDB lookup result: ${tvdbData ? `Found "${tvdbData.name}" (German: "${tvdbData.germanName}")` : "Not found"}`
           );
 
           if (!tvdbData) {
@@ -237,7 +236,7 @@ async function getResults(request: NextRequest) {
         headers: { "Content-Type": "application/xml; charset=utf-8" },
       });
     } catch (error) {
-      console.error("Search error:", error);
+      log.error("Search error:", error);
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Unknown error" },
         { status: 400 }

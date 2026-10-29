@@ -9,6 +9,10 @@ import * as path from "path";
 import { createHash } from "crypto";
 import release from "./ytdlp-release.json";
 import { getSetting } from "@/lib/settings";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("yt-dlp");
+const hlsLog = createLogger("downloadHlsStream");
 
 const isWindows = process.platform === "win32";
 const APP_DIR = process.cwd();
@@ -76,18 +80,18 @@ export async function ensureYtdlpExists(): Promise<boolean> {
 
   try {
     await fs.access(ytdlpPath);
-    console.log(`[yt-dlp] Already exists at ${ytdlpPath}`);
+    log.debug(`Already exists at ${ytdlpPath}`);
     return true;
   } catch {
     // If using custom path and it doesn't exist, that's an error
     const customPath = await getSetting("download.ytdlpPath");
     if (customPath && customPath.trim()) {
-      console.error(`[yt-dlp] Custom path configured but not found: ${customPath}`);
+      log.error(`Custom path configured but not found: ${customPath}`);
       return false;
     }
 
     // Default path doesn't exist, try to download
-    console.log(`[yt-dlp] Not found at ${ytdlpPath}. Starting download...`);
+    log.info(`Not found at ${ytdlpPath}. Starting download...`);
     if (!installing)
       installing = downloadYtdlp().finally(() => {
         installing = null;
@@ -105,7 +109,7 @@ async function downloadYtdlp(): Promise<boolean> {
     await fs.mkdir(YTDLP_DIR, { recursive: true });
 
     // Download yt-dlp
-    console.log(`[yt-dlp] Downloading from ${downloadUrl}`);
+    log.info(`Downloading from ${downloadUrl}`);
     const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(120000) });
 
     if (!response.ok || !response.body) {
@@ -118,12 +122,12 @@ async function downloadYtdlp(): Promise<boolean> {
     }
     await fs.writeFile(temporaryPath, bytes, { mode: 0o755 });
     await fs.rename(temporaryPath, YTDLP_PATH);
-    console.log(`[yt-dlp] Successfully installed at ${YTDLP_PATH}`);
+    log.info(`Successfully installed at ${YTDLP_PATH}`);
 
     return true;
   } catch (error) {
     await fs.unlink(temporaryPath).catch(() => {});
-    console.error("[yt-dlp] Error during download:", error);
+    log.error("Error during download:", error);
     return false;
   }
 }
@@ -198,7 +202,7 @@ export { isHlsUrl } from "@/lib/stream-url";
 export async function getVideoInfo(url: string): Promise<YtdlpVideoInfo | null> {
   const ytdlpExists = await ensureYtdlpExists();
   if (!ytdlpExists) {
-    console.error("[yt-dlp] yt-dlp not available");
+    log.error("yt-dlp not available");
     return null;
   }
 
@@ -215,7 +219,7 @@ export async function getVideoInfo(url: string): Promise<YtdlpVideoInfo | null> 
 
   return new Promise((resolve) => {
     let resolved = false;
-    console.log(`[yt-dlp] Getting info for: ${url}`);
+    log.debug(`Getting info for: ${url}`);
     const proc = spawn(ytdlpPath, args);
 
     let stdout = "";
@@ -226,7 +230,7 @@ export async function getVideoInfo(url: string): Promise<YtdlpVideoInfo | null> 
       if (resolved) return;
       resolved = true;
       proc.kill();
-      console.error("[yt-dlp] Video info extraction timeout");
+      log.error("Video info extraction timeout");
       resolve(null);
     }, 30000);
 
@@ -265,11 +269,11 @@ export async function getVideoInfo(url: string): Promise<YtdlpVideoInfo | null> 
             })),
           });
         } catch (parseError) {
-          console.error("[yt-dlp] Failed to parse JSON output:", parseError);
+          log.error("Failed to parse JSON output:", parseError);
           resolve(null);
         }
       } else {
-        console.error(`[yt-dlp] Failed with code ${code}: ${stderr}`);
+        log.error(`Failed with code ${code}: ${stderr}`);
         resolve(null);
       }
     });
@@ -278,7 +282,7 @@ export async function getVideoInfo(url: string): Promise<YtdlpVideoInfo | null> 
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
-      console.error("[yt-dlp] Process error:", err);
+      log.error("Process error:", err);
       resolve(null);
     });
   });
@@ -345,7 +349,7 @@ export async function downloadVideo(
   args.push(url);
 
   return new Promise((resolve) => {
-    console.log(`[yt-dlp] Starting download: ${url} -> ${options.outputPath}`);
+    log.debug(`Starting download: ${url} -> ${options.outputPath}`);
     const proc = spawn(ytdlpPath, args, cancellableProcessOptions);
     const stopCancellation = cancelProcessOnAbort(proc, options.signal);
     proc.once("close", stopCancellation);
@@ -422,7 +426,7 @@ export async function downloadVideo(
         return;
       }
       if (geoBlocked) {
-        console.error("[yt-dlp] ORF geo restriction detected, download stopped");
+        log.error("ORF geo restriction detected, download stopped");
         resolve({ success: false, error: ORF_GEO_BLOCK_ERROR });
         return;
       }
@@ -438,20 +442,20 @@ export async function downloadVideo(
         );
         try {
           await fs.access(expectedOutput);
-          console.log(`[yt-dlp] Download completed: ${expectedOutput}`);
+          log.debug(`Download completed: ${expectedOutput}`);
           resolve({ success: true, outputPath: expectedOutput });
         } catch {
           // Try original path
           try {
             await fs.access(options.outputPath);
-            console.log(`[yt-dlp] Download completed: ${options.outputPath}`);
+            log.debug(`Download completed: ${options.outputPath}`);
             resolve({ success: true, outputPath: options.outputPath });
           } catch {
             resolve({ success: false, error: "Output file not found after download" });
           }
         }
       } else {
-        console.error(`[yt-dlp] Download failed with code ${code}: ${stderr}`);
+        log.error(`Download failed with code ${code}: ${stderr}`);
         resolve({ success: false, error: stderr || `Exit code ${code}` });
       }
     });
@@ -461,7 +465,7 @@ export async function downloadVideo(
       if (ended) return;
       ended = true;
       await progressUpdates;
-      console.error("[yt-dlp] Process error:", err);
+      log.error("Process error:", err);
       resolve({ success: false, error: err.message });
     });
   });
@@ -594,7 +598,7 @@ export async function downloadHlsStream(
       // skip moving the finished file and mark a successful download as
       // failed instead).
       await onProgress(100, 0, 0, 0).catch((error) => {
-        console.error("[downloadHlsStream] Failed to report final progress:", error);
+        hlsLog.error("Failed to report final progress:", error);
       });
     }
 
@@ -605,7 +609,7 @@ export async function downloadHlsStream(
     // settings, fs.mkdir failing, ...) - catch that here so this function
     // keeps its documented contract of always resolving, and so the
     // finally block below still runs to clean up temp files either way.
-    console.error("[downloadHlsStream] Failed:", error);
+    hlsLog.error("Failed:", error);
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   } finally {
     // Failed yt-dlp downloads can leave .part, .ytdl and fragment files.
@@ -730,7 +734,7 @@ export async function extractPlaylistEntries(
 ): Promise<YtdlpPlaylistEntry[]> {
   const ytdlpExists = await ensureYtdlpExists();
   if (!ytdlpExists) {
-    console.error("[yt-dlp] yt-dlp not available");
+    log.error("yt-dlp not available");
     return [];
   }
 
@@ -753,7 +757,7 @@ export async function extractPlaylistEntries(
 
   return new Promise((resolve) => {
     let resolved = false;
-    console.log(`[yt-dlp] Extracting playlist entries from: ${url}`);
+    log.debug(`Extracting playlist entries from: ${url}`);
     const proc = spawn(ytdlpPath, args);
 
     let stdout = "";
@@ -764,7 +768,7 @@ export async function extractPlaylistEntries(
       if (resolved) return;
       resolved = true;
       proc.kill();
-      console.error("[yt-dlp] Playlist extraction timeout");
+      log.error("Playlist extraction timeout");
       resolve([]);
     }, 60000);
 
@@ -811,15 +815,15 @@ export async function extractPlaylistEntries(
             }
           }
 
-          console.log(`[yt-dlp] Extracted ${entries.length} playlist entries`);
+          log.debug(`Extracted ${entries.length} playlist entries`);
           resolve(entries);
         } catch (parseError) {
-          console.error("[yt-dlp] Failed to parse playlist output:", parseError);
+          log.error("Failed to parse playlist output:", parseError);
           resolve([]);
         }
       } else {
         if (stderr) {
-          console.error(`[yt-dlp] Playlist extraction failed: ${stderr}`);
+          log.error(`Playlist extraction failed: ${stderr}`);
         }
         resolve([]);
       }
@@ -829,7 +833,7 @@ export async function extractPlaylistEntries(
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
-      console.error("[yt-dlp] Process error:", err);
+      log.error("Process error:", err);
       resolve([]);
     });
   });
@@ -842,7 +846,7 @@ export async function extractPlaylistEntries(
 export async function getDetailedVideoInfo(url: string): Promise<YtdlpVideoInfo | null> {
   const ytdlpExists = await ensureYtdlpExists();
   if (!ytdlpExists) {
-    console.error("[yt-dlp] yt-dlp not available");
+    log.error("yt-dlp not available");
     return null;
   }
 
@@ -859,7 +863,7 @@ export async function getDetailedVideoInfo(url: string): Promise<YtdlpVideoInfo 
 
   return new Promise((resolve) => {
     let resolved = false;
-    console.log(`[yt-dlp] Getting detailed info for: ${url}`);
+    log.debug(`Getting detailed info for: ${url}`);
     const proc = spawn(ytdlpPath, args);
 
     let stdout = "";
@@ -870,7 +874,7 @@ export async function getDetailedVideoInfo(url: string): Promise<YtdlpVideoInfo 
       if (resolved) return;
       resolved = true;
       proc.kill();
-      console.error("[yt-dlp] Video info extraction timeout");
+      log.error("Video info extraction timeout");
       resolve(null);
     }, 30000);
 
@@ -917,11 +921,11 @@ export async function getDetailedVideoInfo(url: string): Promise<YtdlpVideoInfo 
             })),
           });
         } catch (parseError) {
-          console.error("[yt-dlp] Failed to parse JSON output:", parseError);
+          log.error("Failed to parse JSON output:", parseError);
           resolve(null);
         }
       } else {
-        console.error(`[yt-dlp] Failed with code ${code}: ${stderr}`);
+        log.error(`Failed with code ${code}: ${stderr}`);
         resolve(null);
       }
     });
@@ -930,7 +934,7 @@ export async function getDetailedVideoInfo(url: string): Promise<YtdlpVideoInfo 
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
-      console.error("[yt-dlp] Process error:", err);
+      log.error("Process error:", err);
       resolve(null);
     });
   });

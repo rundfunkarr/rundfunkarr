@@ -13,6 +13,9 @@
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { searchLocalFilmliste } from "@/server/filmliste";
 import type { ApiResultItem, MediathekApiResponse } from "@/types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("MediathekClient");
 
 export const MEDIATHEK_API_URL = "https://mediathekviewweb.de/api/query";
 
@@ -58,13 +61,13 @@ export async function queryMediathekView(
     });
 
     if (!response.ok) {
-      console.error(`[MediathekClient] API request failed with status ${response.status}`);
+      log.error(`API request failed with status ${response.status}`);
       return null;
     }
 
     const parsed: MediathekApiResponse = await response.json();
     if (parsed?.err || !Array.isArray(parsed?.result?.results)) {
-      console.error("[MediathekClient] Invalid or unsuccessful API response");
+      log.error("Invalid or unsuccessful API response");
       return null;
     }
     // HLS entries use null for an unknown byte size in the live API.
@@ -93,12 +96,12 @@ export async function queryMediathekView(
           )
       )
     ) {
-      console.error("[MediathekClient] Invalid result item");
+      log.error("Invalid result item");
       return null;
     }
     return items;
   } catch (error) {
-    console.error("[MediathekClient] Error fetching from API:", error);
+    log.error("Error fetching from API:", error);
     return null;
   }
 }

@@ -1,3 +1,7 @@
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("fetchWithRetry");
+
 /**
  * Fetch wrapper with retry logic and exponential backoff
  */
@@ -74,8 +78,8 @@ export async function fetchWithRetry(
 
       if (attempt < maxRetries) {
         const delay = calculateDelay(attempt, baseDelayMs, maxDelayMs);
-        console.log(
-          `[fetchWithRetry] Request failed with status ${response.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries})`
+        log.warn(
+          `Request failed with status ${response.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries})`
         );
         await sleep(delay);
       }
@@ -89,8 +93,8 @@ export async function fetchWithRetry(
 
       if (attempt < maxRetries) {
         const delay = calculateDelay(attempt, baseDelayMs, maxDelayMs);
-        console.log(
-          `[fetchWithRetry] Network error, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries}): ${lastError.message}`
+        log.warn(
+          `Network error, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries}): ${lastError.message}`
         );
         await sleep(delay);
       }

@@ -2,12 +2,14 @@ import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import * as fs from "node:fs/promises";
 import path from "node:path";
-import { redactLog } from "@/lib/logger";
+import { redactLog, createLogger } from "@/lib/logger";
 import {
   cancelProcessOnAbort,
   cancellableProcessOptions,
   terminateProcess,
 } from "./process-cancellation";
+
+const log = createLogger("Script");
 
 // A hanging script must not block its download slot forever.
 const SCRIPT_TIMEOUT_MS = 30 * 60 * 1000;
@@ -88,7 +90,7 @@ export async function runPostProcessScript(
   const directory = resolveScriptsDirectory();
   const scriptPath = path.join(directory, scriptName);
   if (!isScriptName(scriptName) || !(await isExecutableFile(scriptPath))) {
-    console.warn(`[Script] ${scriptName} not found or not executable in ${directory}`);
+    log.warn(`${scriptName} not found or not executable in ${directory}`);
     return `Skript ${scriptName} nicht gefunden oder nicht ausführbar.`;
   }
 
@@ -121,7 +123,7 @@ export async function runPostProcessScript(
     RUNDFUNKARR_STORAGE_PATH: job.storagePath,
   };
 
-  console.log(`[Script] Running ${scriptName} for ${job.title}`);
+  log.info(`Running ${scriptName} for ${job.title}`);
   return new Promise((resolve) => {
     let settled = false;
     let timedOut = false;
@@ -142,7 +144,7 @@ export async function runPostProcessScript(
       const text = line.trim();
       if (!text) return;
       lastLine = text;
-      console.log(`[Script] ${scriptName}: ${text}`);
+      log.info(`${scriptName}: ${text}`);
     };
     const readLines = (stream: NodeJS.ReadableStream) => {
       let pending = "";
@@ -173,27 +175,27 @@ export async function runPostProcessScript(
     };
 
     proc.once("error", (error) => {
-      console.error(`[Script] Could not start ${scriptName}: ${error.message}`);
+      log.error(`Could not start ${scriptName}: ${error.message}`);
       finish(`Skript ${scriptName} konnte nicht gestartet werden: ${error.message}`);
     });
     proc.once("close", (code, exitSignal) => {
       if (signal?.aborted) {
-        console.warn(`[Script] ${scriptName} cancelled`);
+        log.warn(`${scriptName} cancelled`);
         return finish(`Skript ${scriptName} wurde abgebrochen.`);
       }
       if (timedOut) {
-        console.error(`[Script] ${scriptName} timed out after ${timeoutMs / 1000}s`);
+        log.error(`${scriptName} timed out after ${timeoutMs / 1000}s`);
         return finish(
           `Skript ${scriptName} nach ${Math.round(timeoutMs / 60000)} Minuten abgebrochen.`
         );
       }
       if (code === 0) {
-        console.log(`[Script] ${scriptName} finished`);
+        log.info(`${scriptName} finished`);
         return finish(null);
       }
       // Same format as SABnzbd's history: "Exit(1) <last output line>".
       const status = `Exit(${code ?? exitSignal})`;
-      console.error(`[Script] ${scriptName} failed: ${status}`);
+      log.error(`${scriptName} failed: ${status}`);
       finish(`Skript ${scriptName}: ${status}${lastLine ? ` ${lastLine}` : ""}`);
     });
   });

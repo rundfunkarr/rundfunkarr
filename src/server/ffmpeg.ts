@@ -4,6 +4,9 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("FFmpeg");
 
 const isWindows = process.platform === "win32";
 const APP_DIR = process.cwd();
@@ -22,11 +25,11 @@ export function getFfmpegPath(): string {
 export async function ensureFfmpegExists(): Promise<boolean> {
   try {
     await fs.access(FFMPEG_PATH);
-    console.log(`[FFmpeg] Already exists at ${FFMPEG_PATH}`);
+    log.debug(`Already exists at ${FFMPEG_PATH}`);
     return true;
   } catch {
     // FFmpeg doesn't exist, need to download
-    console.log(`[FFmpeg] Not found at ${FFMPEG_PATH}. Starting download...`);
+    log.info(`Not found at ${FFMPEG_PATH}. Starting download...`);
     return downloadFfmpeg();
   }
 }
@@ -41,7 +44,7 @@ async function downloadFfmpeg(): Promise<boolean> {
     await fs.mkdir(FFMPEG_DIR, { recursive: true });
 
     // Download FFmpeg
-    console.log(`[FFmpeg] Downloading from ${downloadUrl}`);
+    log.info(`Downloading from ${downloadUrl}`);
     const response = await fetch(downloadUrl);
 
     if (!response.ok || !response.body) {
@@ -52,7 +55,7 @@ async function downloadFfmpeg(): Promise<boolean> {
     const fileStream = createWriteStream(tempFilePath);
     // @ts-expect-error - Node.js stream compatibility
     await pipeline(response.body, fileStream);
-    console.log(`[FFmpeg] Downloaded to ${tempFilePath}`);
+    log.debug(`Downloaded to ${tempFilePath}`);
 
     // Extract based on OS
     if (isWindows) {
@@ -63,11 +66,11 @@ async function downloadFfmpeg(): Promise<boolean> {
 
     // Verify FFmpeg exists
     await fs.access(FFMPEG_PATH);
-    console.log(`[FFmpeg] Successfully installed at ${FFMPEG_PATH}`);
+    log.info(`Successfully installed at ${FFMPEG_PATH}`);
 
     return true;
   } catch (error) {
-    console.error("[FFmpeg] Error during download/extraction:", error);
+    log.error("Error during download/extraction:", error);
     return false;
   } finally {
     // Cleanup temp file
@@ -101,7 +104,7 @@ async function extractZip(zipPath: string, destDir: string): Promise<void> {
         const ffmpegExe = await findFile(extractDir, "ffmpeg.exe");
         if (ffmpegExe) {
           await fs.rename(ffmpegExe, FFMPEG_PATH);
-          console.log(`[FFmpeg] Moved to ${FFMPEG_PATH}`);
+          log.debug(`Moved to ${FFMPEG_PATH}`);
         }
 
         // Cleanup extracted directory
@@ -134,11 +137,11 @@ async function extractTarXz(tarPath: string, destDir: string): Promise<void> {
         const ffmpegBin = await findFile(extractDir, "ffmpeg");
         if (ffmpegBin) {
           await fs.rename(ffmpegBin, FFMPEG_PATH);
-          console.log(`[FFmpeg] Moved to ${FFMPEG_PATH}`);
+          log.debug(`Moved to ${FFMPEG_PATH}`);
 
           // Make executable
           await fs.chmod(FFMPEG_PATH, 0o755);
-          console.log(`[FFmpeg] Set executable permissions`);
+          log.debug(`Set executable permissions`);
         }
 
         // Cleanup extracted directory
@@ -214,7 +217,7 @@ export async function convertMp4ToMkv(
       mkvPath,
     ];
 
-    console.log(`[FFmpeg] Starting conversion: ${mp4Path} -> ${mkvPath}`);
+    log.debug(`Starting conversion: ${mp4Path} -> ${mkvPath}`);
     const proc = spawn(FFMPEG_PATH, args, cancellableProcessOptions);
     const stopCancellation = cancelProcessOnAbort(proc, signal);
     proc.once("close", stopCancellation);
@@ -247,26 +250,26 @@ export async function convertMp4ToMkv(
 
     proc.on("close", async (code) => {
       if (code === 0) {
-        console.log(`[FFmpeg] Conversion completed: ${mkvPath}`);
+        log.debug(`Conversion completed: ${mkvPath}`);
 
         // Delete original MP4 file
         try {
           await fs.unlink(mp4Path);
-          console.log(`[FFmpeg] Deleted original file: ${mp4Path}`);
+          log.debug(`Deleted original file: ${mp4Path}`);
         } catch (err) {
-          console.warn(`[FFmpeg] Could not delete original file: ${err}`);
+          log.warn(`Could not delete original file: ${err}`);
         }
 
         resolve({ success: true, outputPath: mkvPath });
       } else {
-        console.error(`[FFmpeg] Conversion failed with code ${code}`);
-        console.error(`[FFmpeg] Error output: ${stderr}`);
+        log.error(`Conversion failed with code ${code}`);
+        log.error(`Error output: ${stderr}`);
         resolve({ success: false, error: `FFmpeg exited with code ${code}` });
       }
     });
 
     proc.on("error", (err) => {
-      console.error(`[FFmpeg] Process error: ${err}`);
+      log.error(`Process error: ${err}`);
       resolve({ success: false, error: err.message });
     });
   });
@@ -305,7 +308,7 @@ export async function mergeVideoAudio(
       outputPath,
     ];
 
-    console.log(`[FFmpeg] Muxing video+audio: ${videoPath} + ${audioPath} -> ${outputPath}`);
+    log.debug(`Muxing video+audio: ${videoPath} + ${audioPath} -> ${outputPath}`);
     const proc = spawn(FFMPEG_PATH, args, cancellableProcessOptions);
     const stopCancellation = cancelProcessOnAbort(proc, signal);
     proc.once("close", stopCancellation);
@@ -319,17 +322,17 @@ export async function mergeVideoAudio(
 
     proc.on("close", (code) => {
       if (code === 0) {
-        console.log(`[FFmpeg] Mux completed: ${outputPath}`);
+        log.debug(`Mux completed: ${outputPath}`);
         resolve({ success: true, outputPath });
       } else {
-        console.error(`[FFmpeg] Mux failed with code ${code}`);
-        console.error(`[FFmpeg] Error output: ${stderr}`);
+        log.error(`Mux failed with code ${code}`);
+        log.error(`Error output: ${stderr}`);
         resolve({ success: false, error: `FFmpeg exited with code ${code}: ${stderr}` });
       }
     });
 
     proc.on("error", (err) => {
-      console.error(`[FFmpeg] Process error: ${err}`);
+      log.error(`Process error: ${err}`);
       resolve({ success: false, error: err.message });
     });
   });

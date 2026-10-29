@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { mediathekCache, tvdbCache, rulesetsCache } from "@/lib/cache";
+import { logger } from "@/lib/logger";
 
 // DELETE /api/cache - Clear all caches
 export async function DELETE() {
@@ -23,7 +24,7 @@ export async function DELETE() {
       },
     });
   } catch (error) {
-    console.error("Failed to clear cache:", error);
+    logger.error("Failed to clear cache:", error);
     return NextResponse.json({ error: "Failed to clear cache" }, { status: 500 });
   }
 }
@@ -39,7 +40,7 @@ export async function GET() {
       tvdbEpisodes: episodesCount,
     });
   } catch (error) {
-    console.error("Failed to get cache stats:", error);
+    logger.error("Failed to get cache stats:", error);
     return NextResponse.json({ error: "Failed to get cache stats" }, { status: 500 });
   }
 }

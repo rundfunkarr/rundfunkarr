@@ -3,6 +3,9 @@ import { tvdbCache } from "@/lib/cache";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { getSetting } from "@/lib/settings";
 import type { TvdbData, TvdbEpisode, TmdbMovieData } from "@/types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TMDB");
 
 const TMDB_API_URL = "https://api.themoviedb.org/3";
 
@@ -121,21 +124,21 @@ export async function getShowInfoByTvdbId(tvdbId: number): Promise<TvdbData | nu
 
 async function fetchAndCacheSeriesData(tvdbId: number, apiKey: string): Promise<TvdbData | null> {
   try {
-    console.log(`[TMDB] Looking up TVDB ID ${tvdbId}`);
+    log.debug(`Looking up TVDB ID ${tvdbId}`);
     const headers = getAuthHeaders(apiKey);
     const findUrl = getApiUrl(`/find/${tvdbId}?external_source=tvdb_id`, apiKey);
 
     const findResponse = await fetchWithRetry(findUrl, { headers });
 
     if (!findResponse.ok) {
-      console.error(`[TMDB] Find request failed: ${findResponse.status}`);
+      log.error(`Find request failed: ${findResponse.status}`);
       return null;
     }
 
     const findData: TmdbFindResult = await findResponse.json();
     return processShowData(tvdbId, findData, apiKey);
   } catch (error) {
-    console.error("[TMDB] Error fetching data:", error);
+    log.error("Error fetching data:", error);
     return null;
   }
 }
@@ -146,20 +149,20 @@ async function processShowData(
   apiKey: string
 ): Promise<TvdbData | null> {
   if (!findData.tv_results || findData.tv_results.length === 0) {
-    console.log(`[TMDB] No show found for TVDB ID ${tvdbId}`);
+    log.debug(`No show found for TVDB ID ${tvdbId}`);
     return null;
   }
 
   const tmdbShow = findData.tv_results[0];
   const tmdbId = tmdbShow.id;
-  console.log(`[TMDB] Found show: "${tmdbShow.name}" (TMDB ID: ${tmdbId})`);
+  log.debug(`Found show: "${tmdbShow.name}" (TMDB ID: ${tmdbId})`);
 
   const headers = getAuthHeaders(apiKey);
   const detailsUrl = getApiUrl(`/tv/${tmdbId}?append_to_response=translations`, apiKey);
   const detailsResponse = await fetchWithRetry(detailsUrl, { headers });
 
   if (!detailsResponse.ok) {
-    console.error(`[TMDB] Details request failed: ${detailsResponse.status}`);
+    log.error(`Details request failed: ${detailsResponse.status}`);
     return null;
   }
 
@@ -179,7 +182,7 @@ async function processShowData(
       germanName = germanTranslation.data.name;
     }
   }
-  console.log(`[TMDB] German name: "${germanName}"`);
+  log.debug(`German name: "${germanName}"`);
 
   const episodes: TvdbEpisode[] = [];
 
@@ -207,11 +210,11 @@ async function processShowData(
         }
       }
     } catch (error) {
-      console.error(`[TMDB] Error fetching season ${season.season_number}:`, error);
+      log.warn(`Error fetching season ${season.season_number}:`, error);
     }
   }
 
-  console.log(`[TMDB] Loaded ${episodes.length} episodes for "${details.name}"`);
+  log.debug(`Loaded ${episodes.length} episodes for "${details.name}"`);
 
   const cacheExpiry = new Date();
   cacheExpiry.setDate(cacheExpiry.getDate() + 7);
@@ -289,7 +292,7 @@ export async function getMovieInfoByTmdbId(tmdbId: number): Promise<TmdbMovieDat
 
   const apiKey = await getApiKey();
   if (!apiKey) {
-    console.error("[TMDB] No API key configured");
+    log.error("No API key configured");
     return null;
   }
 
@@ -297,12 +300,12 @@ export async function getMovieInfoByTmdbId(tmdbId: number): Promise<TmdbMovieDat
   const cacheKey = `tmdb_movie_${tmdbId}`;
   const cached = tvdbCache.get(cacheKey) as TmdbMovieData | undefined;
   if (cached) {
-    console.log(`[TMDB] Movie cache hit for TMDB ID ${tmdbId}`);
+    log.debug(`Movie cache hit for TMDB ID ${tmdbId}`);
     return cached;
   }
 
   try {
-    console.log(`[TMDB] Looking up movie by TMDB ID ${tmdbId}`);
+    log.debug(`Looking up movie by TMDB ID ${tmdbId}`);
     const headers = getAuthHeaders(apiKey);
 
     // First get the original movie details (for runtime and imdb_id)
@@ -310,7 +313,7 @@ export async function getMovieInfoByTmdbId(tmdbId: number): Promise<TmdbMovieDat
     const detailsResponse = await fetchWithRetry(detailsUrl, { headers });
 
     if (!detailsResponse.ok) {
-      console.error(`[TMDB] Movie details request failed: ${detailsResponse.status}`);
+      log.error(`Movie details request failed: ${detailsResponse.status}`);
       return null;
     }
 
@@ -335,8 +338,8 @@ export async function getMovieInfoByTmdbId(tmdbId: number): Promise<TmdbMovieDat
       releaseDate: details.release_date,
     };
 
-    console.log(
-      `[TMDB] Found movie: "${movieData.title}" (German: "${movieData.germanTitle}"), runtime: ${movieData.runtime} min`
+    log.debug(
+      `Found movie: "${movieData.title}" (German: "${movieData.germanTitle}"), runtime: ${movieData.runtime} min`
     );
 
     // Cache using metadata TTL
@@ -344,7 +347,7 @@ export async function getMovieInfoByTmdbId(tmdbId: number): Promise<TmdbMovieDat
 
     return movieData;
   } catch (error) {
-    console.error("[TMDB] Error fetching movie data:", error);
+    log.error("Error fetching movie data:", error);
     return null;
   }
 }
@@ -372,7 +375,7 @@ export async function searchMovieByTitle(
 
   const apiKey = await getApiKey();
   if (!apiKey) {
-    console.error("[TMDB] No API key configured");
+    log.error("No API key configured");
     return null;
   }
 
@@ -380,12 +383,12 @@ export async function searchMovieByTitle(
   const cacheKey = `tmdb_movie_search_${title}_${year || ""}`;
   const cached = tvdbCache.get(cacheKey) as TmdbMovieData | undefined;
   if (cached) {
-    console.log(`[TMDB] Movie search cache hit for "${title}" (${year})`);
+    log.debug(`Movie search cache hit for "${title}" (${year})`);
     return cached;
   }
 
   try {
-    console.log(`[TMDB] Searching movie by title: "${title}"${year ? ` (${year})` : ""}`);
+    log.debug(`Searching movie by title: "${title}"${year ? ` (${year})` : ""}`);
     const headers = getAuthHeaders(apiKey);
 
     // Search with German language preference
@@ -400,20 +403,20 @@ export async function searchMovieByTitle(
     const searchResponse = await fetchWithRetry(searchUrl, { headers });
 
     if (!searchResponse.ok) {
-      console.error(`[TMDB] Movie search request failed: ${searchResponse.status}`);
+      log.error(`Movie search request failed: ${searchResponse.status}`);
       return null;
     }
 
     const searchData: TmdbSearchMovieResult = await searchResponse.json();
 
     if (!searchData.results || searchData.results.length === 0) {
-      console.log(`[TMDB] No movie found for "${title}"`);
+      log.debug(`No movie found for "${title}"`);
       return null;
     }
 
     // Get the first (best) match
     const tmdbId = searchData.results[0].id;
-    console.log(`[TMDB] Found movie: "${searchData.results[0].title}" (TMDB ID: ${tmdbId})`);
+    log.debug(`Found movie: "${searchData.results[0].title}" (TMDB ID: ${tmdbId})`);
 
     // Get full movie info
     const movieData = await getMovieInfoByTmdbId(tmdbId);
@@ -424,7 +427,7 @@ export async function searchMovieByTitle(
 
     return movieData;
   } catch (error) {
-    console.error("[TMDB] Error searching movie:", error);
+    log.error("Error searching movie:", error);
     return null;
   }
 }
@@ -440,7 +443,7 @@ export async function getMovieInfoByImdbId(imdbId: string): Promise<TmdbMovieDat
 
   const apiKey = await getApiKey();
   if (!apiKey) {
-    console.error("[TMDB] No API key configured");
+    log.error("No API key configured");
     return null;
   }
 
@@ -448,12 +451,12 @@ export async function getMovieInfoByImdbId(imdbId: string): Promise<TmdbMovieDat
   const cacheKey = `tmdb_movie_imdb_${imdbId}`;
   const cached = tvdbCache.get(cacheKey) as TmdbMovieData | undefined;
   if (cached) {
-    console.log(`[TMDB] Movie cache hit for IMDB ID ${imdbId}`);
+    log.debug(`Movie cache hit for IMDB ID ${imdbId}`);
     return cached;
   }
 
   try {
-    console.log(`[TMDB] Looking up movie by IMDB ID ${imdbId}`);
+    log.debug(`Looking up movie by IMDB ID ${imdbId}`);
     const headers = getAuthHeaders(apiKey);
 
     // Use /find endpoint to resolve IMDB ID
@@ -461,19 +464,19 @@ export async function getMovieInfoByImdbId(imdbId: string): Promise<TmdbMovieDat
     const findResponse = await fetchWithRetry(findUrl, { headers });
 
     if (!findResponse.ok) {
-      console.error(`[TMDB] Find request failed: ${findResponse.status}`);
+      log.error(`Find request failed: ${findResponse.status}`);
       return null;
     }
 
     const findData: TmdbFindMovieResult = await findResponse.json();
 
     if (!findData.movie_results || findData.movie_results.length === 0) {
-      console.log(`[TMDB] No movie found for IMDB ID ${imdbId}`);
+      log.debug(`No movie found for IMDB ID ${imdbId}`);
       return null;
     }
 
     const tmdbId = findData.movie_results[0].id;
-    console.log(`[TMDB] Resolved IMDB ID ${imdbId} to TMDB ID ${tmdbId}`);
+    log.debug(`Resolved IMDB ID ${imdbId} to TMDB ID ${tmdbId}`);
 
     // Now get the full movie info using the TMDB ID
     const movieData = await getMovieInfoByTmdbId(tmdbId);
@@ -485,7 +488,7 @@ export async function getMovieInfoByImdbId(imdbId: string): Promise<TmdbMovieDat
 
     return movieData;
   } catch (error) {
-    console.error("[TMDB] Error resolving IMDB ID:", error);
+    log.error("Error resolving IMDB ID:", error);
     return null;
   }
 }
@@ -517,7 +520,7 @@ export async function searchMulti(query: string): Promise<TmdbMultiSearchResult>
 
   const apiKey = await getApiKey();
   if (!apiKey) {
-    console.error("[TMDB] No API key configured");
+    log.error("No API key configured");
     return { mediaType: "unknown", tmdbId: null };
   }
 
@@ -531,14 +534,14 @@ export async function searchMulti(query: string): Promise<TmdbMultiSearchResult>
     const response = await fetchWithRetry(searchUrl, { headers });
 
     if (!response.ok) {
-      console.error(`[TMDB] Multi-search request failed: ${response.status}`);
+      log.error(`Multi-search request failed: ${response.status}`);
       return { mediaType: "unknown", tmdbId: null };
     }
 
     const data: TmdbMultiSearchResponse = await response.json();
 
     if (!data.results || data.results.length === 0) {
-      console.log(`[TMDB] No results for multi-search: "${query}"`);
+      log.debug(`No results for multi-search: "${query}"`);
       return { mediaType: "unknown", tmdbId: null };
     }
 
@@ -549,16 +552,14 @@ export async function searchMulti(query: string): Promise<TmdbMultiSearchResult>
       return { mediaType: "unknown", tmdbId: null };
     }
 
-    console.log(
-      `[TMDB] Multi-search "${query}" -> ${mediaResult.media_type} (ID: ${mediaResult.id})`
-    );
+    log.debug(`Multi-search "${query}" -> ${mediaResult.media_type} (ID: ${mediaResult.id})`);
 
     return {
       mediaType: mediaResult.media_type as "movie" | "tv",
       tmdbId: mediaResult.id,
     };
   } catch (error) {
-    console.error("[TMDB] Error in multi-search:", error);
+    log.error("Error in multi-search:", error);
     return { mediaType: "unknown", tmdbId: null };
   }
 }
