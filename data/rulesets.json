@@ -1539,6 +1539,25 @@
     }
   },
   {
+    "id": 160,
+    "mediaId": 56,
+    "topic": "Sturm der Liebe",
+    "priority": 4,
+    "filters": "[{\"attribute\":\"duration\",\"type\":\"GreaterThan\",\"value\":\"35\"}]",
+    "titleRegexRules": "[]",
+    "episodeRegex": "^Folge\\s(\\d+)$",
+    "seasonRegex": "",
+    "matchingStrategy": "ByAbsoluteEpisodeNumber",
+    "media": {
+      "media_id": 56,
+      "media_name": "Sturm der Liebe",
+      "media_type": "show",
+      "media_tmdbId": null,
+      "media_imdbId": "tt0479846",
+      "media_tvdbId": 176491
+    }
+  },
+  {
     "id": 70,
     "mediaId": 1,
     "topic": "Tatort",

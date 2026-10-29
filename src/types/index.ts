@@ -107,6 +107,7 @@ export enum MatchingStrategy {
   ItemTitleIncludes = "ItemTitleIncludes",
   ItemTitleExact = "ItemTitleExact",
   ItemTitleEqualsAirdate = "ItemTitleEqualsAirdate",
+  ByAbsoluteEpisodeNumber = "ByAbsoluteEpisodeNumber",
 }
 
 export interface Filter {
@@ -227,6 +228,37 @@ export function findEpisodeBySeasonAndNumber(
   return data.episodes.find(
     (ep) => ep.seasonNumber === seasonNumber && ep.episodeNumber === episodeNumber
   );
+}
+
+// Regular episodes in season order, memoised per show because daily soaps have
+// thousands of episodes and every result item is matched against them.
+const regularEpisodeOrder = new WeakMap<
+  TvdbData,
+  { episodes: TvdbEpisode[]; continuous: boolean }
+>();
+
+/**
+ * Finds an episode by its absolute number. Daily soaps on TVDB are usually numbered
+ * continuously across seasons (season 23 starts at episode 4666), so the episode number
+ * already is the absolute number. Otherwise the regular episodes are counted in order.
+ */
+export function findEpisodeByAbsoluteNumber(
+  data: TvdbData,
+  absoluteNumber: number
+): TvdbEpisode | undefined {
+  let order = regularEpisodeOrder.get(data);
+  if (!order) {
+    const episodes = data.episodes
+      .filter((ep) => ep.seasonNumber > 0)
+      .sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
+    const continuous = episodes.every(
+      (ep, index) => index === 0 || ep.episodeNumber > episodes[index - 1].episodeNumber
+    );
+    order = { episodes, continuous };
+    regularEpisodeOrder.set(data, order);
+  }
+  if (order.continuous) return order.episodes.find((ep) => ep.episodeNumber === absoluteNumber);
+  return order.episodes[absoluteNumber - 1];
 }
 
 export function getPaddedSeason(episode: TvdbEpisode): string {

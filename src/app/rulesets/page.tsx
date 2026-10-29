@@ -54,6 +54,7 @@ const strategyLabels: Record<string, string> = {
   ItemTitleExact: "Episodentitel",
   ItemTitleIncludes: "Episodentitel (enthält)",
   ItemTitleEqualsAirdate: "Ausstrahlungsdatum",
+  ByAbsoluteEpisodeNumber: "Fortlaufende Folgennummer",
 };
 
 export default function RulesetsPage() {

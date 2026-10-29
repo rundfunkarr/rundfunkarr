@@ -153,9 +153,11 @@ Eine der einfachsten Möglichkeiten beizutragen ist das Hinzufügen neuer Shows 
 - **`seasonRegex`**: Regex zum Extrahieren der Staffelnummer
 - **`filters`**: Filter für Dauer, Qualität etc.
 - **`matchingStrategy`**:
-  - `SeasonAndEpisodeNumber` - Klassische S01E01-Nummerierung
-  - `DateBased` - Datum-basiertes Matching
-  - `TitleMatch` - Titel-basiertes Matching
+  - `SeasonAndEpisodeNumber` - Klassische S01E01-Nummerierung (`seasonRegex` und `episodeRegex`)
+  - `ByAbsoluteEpisodeNumber` - Fortlaufende Folgennummer, z. B. bei Daily Soaps (`episodeRegex`)
+  - `ItemTitleIncludes` - Episodentitel enthält den aus `titleRegexRules` gebildeten Titel
+  - `ItemTitleExact` - Episodentitel stimmt mit dem gebildeten Titel überein
+  - `ItemTitleEqualsAirdate` - Gebildeter Titel ist das Ausstrahlungsdatum
 
 ### Testen
 
