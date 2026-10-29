@@ -25,12 +25,36 @@ describe("getSetting", () => {
     expect(findUnique).toHaveBeenCalledTimes(1);
   });
 
-  it("returns null for missing keys and asks the database again next time", async () => {
+  it("caches missing keys so repeated lookups don't query the database", async () => {
     findUnique.mockResolvedValue(null);
 
     expect(await getSetting("missing")).toBeNull();
     expect(await getSetting("missing")).toBeNull();
+    expect(findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads a key again after the cache is cleared, e.g. once it was saved", async () => {
+    findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ key: "late", value: "set" });
+
+    expect(await getSetting("late")).toBeNull();
+    clearSettingsCache();
+
+    expect(await getSetting("late")).toBe("set");
     expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads a cached miss once the minute has passed", async () => {
+    vi.useFakeTimers();
+    try {
+      findUnique.mockResolvedValue(null);
+      await getSetting("missing");
+      vi.advanceTimersByTime(60 * 1000);
+
+      await getSetting("missing");
+      expect(findUnique).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -54,6 +78,25 @@ describe("getSettings", () => {
 
     expect(await getSettings(["x"])).toEqual({ x: "" });
     expect(findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("caches missing keys and shares them with getSetting", async () => {
+    findMany.mockResolvedValue([]);
+
+    expect(await getSettings(["missing"])).toEqual({ missing: null });
+    expect(await getSettings(["missing"])).toEqual({ missing: null });
+    expect(await getSetting("missing")).toBeNull();
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("serves keys missed by getSetting without querying them again", async () => {
+    findUnique.mockResolvedValue(null);
+    await getSetting("missing");
+
+    expect(await getSettings(["missing"])).toEqual({ missing: null });
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it("does not query the database when every key is cached", async () => {

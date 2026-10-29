@@ -56,6 +56,13 @@ describe("environment settings initialization", () => {
     expect(await getSetting("api.tvdb.key")).toBe("new-key");
   });
 
+  it("makes a value visible that was cached as missing before", async () => {
+    expect(await getSetting("download.path")).toBeNull();
+
+    expect(await initSettingsFromEnv({ DOWNLOAD_FOLDER_PATH: "/env/downloads" })).toBe(1);
+    expect(await getSetting("download.path")).toBe("/env/downloads");
+  });
+
   it("preserves existing values across restarts and environment changes", async () => {
     await initSettingsFromEnv({ TVDB_API_KEY: "original" });
     await prisma.config.create({ data: { key: "download.path", value: "/ui/downloads" } });
