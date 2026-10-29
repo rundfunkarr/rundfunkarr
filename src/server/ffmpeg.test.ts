@@ -137,7 +137,7 @@ describe("convertMp4ToMkv", () => {
     const proc = await nextProcess();
     expect(spawn).toHaveBeenCalledWith(
       ffmpegPath,
-      ["-i", "/media/in.mp4", "-map", "0:v", "-map", "0:a", "-c", "copy", "-y", "/media/out.mkv"],
+      ["-i", "/media/in.mp4", "-map", "0:v", "-map", "0:a?", "-c", "copy", "-y", "/media/out.mkv"],
       expect.anything()
     );
     proc.stderr.emit("data", Buffer.from("  Duration: 00:45:00.00, start: 0\n"));
