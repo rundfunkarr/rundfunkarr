@@ -80,6 +80,10 @@ export async function fetchWithRetry(
         await sleep(delay);
       }
     } catch (error) {
+      // A cancelled or timed-out request must not be retried: every retry would
+      // fail the same way and only delay the caller by the backoff.
+      if (init?.signal?.aborted) throw error;
+
       // Network error - save and retry
       lastError = error instanceof Error ? error : new Error(String(error));
 
