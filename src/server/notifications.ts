@@ -1,6 +1,7 @@
 import * as path from "path";
 import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
+import { parseMediaMetadata } from "@/lib/media-metadata";
 import { createLogger, rememberLogSecret } from "@/lib/logger";
 
 /**
@@ -440,11 +441,20 @@ function fireAndForget(build: () => Promise<NotificationPayload>) {
   }
 }
 
-/** Downloads queued by a search subscription know their broadcaster; others do not store it. */
-async function channelOf(downloadId: string): Promise<string | null> {
+/**
+ * Broadcaster of a download. It is stored in the download's media metadata when the download is
+ * created (Newznab NZB, search, subscription). Subscription downloads queued before that are
+ * looked up via their subscription match.
+ */
+async function channelOf(download: {
+  id: string;
+  mediaMetadata?: string | null;
+}): Promise<string | null> {
+  const stored = parseMediaMetadata(download.mediaMetadata).channel;
+  if (stored) return stored;
   try {
     const match = await prisma.subscriptionMatch.findFirst({
-      where: { downloadId },
+      where: { downloadId: download.id },
       select: { channel: true },
     });
     return match?.channel || null;
@@ -460,12 +470,13 @@ export function notifyDownloadCompleted(download: {
   filePath: string;
   size: number;
   warning?: string | null;
+  mediaMetadata?: string | null;
 }) {
   fireAndForget(async () =>
     buildDownloadCompletedPayload({
       id: download.id,
       title: download.title,
-      channel: await channelOf(download.id),
+      channel: await channelOf(download),
       category: download.category || null,
       filePath: download.filePath,
       size: download.size,
@@ -478,13 +489,14 @@ export function notifyDownloadFailed(download: {
   id: string;
   title?: string | null;
   category?: string | null;
+  mediaMetadata?: string | null;
   error: string;
 }) {
   fireAndForget(async () =>
     buildDownloadFailedPayload({
       id: download.id,
       title: download.title || `Download ${download.id}`,
-      channel: await channelOf(download.id),
+      channel: await channelOf(download),
       category: download.category || null,
       error: download.error,
     })

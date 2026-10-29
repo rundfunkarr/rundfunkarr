@@ -436,7 +436,7 @@ async function processDownload(
 }
 
 async function markAsCompleted(
-  download: { id: string; title: string; category: string },
+  download: { id: string; title: string; category: string; mediaMetadata?: string | null },
   result: {
     warning: string | null;
     subtitleArtifact: string | null;
@@ -464,6 +464,7 @@ async function markAsFailed(downloadId: string, error: string): Promise<void> {
     id: downloadId,
     title: download?.title,
     category: download?.category,
+    mediaMetadata: download?.mediaMetadata,
     error,
   });
 }

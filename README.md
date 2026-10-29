@@ -155,13 +155,15 @@ der die gerade eingegebenen Werte prüft, ohne sie zu speichern.
 
 | Ereignis | Inhalt |
 |----------|--------|
-| Download abgeschlossen | Titel, Sender (falls bekannt) und Dateiname |
-| Download fehlgeschlagen | Titel, Sender (falls bekannt) und Fehlermeldung, z. B. die ORF-Geosperre |
+| Download abgeschlossen | Titel, Sender und Dateiname |
+| Download fehlgeschlagen | Titel, Sender und Fehlermeldung, z. B. die ORF-Geosperre |
 | Suchabo hat Downloads gestartet | Eine Nachricht pro Prüfung mit allen neu eingereihten Downloads |
 
 Automatische Wiederholungen, Pausen und Abbrüche lösen keine Nachricht aus, erst der
-endgültige Fehlschlag. Den Sender kennt RundfunkArr nur bei Downloads aus Suchabos;
-Sonarr und Radarr übergeben ihn nicht.
+endgültige Fehlschlag. Den Sender speichert RundfunkArr beim Anlegen des Downloads, auch bei
+Downloads aus Sonarr, Radarr und der Suche (er steckt in der erzeugten NZB). Nur bei
+Downloads, die vor diesem Update eingereiht wurden, oder bei manuell eingegebenen Links
+bleibt `channel` leer.
 
 **Ziele** (mehrere gleichzeitig möglich):
 

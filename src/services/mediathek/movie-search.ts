@@ -1,4 +1,4 @@
-import { releaseAudioTag } from "@/lib/media-metadata";
+import { mediaMetadata, releaseAudioTag } from "@/lib/media-metadata";
 import { isStreamingUrl } from "@/lib/stream-url";
 import { mediathekCache } from "@/lib/cache";
 import { getMinDurationSeconds } from "@/lib/settings";
@@ -277,7 +277,9 @@ export async function fetchMovieSearchByQuery(
 
       const encodedTitle = Buffer.from(releaseTitle).toString("base64");
       const encodedUrl = Buffer.from(q.url).toString("base64");
-      const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}`;
+      // Only the broadcaster for now; subtitle metadata is not passed on this path.
+      const metadata = JSON.stringify(mediaMetadata({ channel: item.channel }));
+      const fakeDownloadUrl = `/api/newznab/fake_nzb_download?encodedUrl=${encodeURIComponent(encodedUrl)}&encodedTitle=${encodeURIComponent(encodedTitle)}&metadata=${encodeURIComponent(metadata)}`;
 
       newznabItems.push({
         title: releaseTitle,

@@ -88,6 +88,7 @@ it("merkt den Altbestand vor und lädt nur später neue Treffer einmal herunter,
   expect(await prisma.download.findFirst()).toMatchObject({
     category: "tv",
     url: "https://example.org/2-hd.mp4",
+    mediaMetadata: JSON.stringify({ channel: "ZDF" }),
   });
   await prisma.$disconnect();
   await prisma.$connect();
@@ -147,6 +148,7 @@ it("erhält Meldungen dauerhaft und fügt einen manuell gewählten Treffer nur e
   ]);
   expect(a).toBe(b);
   expect(await prisma.download.count()).toBe(1);
+  expect((await prisma.download.findFirstOrThrow()).mediaMetadata).toBe('{"channel":"ZDF"}');
 });
 it("ändert einen fehlgeschlagenen ersten Abgleich nicht in einen leeren Altbestand", async () => {
   queryContent.mockResolvedValue(null);

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { queryContent } from "@/services/content-search";
 import { getSetting } from "@/lib/settings";
 import { isStreamingUrl, withStreamQuality } from "@/lib/stream-url";
+import { mediaMetadata } from "@/lib/media-metadata";
 import { notifySubscriptionQueued, type NotificationSubscription } from "./notifications";
 import type { ApiResultItem } from "@/types";
 import type { Prisma } from "@prisma/client";
@@ -45,11 +46,17 @@ function key(item: ApiResultItem) {
 }
 async function queueMatch(
   tx: Prisma.TransactionClient,
-  match: { id: string; title: string; topic: string; videoUrl: string },
+  match: { id: string; title: string; topic: string; channel: string; videoUrl: string },
   category: string
 ) {
+  const metadata = mediaMetadata({ channel: match.channel });
   const download = await tx.download.create({
-    data: { title: title(match.topic, match.title), url: match.videoUrl, category },
+    data: {
+      title: title(match.topic, match.title),
+      url: match.videoUrl,
+      category,
+      ...(Object.keys(metadata).length ? { mediaMetadata: JSON.stringify(metadata) } : {}),
+    },
   });
   await tx.subscriptionMatch.update({
     where: { id: match.id },

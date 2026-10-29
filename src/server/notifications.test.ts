@@ -358,6 +358,35 @@ describe("fire-and-forget hooks", () => {
     expect(body.body).toBe("Doku (3sat)\nDatei: Doku.mkv");
   });
 
+  it("prefers the broadcaster stored with the download", async () => {
+    values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    notifyDownloadFailed({
+      id: "sonarr",
+      title: "Tatort",
+      mediaMetadata: JSON.stringify({ subtitleUrl: "https://example.com/t.vtt", channel: "ARD" }),
+      error: "kaputt",
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(findFirst).not.toHaveBeenCalled();
+    const body = json(fetchMock.mock.lastCall![1].body);
+    expect(body.download.channel).toBe("ARD");
+    expect(body.body).toBe("Tatort (ARD)\nFehler: kaputt");
+  });
+
+  it("falls back to null when neither metadata nor a subscription knows the broadcaster", async () => {
+    values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    notifyDownloadCompleted({
+      id: "old",
+      title: "Alt",
+      filePath: "/x/Alt.mkv",
+      size: 1,
+      mediaMetadata: "kein json",
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(findFirst).toHaveBeenCalledOnce();
+    expect(json(fetchMock.mock.lastCall![1].body).download.channel).toBeNull();
+  });
+
   it("skips empty subscription runs", async () => {
     values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
     notifySubscriptionQueued({ id: "s", name: "n", query: "q", downloads: [] });
