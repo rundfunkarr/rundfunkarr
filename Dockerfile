@@ -42,23 +42,21 @@ RUN mkdir -p /app/standalone-out && \
     fi && \
     ls -la /app/standalone-out/
 
-# Stage 3: Runner
-FROM node:24-alpine AS runner
-WORKDIR /app
+# The server only loads Prisma's Node library engine (.prisma/client/index.js ->
+# runtime/library.js + libquery_engine-*.node). Tracing follows every export
+# condition of the generated client and copies the edge, browser and WebAssembly
+# runtimes for all databases (~60 MB). outputFileTracingExcludes cannot drop them
+# because Next.js does not apply it to the instrumentation and proxy traces.
+RUN cd /app/standalone-out/node_modules \
+    && test -f @prisma/client/runtime/library.js \
+    && find @prisma/client/runtime -type f ! -name library.js -delete \
+    && rm -f .prisma/client/edge.js .prisma/client/wasm.js .prisma/client/index-browser.js \
+       .prisma/client/query_engine_bg.js .prisma/client/query_engine_bg.wasm \
+    && ls .prisma/client/libquery_engine-*.so.node
 
-# Install runtime dependencies for FFmpeg, user management, and DB init
-# Note: yt-dlp standalone binary includes bundled Python, no separate install needed
-RUN apk add --no-cache \
-    tar \
-    xz \
-    wget \
-    curl \
-    su-exec \
-    shadow \
-    sqlite \
-    ffmpeg \
-    && rm -rf /var/cache/apk/*
-
+# Stage 3: yt-dlp
+FROM node:24-alpine AS ytdlp
+RUN apk add --no-cache curl
 COPY src/server/ytdlp-release.json /tmp/ytdlp-release.json
 
 # Select the standalone musl binary for the image's architecture.
@@ -73,28 +71,30 @@ RUN case "$(apk --print-arch)" in \
     && echo "$checksum  /usr/local/bin/yt-dlp" | sha256sum -c - \
     && chmod +x /usr/local/bin/yt-dlp
 
+# Stage 4: Runner
+FROM node:24-alpine AS runner
+WORKDIR /app
+
+# Install runtime dependencies for FFmpeg, user management, and DB init
+# Note: yt-dlp standalone binary includes bundled Python, no separate install needed
+RUN apk add --no-cache \
+    tar \
+    xz \
+    wget \
+    su-exec \
+    shadow \
+    sqlite \
+    ffmpeg \
+    && rm -rf /var/cache/apk/*
+
+COPY --from=ytdlp /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy public folder
-COPY --from=builder /app/public ./public
-
-# Copy standalone build
-COPY --from=builder /app/standalone-out/ ./
-COPY --from=builder /app/.next/static ./.next/static
-
-# Copy Prisma files (client only, no CLI)
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-# Copy database init script
-COPY init-db.sql /app/init-db.sql
-COPY scripts/reset-auth.mjs /app/scripts/reset-auth.mjs
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs
 
 # Create directories for data and downloads
 # Symlink system FFmpeg and yt-dlp so the app finds them at expected locations
@@ -102,6 +102,20 @@ RUN mkdir -p /app/prisma/data /app/downloads /app/ffmpeg /app/ytdlp \
     && ln -s /usr/bin/ffmpeg /app/ffmpeg/ffmpeg \
     && ln -s /usr/local/bin/yt-dlp /app/ytdlp/yt-dlp \
     && chown -R nextjs:nodejs /app
+
+# Copy with ownership set directly: a later "chown -R /app" would store every
+# application file a second time in its own layer.
+COPY --chown=nextjs:nodejs --from=builder /app/public ./public
+COPY --chown=nextjs:nodejs --from=builder /app/standalone-out/ ./
+COPY --chown=nextjs:nodejs --from=builder /app/.next/static ./.next/static
+
+# Prisma schema and migrations for reference; the client and its query engine
+# come with the standalone output. The database is created from init-db.sql.
+COPY --chown=nextjs:nodejs --from=builder /app/prisma ./prisma
+
+# Copy database init script
+COPY --chown=nextjs:nodejs init-db.sql /app/init-db.sql
+COPY --chown=nextjs:nodejs scripts/reset-auth.mjs /app/scripts/reset-auth.mjs
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
