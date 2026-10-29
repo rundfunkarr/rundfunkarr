@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   const input = (config && typeof config === "object" ? config : {}) as Record<string, unknown>;
   const keys = TARGET_SETTINGS[target as NotificationTarget];
   const resolved: TargetConfig = { url: "" };
-  for (const field of ["url", "topic", "token"] as const) {
+  for (const field of ["url", "topic", "token", "headers"] as const) {
     const key = keys[field];
     if (!key) continue;
     const value = typeof input[field] === "string" ? (input[field] as string) : "";

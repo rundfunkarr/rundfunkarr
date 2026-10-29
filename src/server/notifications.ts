@@ -1,7 +1,9 @@
 import * as path from "path";
 import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
+import { parseMediaMetadata } from "@/lib/media-metadata";
 import { createLogger, rememberLogSecret } from "@/lib/logger";
+import { parseWebhookHeaders, webhookHeaderSecrets } from "@/lib/webhook-headers";
 
 /**
  * Outbound notifications (generic webhook, ntfy, Gotify, Discord).
@@ -16,7 +18,7 @@ import { createLogger, rememberLogSecret } from "@/lib/logger";
 export const NOTIFICATION_TARGETS = ["webhook", "ntfy", "gotify", "discord"] as const;
 export type NotificationTarget = (typeof NOTIFICATION_TARGETS)[number];
 export type NotificationEventName =
-  "download.completed" | "download.failed" | "subscription.queued" | "test";
+  "download.completed" | "download.failed" | "subscription.queued" | "subscription.found" | "test";
 /** Severity in Apprise naming, so the webhook payload fits Apprise-style receivers. */
 export type NotificationType = "success" | "failure" | "info";
 
@@ -32,11 +34,21 @@ export interface NotificationDownload {
   error: string | null;
 }
 
+export interface NotificationSubscriptionMatch {
+  id: string;
+  title: string;
+  channel: string | null;
+  websiteUrl: string | null;
+}
+
 export interface NotificationSubscription {
   id: string;
   name: string;
   query: string;
+  /** Downloads queued by this run (`subscription.queued`), otherwise empty. */
   downloads: { id: string; title: string; channel: string | null }[];
+  /** New hits of a report-only subscription (`subscription.found`), otherwise empty. */
+  matches: NotificationSubscriptionMatch[];
 }
 
 /** Stable webhook payload. Fields are only ever added; `version` changes on breaking changes. */
@@ -55,6 +67,8 @@ export interface TargetConfig {
   url: string;
   topic?: string;
   token?: string;
+  /** Webhook only: extra headers, one `Name: Wert` per line. */
+  headers?: string;
 }
 
 export interface SendResult {
@@ -74,6 +88,7 @@ const EVENT_SETTINGS: Record<Exclude<NotificationEventName, "test">, string> = {
   "download.completed": "notifications.event.downloadCompleted",
   "download.failed": "notifications.event.downloadFailed",
   "subscription.queued": "notifications.event.subscriptionQueued",
+  "subscription.found": "notifications.event.subscriptionFound",
 };
 
 export const TARGET_LABELS: Record<NotificationTarget, string> = {
@@ -86,9 +101,9 @@ export const TARGET_LABELS: Record<NotificationTarget, string> = {
 /** Setting keys per target. `enabled` defaults to on; a target is used once it is configured. */
 export const TARGET_SETTINGS: Record<
   NotificationTarget,
-  { url: string; topic?: string; token?: string }
+  { url: string; topic?: string; token?: string; headers?: string }
 > = {
-  webhook: { url: "notifications.webhook.url" },
+  webhook: { url: "notifications.webhook.url", headers: "notifications.webhook.headers" },
   ntfy: {
     url: "notifications.ntfy.url",
     topic: "notifications.ntfy.topic",
@@ -166,24 +181,52 @@ export function buildDownloadFailedPayload(
   };
 }
 
+/** Bullet list with at most MAX_LISTED_DOWNLOADS entries and a German "… und N weitere". */
+function listItems(items: { title: string; channel: string | null }[]) {
+  const listed = items
+    .slice(0, MAX_LISTED_DOWNLOADS)
+    .map((item) => `• ${withChannel(item.title, item.channel)}`);
+  if (items.length > MAX_LISTED_DOWNLOADS)
+    listed.push(`… und ${items.length - MAX_LISTED_DOWNLOADS} weitere`);
+  return truncate(listed.join("\n"), MAX_BODY_LENGTH);
+}
+
+function subscriptionInfo(subscription: NotificationSubscription): NotificationSubscription {
+  const { id, name, query, downloads, matches } = subscription;
+  return { id, name, query, downloads, matches };
+}
+
 export function buildSubscriptionQueuedPayload(
-  subscription: NotificationSubscription,
+  subscription: Omit<NotificationSubscription, "matches">,
   now = new Date()
 ): NotificationPayload {
   const count = subscription.downloads.length;
-  const listed = subscription.downloads
-    .slice(0, MAX_LISTED_DOWNLOADS)
-    .map((item) => `• ${withChannel(item.title, item.channel)}`);
-  if (count > MAX_LISTED_DOWNLOADS) listed.push(`… und ${count - MAX_LISTED_DOWNLOADS} weitere`);
   return {
     version: 1,
     event: "subscription.queued",
     type: "info",
     title: `Suchabo „${subscription.name}“: ${count === 1 ? "1 neuer Download" : `${count} neue Downloads`}`,
-    body: truncate(listed.join("\n"), MAX_BODY_LENGTH),
+    body: listItems(subscription.downloads),
     timestamp: now.toISOString(),
     download: null,
-    subscription,
+    subscription: subscriptionInfo({ ...subscription, matches: [] }),
+  };
+}
+
+export function buildSubscriptionFoundPayload(
+  subscription: Omit<NotificationSubscription, "downloads">,
+  now = new Date()
+): NotificationPayload {
+  const count = subscription.matches.length;
+  return {
+    version: 1,
+    event: "subscription.found",
+    type: "info",
+    title: `Suchabo „${subscription.name}“: ${count === 1 ? "1 neuer Treffer" : `${count} neue Treffer`}`,
+    body: listItems(subscription.matches),
+    timestamp: now.toISOString(),
+    download: null,
+    subscription: subscriptionInfo({ ...subscription, downloads: [] }),
   };
 }
 
@@ -243,9 +286,18 @@ export function buildRequest(
   switch (target) {
     case "webhook": {
       if (!config.url.trim()) throw new Error("Webhook: Adresse fehlt.");
+      const extra = parseWebhookHeaders(config.headers);
+      if (!extra.headers) throw new Error(`Webhook-Header: ${extra.error}`);
+      const headers: Record<string, string> = { ...json };
+      for (const [name, value] of Object.entries(extra.headers)) {
+        // Replace defaults case-insensitively (only User-Agent can be overridden).
+        for (const key of Object.keys(headers))
+          if (key.toLowerCase() === name.toLowerCase()) delete headers[key];
+        headers[name] = value;
+      }
       return {
         url: parseHttpUrl(config.url, label).toString(),
-        headers: json,
+        headers,
         body: JSON.stringify(payload),
       };
     }
@@ -374,6 +426,7 @@ function readTargetConfig(
     url: values[keys.url] ?? "",
     topic: keys.topic ? (values[keys.topic] ?? "") : undefined,
     token: keys.token ? (values[keys.token] ?? "") : undefined,
+    headers: keys.headers ? (values[keys.headers] ?? "") : undefined,
   };
   rememberTargetSecrets(target, config);
   return config;
@@ -385,6 +438,7 @@ export function rememberTargetSecrets(target: NotificationTarget, config: Target
   // or typed into the settings form but not saved yet.
   if (target === "webhook" || target === "discord") rememberLogSecret(config.url);
   rememberLogSecret(config.token);
+  for (const secret of webhookHeaderSecrets(config.headers)) rememberLogSecret(secret);
 }
 
 /** A target is active when it is not switched off and its required fields are filled in. */
@@ -440,11 +494,20 @@ function fireAndForget(build: () => Promise<NotificationPayload>) {
   }
 }
 
-/** Downloads queued by a search subscription know their broadcaster; others do not store it. */
-async function channelOf(downloadId: string): Promise<string | null> {
+/**
+ * Broadcaster of a download. It is stored in the download's media metadata when the download is
+ * created (Newznab NZB, search, subscription). Subscription downloads queued before that are
+ * looked up via their subscription match.
+ */
+async function channelOf(download: {
+  id: string;
+  mediaMetadata?: string | null;
+}): Promise<string | null> {
+  const stored = parseMediaMetadata(download.mediaMetadata).channel;
+  if (stored) return stored;
   try {
     const match = await prisma.subscriptionMatch.findFirst({
-      where: { downloadId },
+      where: { downloadId: download.id },
       select: { channel: true },
     });
     return match?.channel || null;
@@ -460,12 +523,13 @@ export function notifyDownloadCompleted(download: {
   filePath: string;
   size: number;
   warning?: string | null;
+  mediaMetadata?: string | null;
 }) {
   fireAndForget(async () =>
     buildDownloadCompletedPayload({
       id: download.id,
       title: download.title,
-      channel: await channelOf(download.id),
+      channel: await channelOf(download),
       category: download.category || null,
       filePath: download.filePath,
       size: download.size,
@@ -478,20 +542,27 @@ export function notifyDownloadFailed(download: {
   id: string;
   title?: string | null;
   category?: string | null;
+  mediaMetadata?: string | null;
   error: string;
 }) {
   fireAndForget(async () =>
     buildDownloadFailedPayload({
       id: download.id,
       title: download.title || `Download ${download.id}`,
-      channel: await channelOf(download.id),
+      channel: await channelOf(download),
       category: download.category || null,
       error: download.error,
     })
   );
 }
 
-export function notifySubscriptionQueued(subscription: NotificationSubscription) {
+export function notifySubscriptionQueued(subscription: Omit<NotificationSubscription, "matches">) {
   if (subscription.downloads.length === 0) return;
   fireAndForget(async () => buildSubscriptionQueuedPayload(subscription));
+}
+
+/** New hits of a subscription with the action "Melden" (report only, no download). */
+export function notifySubscriptionFound(subscription: Omit<NotificationSubscription, "downloads">) {
+  if (subscription.matches.length === 0) return;
+  fireAndForget(async () => buildSubscriptionFoundPayload(subscription));
 }

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const MAX_CHANNEL_LENGTH = 100;
+
 export const mediaMetadataSchema = z
   .object({
     subtitleUrl: z
@@ -12,17 +14,36 @@ export const mediaMetadataSchema = z
       .string()
       .regex(/^[a-z]{3}$/)
       .optional(),
+    /** Broadcaster, e.g. "ARD" or "ZDF"; only used for display in notifications. */
+    channel: z
+      .string()
+      .min(1)
+      .max(MAX_CHANNEL_LENGTH)
+      .regex(/^[^\x00-\x1f\x7f]+$/)
+      .optional(),
   })
   .strict();
 export type MediaMetadata = z.infer<typeof mediaMetadataSchema>;
 
+/** Cleans a broadcaster name so it always passes the schema; invalid metadata is dropped as a whole. */
+function channelName(channel: string | undefined): string {
+  return (channel ?? "")
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .trim()
+    .slice(0, MAX_CHANNEL_LENGTH)
+    .trim();
+}
+
 export function mediaMetadata(item: {
   url_subtitle?: string;
   audioLanguage?: string;
+  channel?: string;
 }): MediaMetadata {
+  const channel = channelName(item.channel);
   const parsed = mediaMetadataSchema.safeParse({
     ...(item.url_subtitle ? { subtitleUrl: item.url_subtitle } : {}),
     ...(item.audioLanguage ? { audioLanguage: item.audioLanguage } : {}),
+    ...(channel ? { channel } : {}),
   });
   return parsed.success ? parsed.data : {};
 }
@@ -59,6 +80,7 @@ export function releaseAudioTag(title: string): string {
 export function mediaMetadataComment(item: {
   url_subtitle?: string;
   audioLanguage?: string;
+  channel?: string;
 }): string {
   const text = `rundfunkarr-media:${JSON.stringify(mediaMetadata(item))}`;
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));

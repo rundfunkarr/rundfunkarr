@@ -4,7 +4,12 @@ import { prisma } from "@/lib/db";
 import { queryContent } from "@/services/content-search";
 import { getSetting } from "@/lib/settings";
 import { isStreamingUrl, withStreamQuality } from "@/lib/stream-url";
-import { notifySubscriptionQueued, type NotificationSubscription } from "./notifications";
+import { mediaMetadata } from "@/lib/media-metadata";
+import {
+  notifySubscriptionFound,
+  notifySubscriptionQueued,
+  type NotificationSubscription,
+} from "./notifications";
 import type { ApiResultItem } from "@/types";
 import type { Prisma } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
@@ -45,11 +50,17 @@ function key(item: ApiResultItem) {
 }
 async function queueMatch(
   tx: Prisma.TransactionClient,
-  match: { id: string; title: string; topic: string; videoUrl: string },
+  match: { id: string; title: string; topic: string; channel: string; videoUrl: string },
   category: string
 ) {
+  const metadata = mediaMetadata({ channel: match.channel });
   const download = await tx.download.create({
-    data: { title: title(match.topic, match.title), url: match.videoUrl, category },
+    data: {
+      title: title(match.topic, match.title),
+      url: match.videoUrl,
+      category,
+      ...(Object.keys(metadata).length ? { mediaMetadata: JSON.stringify(metadata) } : {}),
+    },
   });
   await tx.subscriptionMatch.update({
     where: { id: match.id },
@@ -104,6 +115,7 @@ async function check(id: string) {
         (hls || !isStreamingUrl(item.url_video))
     );
     const queued: NotificationSubscription["downloads"] = [];
+    const found: NotificationSubscription["matches"] = [];
     await prisma.$transaction(
       async (tx) => {
         const latest = await tx.searchSubscription.findUnique({ where: { id } });
@@ -151,6 +163,13 @@ async function check(id: string) {
               title: title(match.topic, match.title),
               channel: match.channel || null,
             });
+          } else if (latest.initialized) {
+            found.push({
+              id: match.id,
+              title: title(match.topic, match.title),
+              channel: match.channel || null,
+              websiteUrl: match.websiteUrl || null,
+            });
           }
         }
         await tx.searchSubscription.update({
@@ -168,16 +187,13 @@ async function check(id: string) {
       },
       { timeout: 20000 }
     );
+    const info = { id, name: subscription.name, query: subscription.query };
+    // One aggregated notification per run instead of one per item.
     if (queued.length) {
       triggerDownloads();
-      // One aggregated notification per run instead of one per queued item.
-      notifySubscriptionQueued({
-        id,
-        name: subscription.name,
-        query: subscription.query,
-        downloads: queued,
-      });
+      notifySubscriptionQueued({ ...info, downloads: queued });
     }
+    if (found.length) notifySubscriptionFound({ ...info, matches: found });
   } catch (error) {
     log.error("Prüfung fehlgeschlagen:", error);
     await prisma.searchSubscription.updateMany({

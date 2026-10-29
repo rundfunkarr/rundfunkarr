@@ -10,17 +10,23 @@ import {
   downloadSubscriptionMatch,
   runDueSubscriptions,
 } from "./subscriptions";
-const { folder, queryContent, startDownloadProcessing, notifySubscriptionQueued } =
-  await vi.hoisted(async () => {
-    const { mkdtemp } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
-    return {
-      folder: await mkdtemp(`${tmpdir()}/rundfunkarr-subscriptions-`),
-      queryContent: vi.fn(),
-      startDownloadProcessing: vi.fn(async () => {}),
-      notifySubscriptionQueued: vi.fn(),
-    };
-  });
+const {
+  folder,
+  queryContent,
+  startDownloadProcessing,
+  notifySubscriptionQueued,
+  notifySubscriptionFound,
+} = await vi.hoisted(async () => {
+  const { mkdtemp } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  return {
+    folder: await mkdtemp(`${tmpdir()}/rundfunkarr-subscriptions-`),
+    queryContent: vi.fn(),
+    startDownloadProcessing: vi.fn(async () => {}),
+    notifySubscriptionQueued: vi.fn(),
+    notifySubscriptionFound: vi.fn(),
+  };
+});
 vi.mock("@/lib/db", async () => {
   const { PrismaClient } = await import("@prisma/client");
   return { prisma: new PrismaClient({ datasourceUrl: `file:${folder}/subscriptions.db` }) };
@@ -28,7 +34,7 @@ vi.mock("@/lib/db", async () => {
 vi.mock("@/services/content-search", () => ({ queryContent }));
 vi.mock("@/lib/settings", () => ({ getSetting: async () => "false" }));
 vi.mock("./download-manager", () => ({ startDownloadProcessing }));
-vi.mock("./notifications", () => ({ notifySubscriptionQueued }));
+vi.mock("./notifications", () => ({ notifySubscriptionQueued, notifySubscriptionFound }));
 const entry = (i: number) => ({
   channel: "ZDF",
   topic: "Natur",
@@ -71,6 +77,7 @@ beforeEach(async () => {
   queryContent.mockReset().mockResolvedValue([entry(1)]);
   startDownloadProcessing.mockClear();
   notifySubscriptionQueued.mockClear();
+  notifySubscriptionFound.mockClear();
 });
 afterAll(async () => {
   await prisma.$disconnect();
@@ -88,6 +95,7 @@ it("merkt den Altbestand vor und lädt nur später neue Treffer einmal herunter,
   expect(await prisma.download.findFirst()).toMatchObject({
     category: "tv",
     url: "https://example.org/2-hd.mp4",
+    mediaMetadata: JSON.stringify({ channel: "ZDF" }),
   });
   await prisma.$disconnect();
   await prisma.$connect();
@@ -118,13 +126,38 @@ it("meldet neu eingereihte Downloads gesammelt einmal pro Prüfung, den Altbesta
   expect(notification.downloads.map((d: { id: string }) => d.id).sort()).toEqual(ids);
   await checkSubscription(sub.id);
   expect(notifySubscriptionQueued).toHaveBeenCalledOnce();
+  expect(notifySubscriptionFound).not.toHaveBeenCalled();
 });
-it("meldet bei Suchabos ohne automatischen Download nichts", async () => {
+it("meldet neue Treffer von Suchabos ohne automatischen Download gesammelt, ohne Downloads", async () => {
   const sub = await saveSubscription({ ...input(), action: "notify" });
   await checkSubscription(sub.id);
-  queryContent.mockResolvedValue([entry(1), entry(2)]);
+  expect(notifySubscriptionFound).not.toHaveBeenCalled();
+  queryContent.mockResolvedValue([entry(1), entry(2), entry(3)]);
   await checkSubscription(sub.id);
   expect(notifySubscriptionQueued).not.toHaveBeenCalled();
+  expect(startDownloadProcessing).not.toHaveBeenCalled();
+  expect(await prisma.download.count()).toBe(0);
+  expect(notifySubscriptionFound).toHaveBeenCalledOnce();
+  const [notification] = notifySubscriptionFound.mock.lastCall!;
+  expect(notification).toMatchObject({ id: sub.id, name: "Naturfilme", query: "Natur" });
+  const matches = await prisma.subscriptionMatch.findMany({ where: { state: "new" } });
+  expect(
+    [...notification.matches].sort((a: { id: string }, b: { id: string }) =>
+      a.id.localeCompare(b.id)
+    )
+  ).toEqual(
+    matches
+      .map((m) => ({
+        id: m.id,
+        title: `Natur - ${m.title}`,
+        channel: "ZDF",
+        websiteUrl: "https://example.org/sendung",
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+  );
+  expect(notification.matches).toHaveLength(2);
+  await checkSubscription(sub.id);
+  expect(notifySubscriptionFound).toHaveBeenCalledOnce();
 });
 it("führt gleichzeitige Prüfungen desselben Suchabos zusammen", async () => {
   const sub = await saveSubscription(input());
@@ -147,6 +180,7 @@ it("erhält Meldungen dauerhaft und fügt einen manuell gewählten Treffer nur e
   ]);
   expect(a).toBe(b);
   expect(await prisma.download.count()).toBe(1);
+  expect((await prisma.download.findFirstOrThrow()).mediaMetadata).toBe('{"channel":"ZDF"}');
 });
 it("ändert einen fehlgeschlagenen ersten Abgleich nicht in einen leeren Altbestand", async () => {
   queryContent.mockResolvedValue(null);

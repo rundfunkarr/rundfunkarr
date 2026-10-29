@@ -22,11 +22,13 @@ import {
   buildDownloadCompletedPayload,
   buildDownloadFailedPayload,
   buildRequest,
+  buildSubscriptionFoundPayload,
   buildSubscriptionQueuedPayload,
   buildTestPayload,
   dispatchNotification,
   notifyDownloadCompleted,
   notifyDownloadFailed,
+  notifySubscriptionFound,
   notifySubscriptionQueued,
   sendToTarget,
   SEND_TIMEOUT_MS,
@@ -122,12 +124,66 @@ describe("payloads", () => {
     expect(payload.body).toContain("• Natur - Folge 1 (ZDF)");
     expect(payload.body).toMatch(/… und 2 weitere$/);
     expect(payload.subscription?.downloads).toHaveLength(12);
+    expect(payload.subscription?.matches).toEqual([]);
     expect(
       buildSubscriptionQueuedPayload(
         { id: "s1", name: "Naturfilme", query: "Natur", downloads: downloads.slice(0, 1) },
         now
       ).title
     ).toBe("Suchabo „Naturfilme“: 1 neuer Download");
+  });
+
+  it("lists new hits of a report-only subscription in one message", () => {
+    const matches = Array.from({ length: 11 }, (_, i) => ({
+      id: `m${i}`,
+      title: `Natur - Folge ${i + 1}`,
+      channel: i === 0 ? null : "ARTE.DE",
+      websiteUrl: `https://example.org/${i}`,
+    }));
+    const payload = buildSubscriptionFoundPayload(
+      { id: "s1", name: "Naturfilme", query: "Natur", matches },
+      now
+    );
+    expect(payload).toMatchObject({
+      version: 1,
+      event: "subscription.found",
+      type: "info",
+      title: "Suchabo „Naturfilme“: 11 neue Treffer",
+      timestamp: now.toISOString(),
+      download: null,
+      subscription: { id: "s1", name: "Naturfilme", query: "Natur", downloads: [], matches },
+    });
+    expect(Object.keys(payload.subscription!)).toEqual([
+      "id",
+      "name",
+      "query",
+      "downloads",
+      "matches",
+    ]);
+    const lines = payload.body.split("\n");
+    expect(lines[0]).toBe("• Natur - Folge 1");
+    expect(lines[1]).toBe("• Natur - Folge 2 (ARTE.DE)");
+    expect(lines.at(-1)).toBe("… und 1 weitere");
+    expect(
+      buildSubscriptionFoundPayload(
+        { id: "s1", name: "Naturfilme", query: "Natur", matches: matches.slice(0, 1) },
+        now
+      ).title
+    ).toBe("Suchabo „Naturfilme“: 1 neuer Treffer");
+  });
+
+  it("keeps aggregated messages short even with very long titles", () => {
+    const matches = Array.from({ length: 10 }, (_, i) => ({
+      id: `m${i}`,
+      title: "x".repeat(400),
+      channel: null,
+      websiteUrl: null,
+    }));
+    const { body } = buildSubscriptionFoundPayload(
+      { id: "s", name: "n", query: "q", matches },
+      now
+    );
+    expect(body.length).toBeLessThanOrEqual(1500);
   });
 
   it("truncates very long error texts", () => {
@@ -146,6 +202,44 @@ describe("requests per target", () => {
     expect(request.url).toBe("http://127.0.0.1:9000/hook?k=1");
     expect(request.headers["Content-Type"]).toBe("application/json");
     expect(json(request.body)).toEqual(completed());
+  });
+
+  it("adds custom webhook headers without touching the content type", () => {
+    const request = buildRequest(
+      "webhook",
+      {
+        url: "http://127.0.0.1:9000/hook",
+        headers: "Authorization: Bearer hook-token\nuser-agent: Home Assistant",
+      },
+      completed()
+    );
+    expect(request.headers).toEqual({
+      "Content-Type": "application/json",
+      Authorization: "Bearer hook-token",
+      "user-agent": "Home Assistant",
+    });
+    expect(() =>
+      buildRequest(
+        "webhook",
+        { url: "http://127.0.0.1:9000/hook", headers: "Content-Type: text/plain" },
+        completed()
+      )
+    ).toThrow("Webhook-Header: Zeile 1: „Content-Type“ setzt RundfunkArr selbst.");
+  });
+
+  it("does not send a webhook with invalid headers", async () => {
+    const result = await sendToTarget(
+      "webhook",
+      { url: "http://127.0.0.1:9000/hook", headers: "X-Token: a\rInjected: 1" },
+      completed()
+    );
+    expect(result).toEqual({
+      target: "webhook",
+      success: false,
+      error:
+        "Webhook-Header: Zeile 1: Der Wert darf nur ASCII-Zeichen ohne Steuerzeichen enthalten.",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("publishes JSON to the ntfy server root with optional bearer token", () => {
@@ -320,6 +414,28 @@ describe("event filtering and targets", () => {
   });
 });
 
+describe("webhook headers from the settings", () => {
+  it("sends stored headers and redacts their values in the log", async () => {
+    values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    values.set(
+      "notifications.webhook.headers",
+      "Authorization: Bearer stored-header-token\nX-Api-Key: stored-api-key"
+    );
+    fetchMock.mockResolvedValue(
+      new Response("denied stored-header-token stored-api-key", { status: 403 })
+    );
+    await dispatchNotification(completed());
+    expect(fetchMock.mock.lastCall![1].headers).toMatchObject({
+      Authorization: "Bearer stored-header-token",
+      "X-Api-Key": "stored-api-key",
+    });
+    const logged = redactLog(String(warn.mock.lastCall![0]));
+    expect(logged).toContain("HTTP 403");
+    expect(logged).not.toContain("stored-header-token");
+    expect(logged).not.toContain("stored-api-key");
+  });
+});
+
 describe("fire-and-forget hooks", () => {
   it("returns immediately and never throws, even when settings cannot be read", async () => {
     const { prisma } = await import("@/lib/db");
@@ -358,8 +474,57 @@ describe("fire-and-forget hooks", () => {
     expect(body.body).toBe("Doku (3sat)\nDatei: Doku.mkv");
   });
 
+  it("prefers the broadcaster stored with the download", async () => {
+    values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    notifyDownloadFailed({
+      id: "sonarr",
+      title: "Tatort",
+      mediaMetadata: JSON.stringify({ subtitleUrl: "https://example.com/t.vtt", channel: "ARD" }),
+      error: "kaputt",
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(findFirst).not.toHaveBeenCalled();
+    const body = json(fetchMock.mock.lastCall![1].body);
+    expect(body.download.channel).toBe("ARD");
+    expect(body.body).toBe("Tatort (ARD)\nFehler: kaputt");
+  });
+
+  it("falls back to null when neither metadata nor a subscription knows the broadcaster", async () => {
+    values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    notifyDownloadCompleted({
+      id: "old",
+      title: "Alt",
+      filePath: "/x/Alt.mkv",
+      size: 1,
+      mediaMetadata: "kein json",
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(findFirst).toHaveBeenCalledOnce();
+    expect(json(fetchMock.mock.lastCall![1].body).download.channel).toBeNull();
+  });
+
+  it("sends subscription hits unless the event is switched off", async () => {
+    values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    const run = {
+      id: "s",
+      name: "Naturfilme",
+      query: "Natur",
+      matches: [{ id: "m", title: "Natur - Folge", channel: "ZDF", websiteUrl: null }],
+    };
+    notifySubscriptionFound(run);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(json(fetchMock.mock.lastCall![1].body).event).toBe("subscription.found");
+    values.set("notifications.event.subscriptionFound", "false");
+    clearSettingsCache();
+    await expect(dispatchNotification(buildSubscriptionFoundPayload(run, now))).resolves.toEqual(
+      []
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("skips empty subscription runs", async () => {
     values.set("notifications.webhook.url", "http://127.0.0.1:1/hook");
+    notifySubscriptionFound({ id: "s", name: "n", query: "q", matches: [] });
     notifySubscriptionQueued({ id: "s", name: "n", query: "q", downloads: [] });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(fetchMock).not.toHaveBeenCalled();
