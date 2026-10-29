@@ -25,8 +25,7 @@ export interface FilmlisteEntry {
 }
 
 export type FilmlisteRecord =
-  | { type: "meta"; listTimestamp: number }
-  | { type: "entry"; entry: FilmlisteEntry };
+  { type: "meta"; listTimestamp: number } | { type: "entry"; entry: FilmlisteEntry };
 
 const ENTRY_SEPARATOR = ',"X":';
 // Withdrawn from MediathekViewWeb's index; kept out for consistent results.
