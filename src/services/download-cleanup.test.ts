@@ -84,7 +84,8 @@ describe("download history folder cleanup", () => {
     await writeFile(sharedFile, "download A");
     const recordA = await recordFileArtifact(sharedFile);
     await rm(sharedFile);
-    await writeFile(sharedFile, "download B");
+    // Linux may hand out the same inode again at once; B differs in size.
+    await writeFile(sharedFile, "download B, a different episode");
     findUnique.mockResolvedValue({
       id: downloadId,
       status: "completed",
@@ -94,7 +95,7 @@ describe("download history folder cleanup", () => {
 
     await expect(deleteHistoryItem(downloadId, true)).resolves.toBe(true);
 
-    await expect(readFile(sharedFile, "utf8")).resolves.toBe("download B");
+    await expect(readFile(sharedFile, "utf8")).resolves.toBe("download B, a different episode");
     expect(deleteDownload).toHaveBeenCalledWith({ where: { id: downloadId } });
   });
 
