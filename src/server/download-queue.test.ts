@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { createServer, type ServerResponse } from "node:http";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import * as fsp from "fs/promises";
 import { NextRequest } from "next/server";
@@ -581,6 +581,45 @@ describe("Warteschlange mit SQLite und echten HTTP-Übertragungen", () => {
     await startDownloadProcessing();
     expect(await prisma.download.count({ where: { status: "completed" } })).toBe(2);
     expect(requests).toHaveLength(2);
+  });
+
+  it("räumt nach einem Neustart während des Skripts nur die eigenen Dateien weg", async () => {
+    const { recordFileArtifact } = await import("./subtitle-artifact");
+    const folder = `${testDir}/downloads`;
+    await mkdir(folder, { recursive: true });
+    const own = `${folder}/Unterbrochen.mp4`;
+    const reused = `${folder}/Wiederbelegt.mp4`;
+    await writeFile(own, "eigene Datei");
+    await writeFile(reused, "alte Datei");
+    const reusedRecord = await recordFileArtifact(reused);
+    await rm(reused);
+    await writeFile(reused, "Datei eines anderen Downloads");
+    await setQueuePaused(true);
+    await job("eigen", undefined, { status: "postprocessing" });
+    await job("fremd", undefined, { status: "postprocessing" });
+    await prisma.download.update({
+      where: { id: "eigen" },
+      data: { fileArtifact: await recordFileArtifact(own) },
+    });
+    await prisma.download.update({ where: { id: "fremd" }, data: { fileArtifact: reusedRecord } });
+    // Recovery runs once per process; simulate the next server start.
+    (globalThis as { rundfunkarrQueue?: { recovered: boolean } }).rundfunkarrQueue!.recovered =
+      false;
+
+    await recoverDownloads();
+
+    await expect(readFile(own)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(reused, "utf8")).resolves.toBe("Datei eines anderen Downloads");
+    expect(
+      await prisma.download.findMany({
+        where: { id: { in: ["eigen", "fremd"] } },
+        select: { status: true, fileArtifact: true },
+      })
+    ).toEqual([
+      { status: "queued", fileArtifact: null },
+      { status: "queued", fileArtifact: null },
+    ]);
+    await setQueuePaused(false);
   });
 
   it("beansprucht denselben Auftrag auch bei zwei gleichzeitigen Aufrufen nur einmal", async () => {

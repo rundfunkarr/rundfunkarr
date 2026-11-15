@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   access,
+  appendFile,
   mkdtemp,
+  open,
   readFile,
   readdir,
   rename,
@@ -35,6 +37,7 @@ vi.mock("./ffmpeg", () => ({
 }));
 
 import { processSubtitles } from "./subtitles";
+import { deleteOwnedFile, recordFileArtifact, refreshFileArtifact } from "./subtitle-artifact";
 import { deleteHistoryItem } from "@/services/download";
 
 const metadata = JSON.stringify({ subtitleUrl: "https://example.org/subtitles.vtt" });
@@ -153,6 +156,7 @@ describe("subtitle artifact ownership", () => {
     expect((await readdir(directory)).sort()).toEqual(["A.mkv", "A.srt"]);
     findUnique.mockResolvedValue({
       filePath: video,
+      fileArtifact: await recordFileArtifact(video),
       subtitleArtifact: JSON.stringify(result.artifact),
     });
 
@@ -213,5 +217,70 @@ describe("subtitle artifact ownership", () => {
       "A.srt.tmp",
       "A.subtitles.mkv",
     ]);
+  });
+});
+
+describe("video identity across a post-processing script", () => {
+  it("takes over an in-place edit of the held file", async () => {
+    const record = await recordFileArtifact(video);
+    const held = await open(video, "r");
+    try {
+      await appendFile(video, " tagged");
+      const refreshed = await refreshFileArtifact(record, held);
+      expect(refreshed).not.toBe(record);
+      await deleteOwnedFile(refreshed);
+      await expect(access(video)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await held.close();
+    }
+  });
+
+  it("keeps the record when the path was replaced before the handle was opened", async () => {
+    const record = await recordFileArtifact(video);
+    const replacement = path.join(directory, "replacement.mkv");
+    await writeFile(replacement, "another download");
+    await rename(replacement, video);
+    const held = await open(video, "r");
+    try {
+      await expect(refreshFileArtifact(record, held)).resolves.toBe(record);
+      await deleteOwnedFile(record);
+      await expect(readFile(video, "utf8")).resolves.toBe("another download");
+    } finally {
+      await held.close();
+    }
+  });
+
+  it("records the identity of the file a handle holds", async () => {
+    const held = await open(video, "r");
+    try {
+      const record = await recordFileArtifact(video, held);
+      // The path changes hands after opening; the record still names the held file.
+      const replacement = path.join(directory, "replacement.mkv");
+      await writeFile(replacement, "another download");
+      await rename(replacement, video);
+      await expect(refreshFileArtifact(record, held)).resolves.toBe(record);
+      await deleteOwnedFile(record);
+      await expect(readFile(video, "utf8")).resolves.toBe("another download");
+    } finally {
+      await held.close();
+    }
+  });
+
+  it("keeps the record when the file at the path is not the held one", async () => {
+    // Models a deleted original whose inode went to another download's file:
+    // the path still shows the recorded inode, but the held handle does not.
+    const record = await recordFileArtifact(video);
+    const original = path.join(directory, "original.mkv");
+    await writeFile(original, "original video");
+    const held = await open(original, "r");
+    try {
+      await appendFile(video, " another download");
+      await expect(refreshFileArtifact(record, held)).resolves.toBe(record);
+      await expect(refreshFileArtifact(record, null)).resolves.toBe(record);
+      await deleteOwnedFile(record);
+      await expect(readFile(video, "utf8")).resolves.toContain("another download");
+    } finally {
+      await held.close();
+    }
   });
 });

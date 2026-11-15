@@ -53,6 +53,7 @@ model Download {
   mediaMetadata   String?
   warning         String?
   subtitleArtifact String?   // JSON identity of the sidecar created by this download
+  fileArtifact    String?   // JSON identity of the video published by this download
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
 

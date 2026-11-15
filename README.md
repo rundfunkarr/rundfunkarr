@@ -139,6 +139,8 @@ curl -s -d "Fertig: $3 ($5)" https://ntfy.sh/mein-thema
   entfernt. Nach dem Fortsetzen wird sie neu geladen.
 - Verschiebt oder löscht das Skript die Videodatei, kann Sonarr/Radarr sie nicht mehr
   importieren.
+- Bei den gemeinsamen [Ablagen](#ablage-der-downloads) ist `$1` der Kategorie-Ordner oder
+  der Download-Pfad selbst und enthält auch andere Downloads.
 - Das Docker-Image basiert auf Alpine und enthält `sh` und `curl`, aber weder `bash` noch
   Python. Skripte mit `#!/bin/bash` laufen dort nicht.
 - Auswählbar sind nur Dateien aus dem Skriptordner. Den Ordner legt ausschließlich
@@ -357,6 +359,24 @@ eingehende Suchanfragen, Ergebnisse, Downloads, Skripte und Imports; `debug`
 ergänzt Details zu Suchschritten, Regelwerken, Metadaten-Abfragen und
 Downloadschritten. Ungültige Werte werden mit einer Warnung ignoriert.
 
+### Ablage der Downloads
+
+Unter Einstellungen → Allgemein → **Ablage** legst du fest, wo fertige Dateien im
+Download-Pfad landen. Manuelle Downloads ohne Kategorie gehören zur Kategorie `default`.
+
+| Ablage | Beispiel |
+|--------|----------|
+| Eigener Ordner pro Download (Standard) | `/downloads/tv/<ID>/Tatort.mkv` |
+| Ordner pro Kategorie | `/downloads/tv/Tatort.mkv` |
+| Direkt im Download-Pfad | `/downloads/Tatort.mkv` |
+
+Der eigene Ordner pro Download entspricht SABnzbd. In den beiden gemeinsamen Ablagen
+überschreibt RundfunkArr keine vorhandene Datei: Gibt es den Namen schon, bekommt der neue
+Download einen Zusatz wie `Tatort (2).mkv`. „Löschen mit Dateien“ entfernt nur die Datei,
+die dieser Download abgelegt hat, auch wenn inzwischen eine andere unter demselben Namen liegt.
+Sonarr und Radarr importieren in allen drei Ablagen die einzelne Datei. Post-Processing-Skripte erhalten in den gemeinsamen Ablagen den
+gemeinsamen Ordner als `$1`; ein Skript darf diesen Ordner dann nicht als Ganzes löschen.
+
 ### Diagnose und Protokoll schützen
 
 Einen zufälligen Admin-Schlüssel mit `openssl rand -hex 32` erzeugen, als
@@ -476,7 +496,7 @@ RundfunkArr bietet eine vollständige Web-Oberfläche mit:
 - **Serien** und **Filme** - Zwischengespeicherte Serien aus TVDB und Filmsuche in den Mediatheken
 - **Rulesets** - Zuordnungsregeln ansehen, prüfen und lokal überschreiben
 - **Einstellungen** - Alle Einstellungen konfigurieren:
-  - Download-Pfad, Qualitäts-Präferenzen, Untertitel und optionale MKV-Konvertierung
+  - Download-Pfad, Ablage, Qualitäts-Präferenzen, Untertitel und optionale MKV-Konvertierung
   - API Keys für TVDB/TMDB/SRG-SSR
   - Matching-Strategie und Schwellwerte
   - Benachrichtigungen per Webhook, ntfy, Gotify und Discord

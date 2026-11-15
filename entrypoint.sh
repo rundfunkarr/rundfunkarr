@@ -91,7 +91,7 @@ add_column() {
         su-exec "$USER_NAME" sqlite3 "$DB_PATH" "ALTER TABLE $1 ADD COLUMN $2 $3;"
     fi
 }
-for column in priority attempts nextRetryAt mediaMetadata warning subtitleArtifact; do
+for column in priority attempts nextRetryAt mediaMetadata warning subtitleArtifact fileArtifact; do
     case "$column" in
         nextRetryAt) definition="DATETIME" ;;
         priority|attempts) definition="INTEGER NOT NULL DEFAULT 0" ;;

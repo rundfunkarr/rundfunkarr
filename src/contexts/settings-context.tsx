@@ -7,6 +7,7 @@ import { maskSetting } from "@/lib/settings-redaction";
 interface Settings {
   // General
   "download.path": string;
+  "download.folderLayout": string;
   "download.quality": string;
   "download.convertToMkv": string;
 

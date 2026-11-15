@@ -34,6 +34,21 @@ export function GeneralSettings({ form }: { form: SettingsForm }) {
             )}
           </Field>
           <Field
+            label="Ablage"
+            htmlFor="folder-layout"
+            hint="Ein eigener Ordner pro Download entspricht SABnzbd. In gemeinsamen Ordnern bekommt eine Datei mit schon vorhandenem Namen einen Zusatz wie (2). Post-Processing-Skripte erhalten dann den gemeinsamen Ordner als Job-Ordner."
+          >
+            <Select
+              id="folder-layout"
+              value={getFieldValue("download.folderLayout") || "job"}
+              onChange={(e) => setFieldValue("download.folderLayout", e.target.value)}
+            >
+              <option value="job">Eigener Ordner pro Download (Kategorie/ID)</option>
+              <option value="category">Ordner pro Kategorie</option>
+              <option value="flat">Direkt im Download-Pfad</option>
+            </Select>
+          </Field>
+          <Field
             label="Bevorzugte Qualität"
             hint="Welche Qualitäten im Newznab-Feed angeboten werden."
           >
@@ -97,6 +112,7 @@ export function GeneralSettings({ form }: { form: SettingsForm }) {
             onClick={() =>
               handleSave([
                 "download.path",
+                "download.folderLayout",
                 "download.quality",
                 "download.convertToMkv",
                 "download.subtitleMode",
