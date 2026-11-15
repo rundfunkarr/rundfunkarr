@@ -889,6 +889,36 @@ describe("download folder layouts", () => {
     }
   );
 
+  it("skips a name whose subtitle file already exists", async () => {
+    configure("flat", { "download.subtitleMode": "sidecar" });
+    downloadFindUnique.mockResolvedValue({
+      id: "sidecar-taken",
+      title: "Folge",
+      category: "tv",
+      status: "queued",
+      url: "https://example.com/video.mp4",
+      mediaMetadata: JSON.stringify({ subtitleUrl: "https://example.com/subtitles.vtt" }),
+    });
+    // An earlier download's video was imported elsewhere; its subtitles stayed.
+    await writeFile(path.join(testRoot, "Folge.srt"), "earlier subtitles");
+
+    await processDownload("sidecar-taken");
+
+    await expect(readFile(path.join(testRoot, "Folge.srt"), "utf8")).resolves.toBe(
+      "earlier subtitles"
+    );
+    await expect(access(path.join(testRoot, "Folge.mp4"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    const data = downloadUpdate.mock.lastCall![0].data;
+    expect(data).toMatchObject({
+      status: "completed",
+      warning: null,
+      filePath: "/mapped/downloads/Folge (2).mp4",
+    });
+    expect(JSON.parse(data.subtitleArtifact).path).toBe(path.join(testRoot, "Folge (2).srt"));
+  });
+
   it("copies exclusively when the shared folder is on another volume", async () => {
     configure("category");
     queue("cross-device");

@@ -26,7 +26,7 @@ const { getSetting, findUnique, deleteDownload, spawn, ffmpegAvailable, fetchSub
 vi.mock("./subtitle-fetch", () => ({ fetchSubtitle }));
 vi.mock("@/lib/settings", () => ({ getSetting }));
 vi.mock("@/lib/db", () => ({
-  prisma: { download: { findUnique, delete: deleteDownload } },
+  prisma: { download: { findUnique, findFirst: vi.fn(async () => null), delete: deleteDownload } },
 }));
 vi.mock("node:child_process", () => ({ spawn }));
 vi.mock("./ffmpeg", () => ({

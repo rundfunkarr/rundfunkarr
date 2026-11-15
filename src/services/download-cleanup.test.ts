@@ -3,14 +3,15 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
-const { findUnique, deleteDownload, controlDownload } = vi.hoisted(() => ({
+const { findUnique, findFirst, deleteDownload, controlDownload } = vi.hoisted(() => ({
   findUnique: vi.fn(),
+  findFirst: vi.fn(),
   deleteDownload: vi.fn(),
   controlDownload: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: { download: { findUnique, delete: deleteDownload } },
+  prisma: { download: { findUnique, findFirst, delete: deleteDownload } },
 }));
 vi.mock("@/server/download-queue", () => ({ controlDownload }));
 
@@ -28,6 +29,7 @@ describe("download history folder cleanup", () => {
     filePath = path.join(directory, "Video.mp4");
     await mkdir(directory, { recursive: true });
     findUnique.mockReset().mockResolvedValue({ id: downloadId, status: "completed", filePath });
+    findFirst.mockReset().mockResolvedValue(null);
     deleteDownload.mockReset().mockResolvedValue({});
     controlDownload.mockReset().mockResolvedValue(false);
   });
@@ -71,6 +73,22 @@ describe("download history folder cleanup", () => {
 
     await expect(access(legacyFile)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(categoryDir)).resolves.toBeUndefined();
+  });
+
+  it("keeps a shared file whose name a later download reused", async () => {
+    const sharedFile = path.join(root, "Video.mp4");
+    await writeFile(sharedFile, "newer download");
+    findUnique.mockResolvedValue({ id: downloadId, status: "completed", filePath: sharedFile });
+    findFirst.mockResolvedValue({ id: "newer-job" });
+
+    await expect(deleteHistoryItem(downloadId, true)).resolves.toBe(true);
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { filePath: sharedFile, id: { not: downloadId } },
+      select: { id: true },
+    });
+    await expect(readFile(sharedFile, "utf8")).resolves.toBe("newer download");
+    expect(deleteDownload).toHaveBeenCalledWith({ where: { id: downloadId } });
   });
 
   it("keeps the file and directory when only the history entry is deleted", async () => {

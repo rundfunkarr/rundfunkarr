@@ -260,8 +260,16 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
     if (!download) return false;
   }
 
-  // Delete the file if requested
-  if (delFiles && download.filePath) {
+  // Delete the file if requested. In shared folders a moved file's name can be
+  // reused by a later download with the same title; that file is not ours.
+  const reusedPath =
+    delFiles && download.filePath
+      ? await prisma.download.findFirst({
+          where: { filePath: download.filePath, id: { not: download.id } },
+          select: { id: true },
+        })
+      : null;
+  if (delFiles && download.filePath && !reusedPath) {
     try {
       const fs = await import("fs/promises");
       await fs.unlink(download.filePath).catch(() => {});

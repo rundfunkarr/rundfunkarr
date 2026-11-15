@@ -56,14 +56,10 @@ async function publishExclusive(sourcePath: string, targetPath: string): Promise
       !["EXDEV", "EPERM", "ENOTSUP", "ENOSYS"].includes((error as NodeJS.ErrnoException).code || "")
     )
       throw error;
-    // Other volume or no hardlink support: copy exclusively instead.
-    try {
-      await fs.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
-    } catch (copyError) {
-      if ((copyError as NodeJS.ErrnoException).code !== "EEXIST")
-        await fs.unlink(targetPath).catch(() => {});
-      throw copyError;
-    }
+    // Other volume or no hardlink support: copy exclusively instead. Node
+    // removes a destination it created itself if the copy fails; removing the
+    // name here could delete a file another job just published there.
+    await fs.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
   }
   await fs.unlink(sourcePath).catch(() => {});
 }
@@ -73,6 +69,8 @@ const MAX_NAME_ATTEMPTS = 100;
 /**
  * Move a file into a folder that other downloads share. An existing file with
  * the same name is never replaced; the new one gets a " (2)" style suffix.
+ * A name whose subtitle file (same name, .srt) already exists counts as taken,
+ * so the video and its own subtitles keep the same name.
  */
 async function publishWithFreeName(
   sourcePath: string,
@@ -82,10 +80,15 @@ async function publishWithFreeName(
   const extension = path.extname(fileName);
   const stem = fileName.slice(0, fileName.length - extension.length);
   for (let attempt = 1; attempt <= MAX_NAME_ATTEMPTS; attempt++) {
-    const targetPath = path.join(
-      /*turbopackIgnore: true*/ targetDir,
-      attempt === 1 ? fileName : `${stem} (${attempt})${extension}`
-    );
+    const candidate = attempt === 1 ? stem : `${stem} (${attempt})`;
+    const targetPath = path.join(/*turbopackIgnore: true*/ targetDir, `${candidate}${extension}`);
+    const sidecarTaken = await fs
+      .access(path.join(/*turbopackIgnore: true*/ targetDir, `${candidate}.srt`))
+      .then(
+        () => true,
+        () => false
+      );
+    if (sidecarTaken) continue;
     try {
       await publishExclusive(sourcePath, targetPath);
       return targetPath;
