@@ -73,6 +73,19 @@ export async function isMkvConversionEnabled(): Promise<boolean> {
   return (await getSetting("download.convertToMkv")) !== "false";
 }
 
+/**
+ * Where finished downloads are stored below the download path:
+ * - job: <category>/<download id>/ (default, one folder per download like SABnzbd)
+ * - category: <category>/
+ * - flat: directly in the download path
+ */
+export type DownloadFolderLayout = "job" | "category" | "flat";
+
+export async function getDownloadFolderLayout(): Promise<DownloadFolderLayout> {
+  const value = await getSetting("download.folderLayout");
+  return value === "category" || value === "flat" ? value : "job";
+}
+
 export async function isSeriesUmlautStrippingEnabled(): Promise<boolean> {
   return (await getSetting("matching.normalizeSeriesNamesForSonarr")) === "true";
 }

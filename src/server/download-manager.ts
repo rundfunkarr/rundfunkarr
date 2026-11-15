@@ -1,6 +1,6 @@
 import { processSubtitles } from "./subtitles";
 import { prisma } from "@/lib/db";
-import { getSetting, isMkvConversionEnabled } from "@/lib/settings";
+import { getDownloadFolderLayout, getSetting, isMkvConversionEnabled } from "@/lib/settings";
 import { downloadHlsStream } from "./ytdlp";
 import { runPostProcessScript } from "./post-process";
 import { notifyDownloadCompleted, notifyDownloadFailed } from "./notifications";
@@ -37,35 +37,105 @@ async function getDownloadTempPath(): Promise<string> {
   return process.env.DOWNLOAD_TEMP_PATH || path.join(basePath, "incomplete");
 }
 
+async function moveFile(sourcePath: string, targetPath: string): Promise<void> {
+  try {
+    await fs.rename(sourcePath, targetPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    await fs.copyFile(sourcePath, targetPath);
+    await fs.unlink(sourcePath);
+  }
+}
+
+/** Publish a file without replacing anything; fails with EEXIST if the name is taken. */
+async function publishExclusive(sourcePath: string, targetPath: string): Promise<void> {
+  try {
+    await fs.link(sourcePath, targetPath);
+  } catch (error) {
+    if (
+      !["EXDEV", "EPERM", "ENOTSUP", "ENOSYS"].includes((error as NodeJS.ErrnoException).code || "")
+    )
+      throw error;
+    // Other volume or no hardlink support: copy exclusively instead.
+    try {
+      await fs.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
+    } catch (copyError) {
+      if ((copyError as NodeJS.ErrnoException).code !== "EEXIST")
+        await fs.unlink(targetPath).catch(() => {});
+      throw copyError;
+    }
+  }
+  await fs.unlink(sourcePath).catch(() => {});
+}
+
+const MAX_NAME_ATTEMPTS = 100;
+
 /**
- * Create the per-download folder and move a finished file into it.
+ * Move a file into a folder that other downloads share. An existing file with
+ * the same name is never replaced; the new one gets a " (2)" style suffix.
+ */
+async function publishWithFreeName(
+  sourcePath: string,
+  targetDir: string,
+  fileName: string
+): Promise<string> {
+  const extension = path.extname(fileName);
+  const stem = fileName.slice(0, fileName.length - extension.length);
+  for (let attempt = 1; attempt <= MAX_NAME_ATTEMPTS; attempt++) {
+    const targetPath = path.join(
+      /*turbopackIgnore: true*/ targetDir,
+      attempt === 1 ? fileName : `${stem} (${attempt})${extension}`
+    );
+    try {
+      await publishExclusive(sourcePath, targetPath);
+      return targetPath;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+  throw new DownloadFailure("Im Zielordner ist kein freier Dateiname mehr verfügbar.");
+}
+
+/**
+ * Create the destination folder, move a finished file into it and return the
+ * final path. A per-download folder belongs to this job alone, so a plain
+ * rename is safe there; shared folders never replace an existing file.
  *
  * An *arr import may remove the empty folder between mkdir and rename.
  * Re-create it and retry once on ENOENT. A missing source also surfaces as
  * ENOENT and correctly fails the retry.
  */
-async function moveIntoCategoryDir(
+async function moveIntoTargetDir(
   sourcePath: string,
-  targetPath: string,
-  categoryDir: string
-): Promise<void> {
-  await fs.mkdir(categoryDir, { recursive: true });
+  targetDir: string,
+  fileName: string,
+  shared: boolean
+): Promise<string> {
   const move = async () => {
-    try {
-      await fs.rename(sourcePath, targetPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
-      await fs.copyFile(sourcePath, targetPath);
-      await fs.unlink(sourcePath);
-    }
+    if (shared) return publishWithFreeName(sourcePath, targetDir, fileName);
+    const targetPath = path.join(/*turbopackIgnore: true*/ targetDir, fileName);
+    await moveFile(sourcePath, targetPath);
+    return targetPath;
   };
+  await fs.mkdir(targetDir, { recursive: true });
   try {
-    await move();
+    return await move();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await fs.mkdir(categoryDir, { recursive: true });
-    await move();
+    await fs.mkdir(targetDir, { recursive: true });
+    return await move();
   }
+}
+
+/** The path reported to Sonarr/Radarr, translated by DOWNLOAD_FOLDER_PATH_MAPPING. */
+function storagePathFor(finalPath: string, downloadBasePath: string): string {
+  const mapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
+  return mapping
+    ? path.join(
+        /*turbopackIgnore: true*/ mapping,
+        path.relative(/*turbopackIgnore: true*/ downloadBasePath, finalPath)
+      )
+    : finalPath;
 }
 
 /**
@@ -154,12 +224,16 @@ async function processDownload(
     const downloadTempPath = path.join(await getDownloadTempPath(), downloadId);
     jobTempPath = downloadTempPath;
     const categoryFolder = download.category || "default";
-    const categoryDir = path.join(
-      /*turbopackIgnore: true*/ downloadBasePath,
-      categoryFolder,
-      downloadId
-    );
-    finalDir = categoryDir;
+    const layout = await getDownloadFolderLayout();
+    const targetDir =
+      layout === "flat"
+        ? downloadBasePath
+        : layout === "category"
+          ? path.join(/*turbopackIgnore: true*/ downloadBasePath, categoryFolder)
+          : path.join(/*turbopackIgnore: true*/ downloadBasePath, categoryFolder, downloadId);
+    const sharedTarget = layout !== "job";
+    // Only a per-download folder is ours to remove again after a failure.
+    if (!sharedTarget) finalDir = targetDir;
     await fs.mkdir(downloadTempPath, { recursive: true });
 
     // Check if this is an HLS stream
@@ -181,10 +255,6 @@ async function processDownload(
       const container = (await isMkvConversionEnabled()) ? "mkv" : "mp4";
       const tempMkvPath = path.join(
         /*turbopackIgnore: true*/ downloadTempPath,
-        `${download.title}.${container}`
-      );
-      const finalMkvPath = path.join(
-        /*turbopackIgnore: true*/ categoryDir,
         `${download.title}.${container}`
       );
 
@@ -219,23 +289,20 @@ async function processDownload(
       signal?.throwIfAborted();
       // Move to final location
       const outputPath = hlsResult.outputPath || tempMkvPath;
-      log.debug(`Moving HLS result to final location: ${finalMkvPath}`);
-      await moveIntoCategoryDir(outputPath, finalMkvPath, categoryDir);
+      log.debug(`Moving HLS result to final location: ${targetDir}`);
+      const finalMkvPath = await moveIntoTargetDir(
+        outputPath,
+        targetDir,
+        `${download.title}.${container}`,
+        sharedTarget
+      );
 
       // Get file size
       const { warning, artifact } = await processSubtitles(finalMkvPath, download.mediaMetadata);
       const stats = await fs.stat(/*turbopackIgnore: true*/ finalMkvPath);
 
       // Calculate storage path (may be mapped differently)
-      const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
-      const storagePath = downloadFolderMapping
-        ? path.join(
-            /*turbopackIgnore: true*/ downloadFolderMapping,
-            categoryFolder,
-            downloadId,
-            `${download.title}.${container}`
-          )
-        : finalMkvPath;
+      const storagePath = storagePathFor(finalMkvPath, downloadBasePath);
       const scriptWarning = await runConfiguredScript(
         download,
         finalMkvPath,
@@ -302,7 +369,6 @@ async function processDownload(
     if (fileExtension.toLowerCase() === ".mp4" && (await isMkvConversionEnabled())) {
       // Convert in temp folder first
       const tempMkvPath = path.join(downloadTempPath, `${download.title}.mkv`);
-      const finalMkvPath = path.join(categoryDir, `${download.title}.mkv`);
 
       log.debug(`Converting to MKV: ${tempMkvPath}`);
 
@@ -325,10 +391,15 @@ async function processDownload(
       }
 
       signal?.throwIfAborted();
-      // Move completed MKV to final location; see moveIntoCategoryDir for why
-      // the category directory is re-created here.
-      log.debug(`Moving to final location: ${finalMkvPath}`);
-      await moveIntoCategoryDir(tempMkvPath, finalMkvPath, categoryDir);
+      // Move completed MKV to final location; see moveIntoTargetDir for why
+      // the target directory is re-created here.
+      log.debug(`Moving to final location: ${targetDir}`);
+      const finalMkvPath = await moveIntoTargetDir(
+        tempMkvPath,
+        targetDir,
+        `${download.title}.mkv`,
+        sharedTarget
+      );
 
       // Clean up temp MP4 file
       await fs.unlink(mp4Path).catch(() => {});
@@ -338,10 +409,7 @@ async function processDownload(
       const stats = await fs.stat(finalMkvPath);
 
       // Calculate storage path (may be mapped differently)
-      const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
-      const storagePath = downloadFolderMapping
-        ? path.join(downloadFolderMapping, categoryFolder, downloadId, `${download.title}.mkv`)
-        : finalMkvPath;
+      const storagePath = storagePathFor(finalMkvPath, downloadBasePath);
       const scriptWarning = await runConfiguredScript(
         download,
         finalMkvPath,
@@ -366,25 +434,18 @@ async function processDownload(
       );
     } else {
       // Keep non-MP4 files and MP4 files with disabled conversion unchanged.
-      const finalPath = path.join(
-        /*turbopackIgnore: true*/ categoryDir,
-        `${download.title}${fileExtension}`
-      );
       signal?.throwIfAborted();
-      await moveIntoCategoryDir(mp4Path, finalPath, categoryDir);
+      const finalPath = await moveIntoTargetDir(
+        mp4Path,
+        targetDir,
+        `${download.title}${fileExtension}`,
+        sharedTarget
+      );
 
       const { warning, artifact } = await processSubtitles(finalPath, download.mediaMetadata);
       const stats = await fs.stat(/*turbopackIgnore: true*/ finalPath);
 
-      const downloadFolderMapping = process.env.DOWNLOAD_FOLDER_PATH_MAPPING;
-      const storagePath = downloadFolderMapping
-        ? path.join(
-            /*turbopackIgnore: true*/ downloadFolderMapping,
-            categoryFolder,
-            downloadId,
-            `${download.title}${fileExtension}`
-          )
-        : finalPath;
+      const storagePath = storagePathFor(finalPath, downloadBasePath);
       const scriptWarning = await runConfiguredScript(
         download,
         finalPath,

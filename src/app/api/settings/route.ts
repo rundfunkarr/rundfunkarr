@@ -18,6 +18,7 @@ import { parseWebhookHeaders } from "@/lib/webhook-headers";
 const DEFAULT_SETTINGS: Record<string, string> = {
   // General
   "download.path": "/downloads",
+  "download.folderLayout": "job",
   "download.quality": "all",
   "download.convertToMkv": "true",
   "download.subtitleMode": "off",

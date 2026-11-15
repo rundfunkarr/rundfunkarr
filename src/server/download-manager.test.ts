@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as fsp from "fs/promises";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "fs/promises";
 
-// Everything stays the real implementation; only `rename` is wrapped in a
-// vi.fn so a single test can inject a failure into its first call (ESM module
-// namespaces cannot be spied on directly).
+// Everything stays the real implementation; only `rename` and `link` are
+// wrapped in a vi.fn so a single test can inject a failure into a call (ESM
+// module namespaces cannot be spied on directly).
 vi.mock("fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs/promises")>();
-  return { ...actual, rename: vi.fn(actual.rename) };
+  return { ...actual, rename: vi.fn(actual.rename), link: vi.fn(actual.link) };
 });
 import { tmpdir } from "os";
 import path from "path";
@@ -790,4 +790,151 @@ it.each(["network error", "stall"])("removes partial files after a %s", async (f
   } finally {
     vi.useRealTimers();
   }
+});
+
+describe("download folder layouts", () => {
+  const mediaBytes = new Uint8Array([9, 8, 7]);
+
+  function configure(layout: string, extra: Record<string, string> = {}) {
+    const values: Record<string, string> = {
+      "download.path": testRoot,
+      "download.convertToMkv": "false",
+      "download.folderLayout": layout,
+      ...extra,
+    };
+    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) =>
+      Promise.resolve(where.key in values ? { value: values[where.key] } : null)
+    );
+  }
+
+  function queue(id: string, category = "tv", url = "https://example.com/video.mp4") {
+    downloadFindUnique.mockResolvedValue({ id, title: "Folge", category, status: "queued", url });
+  }
+
+  beforeEach(() => {
+    downloadUpdate.mockResolvedValue({});
+    downloadCount.mockResolvedValue(0);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(mediaBytes, { status: 200 }))
+    );
+  });
+
+  it.each([
+    ["flat", "", "Folge.mp4"],
+    ["category", "tv", "tv/Folge.mp4"],
+    ["category", "", "default/Folge.mp4"],
+    ["job", "tv", "tv/layout/Folge.mp4"],
+    ["unknown", "tv", "tv/layout/Folge.mp4"],
+  ])("stores %s downloads with category '%s' at %s", async (layout, category, relative) => {
+    configure(layout);
+    queue("layout", category);
+
+    await processDownload("layout");
+
+    await expect(readFile(path.join(testRoot, relative))).resolves.toEqual(Buffer.from(mediaBytes));
+    expect(downloadUpdate).toHaveBeenLastCalledWith({
+      where: { id: "layout" },
+      data: expect.objectContaining({
+        status: "completed",
+        filePath: path.join("/mapped/downloads", relative),
+      }),
+    });
+  });
+
+  it.each(["mp4", "mkv", "hls"])(
+    "never replaces an existing %s file in a shared folder",
+    async (source) => {
+      const extension = source === "mkv" ? "mkv" : "mp4";
+      configure("flat", {
+        "download.convertToMkv": String(source === "mkv"),
+        "download.subtitleMode": "sidecar",
+      });
+      downloadFindUnique.mockResolvedValue({
+        id: "second",
+        title: "Folge",
+        category: "tv",
+        status: "queued",
+        url: `https://example.com/video.${source === "hls" ? "m3u8" : "mp4"}`,
+        mediaMetadata: JSON.stringify({ subtitleUrl: "https://example.com/subtitles.vtt" }),
+      });
+      convertMp4ToMkv.mockImplementation(async (_input: string, output: string) => {
+        await writeFile(output, mediaBytes);
+        return { success: true };
+      });
+      downloadHlsStream.mockImplementation(async (_url: string, output: string) => {
+        await writeFile(output, mediaBytes);
+        return { success: true, outputPath: output };
+      });
+      await writeFile(path.join(testRoot, `Folge.${extension}`), "first download");
+      await writeFile(path.join(testRoot, `Folge (2).${extension}`), "second download");
+
+      await processDownload("second");
+
+      await expect(readFile(path.join(testRoot, `Folge.${extension}`), "utf8")).resolves.toBe(
+        "first download"
+      );
+      await expect(readFile(path.join(testRoot, `Folge (2).${extension}`), "utf8")).resolves.toBe(
+        "second download"
+      );
+      await expect(readFile(path.join(testRoot, `Folge (3).${extension}`))).resolves.toEqual(
+        Buffer.from(mediaBytes)
+      );
+      const data = downloadUpdate.mock.lastCall![0].data;
+      expect(data).toMatchObject({
+        status: "completed",
+        filePath: `/mapped/downloads/Folge (3).${extension}`,
+      });
+      expect(JSON.parse(data.subtitleArtifact).path).toBe(path.join(testRoot, "Folge (3).srt"));
+    }
+  );
+
+  it("copies exclusively when the shared folder is on another volume", async () => {
+    configure("category");
+    queue("cross-device");
+    await mkdir(path.join(testRoot, "tv"));
+    await writeFile(path.join(testRoot, "tv", "Folge.mp4"), "existing");
+    vi.mocked(fsp.link)
+      .mockRejectedValueOnce(Object.assign(new Error("cross-device"), { code: "EXDEV" }))
+      .mockRejectedValueOnce(Object.assign(new Error("cross-device"), { code: "EXDEV" }));
+
+    await processDownload("cross-device");
+
+    await expect(readFile(path.join(testRoot, "tv", "Folge.mp4"), "utf8")).resolves.toBe(
+      "existing"
+    );
+    await expect(readFile(path.join(testRoot, "tv", "Folge (2).mp4"))).resolves.toEqual(
+      Buffer.from(mediaBytes)
+    );
+    await expect(readdir(path.join(testRoot, "incomplete"))).resolves.toEqual([]);
+  });
+
+  it.each(["flat", "category"])(
+    "keeps the shared %s folder when a download fails",
+    async (layout) => {
+      configure(layout);
+      queue("failing");
+      const shared = layout === "flat" ? testRoot : path.join(testRoot, "tv");
+      await mkdir(shared, { recursive: true });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(null, { status: 404 }))
+      );
+      // Keep the temporary folder outside so the shared folder is empty afterwards.
+      const temporary = await mkdtemp(path.join(tmpdir(), "rundfunkarr-temp-"));
+      vi.stubEnv("DOWNLOAD_TEMP_PATH", temporary);
+
+      try {
+        await processDownload("failing");
+      } finally {
+        await rm(temporary, { recursive: true, force: true });
+      }
+
+      await expect(access(shared)).resolves.toBeUndefined();
+      expect(downloadUpdate).toHaveBeenLastCalledWith({
+        where: { id: "failing" },
+        data: expect.objectContaining({ status: "failed" }),
+      });
+    }
+  );
 });
