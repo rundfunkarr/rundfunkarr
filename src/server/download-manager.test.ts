@@ -531,6 +531,44 @@ describe("processDownload", () => {
     await expect(access(directory)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("withdraws its own video after a script edited it in place", async () => {
+    const scripts = path.join(testRoot, "scripts");
+    const started = path.join(testRoot, "script-started");
+    await mkdir(scripts);
+    await writeFile(
+      path.join(scripts, "edit.sh"),
+      `#!/bin/sh\necho tagged >> "$RUNDFUNKARR_FILE"\ntouch "${started}"\nsleep 30\n`,
+      { mode: 0o755 }
+    );
+    vi.stubEnv("POST_PROCESS_SCRIPTS_DIR", scripts);
+    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
+      if (where.key === "download.path") return Promise.resolve({ value: testRoot });
+      if (where.key === "download.convertToMkv") return Promise.resolve({ value: "false" });
+      if (where.key === "download.folderLayout") return Promise.resolve({ value: "flat" });
+      if (where.key === "download.postProcessScript") return Promise.resolve({ value: "edit.sh" });
+      return Promise.resolve(null);
+    });
+    downloadFindUnique.mockResolvedValue({
+      id: "download-9",
+      title: "Show.S01E09",
+      category: "sonarr",
+      status: "queued",
+      url: "https://example.com/video.mp4",
+    });
+    downloadUpdate.mockResolvedValue({});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("video bytes")));
+    const controller = new AbortController();
+
+    const processing = processDownload("download-9", controller.signal);
+    await vi.waitFor(() => access(started), { timeout: 5000 });
+    controller.abort("cancel");
+    await processing;
+
+    await expect(access(path.join(testRoot, "Show.S01E09.mp4"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("withdraws only its own file when a script ran in a shared folder", async () => {
     const scripts = path.join(testRoot, "scripts");
     const started = path.join(testRoot, "script-started");

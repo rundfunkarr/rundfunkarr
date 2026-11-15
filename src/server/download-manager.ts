@@ -196,7 +196,7 @@ async function runConfiguredScript(
     // Paused or cancelled while the script ran: as during conversion, the
     // download must not complete. Withdraw the published files so nothing is
     // left behind; resuming downloads them again.
-    await deleteOwnedFile(published);
+    await deleteOwnedFile(await refreshFileArtifact(published));
     await deleteSubtitleSidecar(subtitle && JSON.stringify(subtitle));
     signal.throwIfAborted();
   }
