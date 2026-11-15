@@ -530,6 +530,50 @@ describe("processDownload", () => {
     await expect(access(directory)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("withdraws only its own file when a script ran in a shared folder", async () => {
+    const scripts = path.join(testRoot, "scripts");
+    const started = path.join(testRoot, "script-started");
+    const elsewhere = path.join(testRoot, "imported.mp4");
+    await mkdir(scripts);
+    // Move the video away and let another download take the same name.
+    await writeFile(
+      path.join(scripts, "move.sh"),
+      `#!/bin/sh
+mv "$RUNDFUNKARR_FILE" "${elsewhere}"
+echo other > "$RUNDFUNKARR_FILE"
+touch "${started}"
+sleep 30
+`,
+      { mode: 0o755 }
+    );
+    vi.stubEnv("POST_PROCESS_SCRIPTS_DIR", scripts);
+    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
+      if (where.key === "download.path") return Promise.resolve({ value: testRoot });
+      if (where.key === "download.convertToMkv") return Promise.resolve({ value: "false" });
+      if (where.key === "download.folderLayout") return Promise.resolve({ value: "flat" });
+      if (where.key === "download.postProcessScript") return Promise.resolve({ value: "move.sh" });
+      return Promise.resolve(null);
+    });
+    downloadFindUnique.mockResolvedValue({
+      id: "download-7",
+      title: "Show.S01E07",
+      category: "sonarr",
+      status: "queued",
+      url: "https://example.com/video.mp4",
+    });
+    downloadUpdate.mockResolvedValue({});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("video bytes")));
+    const controller = new AbortController();
+
+    const processing = processDownload("download-7", controller.signal);
+    await vi.waitFor(() => access(started), { timeout: 5000 });
+    controller.abort("cancel");
+    await processing;
+
+    await expect(readFile(path.join(testRoot, "Show.S01E07.mp4"), "utf8")).resolves.toBe("other\n");
+    await expect(readFile(elsewhere, "utf8")).resolves.toBe("video bytes");
+  });
+
   it("keeps credentials printed by a failing script out of the history", async () => {
     rememberLogSecret("remembered-pr59-secret");
     const scripts = path.join(testRoot, "scripts");
@@ -885,6 +929,9 @@ describe("download folder layouts", () => {
         status: "completed",
         filePath: `/mapped/downloads/Folge (3).${extension}`,
       });
+      expect(JSON.parse(data.fileArtifact).path).toBe(
+        path.join(testRoot, `Folge (3).${extension}`)
+      );
       expect(JSON.parse(data.subtitleArtifact).path).toBe(path.join(testRoot, "Folge (3).srt"));
     }
   );

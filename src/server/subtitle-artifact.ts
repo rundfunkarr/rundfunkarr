@@ -45,13 +45,39 @@ export async function publishSubtitleSidecar(
   return { path: destination, ...identity(stats) };
 }
 
+/**
+ * Record the identity of a file this download published, so a later deletion
+ * can tell it apart from another file that reuses the same name.
+ */
+export async function recordFileArtifact(filePath: string): Promise<string | null> {
+  try {
+    const stats = await fs.lstat(filePath, { bigint: true });
+    return stats.isFile() ? JSON.stringify({ path: filePath, ...identity(stats) }) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Remove only the unchanged file recorded when this download published its SRT. */
 export async function deleteSubtitleSidecar(record: string | null | undefined): Promise<void> {
-  if (!record) return;
+  await deleteOwnedFile(record);
+}
+
+/**
+ * Remove a recorded file only while its identity still matches the record.
+ * Returns the recorded path, or null when there is no valid record.
+ */
+export async function deleteOwnedFile(record: string | null | undefined): Promise<string | null> {
+  if (!record) return null;
+  let artifact: SubtitleArtifact;
   try {
-    const artifact = artifactSchema.parse(JSON.parse(record));
+    artifact = artifactSchema.parse(JSON.parse(record));
+  } catch {
+    return null;
+  }
+  try {
     const stats = await fs.lstat(artifact.path, { bigint: true });
-    if (!stats.isFile()) return;
+    if (!stats.isFile()) return artifact.path;
     const current = identity(stats);
     if (
       Object.entries(current).every(
@@ -60,6 +86,7 @@ export async function deleteSubtitleSidecar(record: string | null | undefined): 
     )
       await fs.unlink(artifact.path);
   } catch {
-    // Missing, replaced, or unrecognized artifacts are not ours to remove.
+    // Missing or replaced files are not ours to remove.
   }
+  return artifact.path;
 }

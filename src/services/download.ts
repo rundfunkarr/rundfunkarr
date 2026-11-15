@@ -260,26 +260,21 @@ export async function deleteHistoryItem(nzoId: string, delFiles: boolean): Promi
     if (!download) return false;
   }
 
-  // Delete the file if requested. In shared folders a moved file's name can be
-  // reused by a later download with the same title; that file is not ours.
-  const reusedPath =
-    delFiles && download.filePath
-      ? await prisma.download.findFirst({
-          where: { filePath: download.filePath, id: { not: download.id } },
-          select: { id: true },
-        })
-      : null;
-  if (delFiles && download.filePath && !reusedPath) {
+  // Delete the file if requested
+  if (delFiles && download.filePath) {
     try {
       const fs = await import("fs/promises");
-      await fs.unlink(download.filePath).catch(() => {});
-      const { deleteSubtitleSidecar } = await import("@/server/subtitle-artifact");
+      const { deleteOwnedFile, deleteSubtitleSidecar } = await import("@/server/subtitle-artifact");
+      // A shared folder can hold a later download under the same name, so only
+      // the recorded identity proves the video is ours. Older records without
+      // one fall back to the path, which is unique only in the job folder.
+      const recordedPath = await deleteOwnedFile(download.fileArtifact);
+      const directory = path.dirname(recordedPath ?? download.filePath);
+      const jobFolder = path.basename(directory) === download.id;
+      if (!recordedPath && jobFolder) await fs.unlink(download.filePath).catch(() => {});
       await deleteSubtitleSidecar(download.subtitleArtifact);
-      const directory = path.dirname(download.filePath);
-      // Legacy downloads use shared category folders, which must remain intact.
-      if (path.basename(directory) === download.id) {
-        await fs.rmdir(directory).catch(() => {});
-      }
+      // Shared category and download folders must remain intact.
+      if (jobFolder) await fs.rmdir(directory).catch(() => {});
     } catch {
       // File might not exist, ignore error
     }

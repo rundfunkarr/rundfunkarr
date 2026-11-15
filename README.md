@@ -372,8 +372,9 @@ Download-Pfad landen. Manuelle Downloads ohne Kategorie gehören zur Kategorie `
 
 Der eigene Ordner pro Download entspricht SABnzbd. In den beiden gemeinsamen Ablagen
 überschreibt RundfunkArr keine vorhandene Datei: Gibt es den Namen schon, bekommt der neue
-Download einen Zusatz wie `Tatort (2).mkv`. Sonarr und Radarr importieren in allen drei
-Ablagen die einzelne Datei. Post-Processing-Skripte erhalten in den gemeinsamen Ablagen den
+Download einen Zusatz wie `Tatort (2).mkv`. „Löschen mit Dateien“ entfernt nur die Datei,
+die dieser Download abgelegt hat, auch wenn inzwischen eine andere unter demselben Namen liegt.
+Sonarr und Radarr importieren in allen drei Ablagen die einzelne Datei. Post-Processing-Skripte erhalten in den gemeinsamen Ablagen den
 gemeinsamen Ordner als `$1`; ein Skript darf diesen Ordner dann nicht als Ganzes löschen.
 
 ### Diagnose und Protokoll schützen

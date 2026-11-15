@@ -4,7 +4,12 @@ import { getDownloadFolderLayout, getSetting, isMkvConversionEnabled } from "@/l
 import { downloadHlsStream } from "./ytdlp";
 import { runPostProcessScript } from "./post-process";
 import { notifyDownloadCompleted, notifyDownloadFailed } from "./notifications";
-import { deleteSubtitleSidecar, type SubtitleArtifact } from "./subtitle-artifact";
+import {
+  deleteOwnedFile,
+  deleteSubtitleSidecar,
+  recordFileArtifact,
+  type SubtitleArtifact,
+} from "./subtitle-artifact";
 import { getStreamHeight, isStreamingUrl, srfUrnFromUrl } from "@/lib/stream-url";
 import * as fs from "fs/promises";
 import { createWriteStream } from "fs";
@@ -161,6 +166,9 @@ async function runConfiguredScript(
     return "Post-Processing-Skript konnte nicht gelesen werden.";
   }
   if (!script) return null;
+  // Taken before the script runs, so an abort only withdraws this download's
+  // own file even if the script moved it and another download reused the name.
+  const published = await recordFileArtifact(filePath);
   await prisma.download.update({
     where: { id: download.id },
     data: { status: "postprocessing" },
@@ -182,7 +190,7 @@ async function runConfiguredScript(
     // Paused or cancelled while the script ran: as during conversion, the
     // download must not complete. Withdraw the published files so nothing is
     // left behind; resuming downloads them again.
-    await fs.unlink(filePath).catch(() => {});
+    await deleteOwnedFile(published);
     await deleteSubtitleSidecar(subtitle && JSON.stringify(subtitle));
     signal.throwIfAborted();
   }
@@ -321,6 +329,7 @@ async function processDownload(
       await markAsCompleted(download, {
         warning: joinWarnings(warning, scriptWarning),
         subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
+        fileArtifact: await recordFileArtifact(finalMkvPath),
         size: stats.size,
         filePath: storagePath,
       });
@@ -428,6 +437,7 @@ async function processDownload(
       await markAsCompleted(download, {
         warning: joinWarnings(warning, scriptWarning),
         subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
+        fileArtifact: await recordFileArtifact(finalMkvPath),
         size: stats.size,
         filePath: storagePath,
       });
@@ -461,6 +471,7 @@ async function processDownload(
       await markAsCompleted(download, {
         warning: joinWarnings(warning, scriptWarning),
         subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
+        fileArtifact: await recordFileArtifact(finalPath),
         size: stats.size,
         filePath: storagePath,
       });
@@ -520,6 +531,7 @@ async function markAsCompleted(
   result: {
     warning: string | null;
     subtitleArtifact: string | null;
+    fileArtifact: string | null;
     size: number;
     filePath: string;
   }

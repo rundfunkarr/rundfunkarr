@@ -3,18 +3,18 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
-const { findUnique, findFirst, deleteDownload, controlDownload } = vi.hoisted(() => ({
+const { findUnique, deleteDownload, controlDownload } = vi.hoisted(() => ({
   findUnique: vi.fn(),
-  findFirst: vi.fn(),
   deleteDownload: vi.fn(),
   controlDownload: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: { download: { findUnique, findFirst, delete: deleteDownload } },
+  prisma: { download: { findUnique, delete: deleteDownload } },
 }));
 vi.mock("@/server/download-queue", () => ({ controlDownload }));
 
+import { recordFileArtifact } from "@/server/subtitle-artifact";
 import { deleteHistoryItem } from "./download";
 
 describe("download history folder cleanup", () => {
@@ -29,7 +29,6 @@ describe("download history folder cleanup", () => {
     filePath = path.join(directory, "Video.mp4");
     await mkdir(directory, { recursive: true });
     findUnique.mockReset().mockResolvedValue({ id: downloadId, status: "completed", filePath });
-    findFirst.mockReset().mockResolvedValue(null);
     deleteDownload.mockReset().mockResolvedValue({});
     controlDownload.mockReset().mockResolvedValue(false);
   });
@@ -62,7 +61,44 @@ describe("download history folder cleanup", () => {
     await expect(readFile(otherFile, "utf8")).resolves.toBe("unrelated bytes");
   });
 
-  it("keeps a legacy shared category folder even when it becomes empty", async () => {
+  it("deletes its own video in a shared folder and keeps the folder", async () => {
+    const sharedFile = path.join(root, "Video.mp4");
+    await writeFile(sharedFile, "video bytes");
+    findUnique.mockResolvedValue({
+      id: downloadId,
+      status: "completed",
+      filePath: "/mapped/downloads/Video.mp4",
+      fileArtifact: await recordFileArtifact(sharedFile),
+    });
+
+    await deleteHistoryItem(downloadId, true);
+
+    await expect(access(sharedFile)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(root)).resolves.toBeUndefined();
+  });
+
+  it("keeps a later download that reused the name of a moved file", async () => {
+    // A completed here, then Sonarr or a script moved it away. B's history
+    // entry may already be gone, so only the file identity can protect B.
+    const sharedFile = path.join(root, "Video.mp4");
+    await writeFile(sharedFile, "download A");
+    const recordA = await recordFileArtifact(sharedFile);
+    await rm(sharedFile);
+    await writeFile(sharedFile, "download B");
+    findUnique.mockResolvedValue({
+      id: downloadId,
+      status: "completed",
+      filePath: sharedFile,
+      fileArtifact: recordA,
+    });
+
+    await expect(deleteHistoryItem(downloadId, true)).resolves.toBe(true);
+
+    await expect(readFile(sharedFile, "utf8")).resolves.toBe("download B");
+    expect(deleteDownload).toHaveBeenCalledWith({ where: { id: downloadId } });
+  });
+
+  it("keeps a shared file when an older record has no identity", async () => {
     const categoryDir = path.join(root, "legacy-category");
     const legacyFile = path.join(categoryDir, "Video.mp4");
     await mkdir(categoryDir);
@@ -71,24 +107,8 @@ describe("download history folder cleanup", () => {
 
     await deleteHistoryItem(downloadId, true);
 
-    await expect(access(legacyFile)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(legacyFile, "utf8")).resolves.toBe("video bytes");
     await expect(access(categoryDir)).resolves.toBeUndefined();
-  });
-
-  it("keeps a shared file whose name a later download reused", async () => {
-    const sharedFile = path.join(root, "Video.mp4");
-    await writeFile(sharedFile, "newer download");
-    findUnique.mockResolvedValue({ id: downloadId, status: "completed", filePath: sharedFile });
-    findFirst.mockResolvedValue({ id: "newer-job" });
-
-    await expect(deleteHistoryItem(downloadId, true)).resolves.toBe(true);
-
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { filePath: sharedFile, id: { not: downloadId } },
-      select: { id: true },
-    });
-    await expect(readFile(sharedFile, "utf8")).resolves.toBe("newer download");
-    expect(deleteDownload).toHaveBeenCalledWith({ where: { id: downloadId } });
   });
 
   it("keeps the file and directory when only the history entry is deleted", async () => {
