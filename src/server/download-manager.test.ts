@@ -64,6 +64,7 @@ import { rememberLogSecret } from "@/lib/logger";
 import { clearSettingsCache } from "@/lib/settings";
 import { getHistory } from "@/services/download";
 import { processDownload } from "./download-manager";
+import { deleteOwnedFile } from "./subtitle-artifact";
 
 let testRoot: string;
 
@@ -572,6 +573,45 @@ sleep 30
 
     await expect(readFile(path.join(testRoot, "Show.S01E07.mp4"), "utf8")).resolves.toBe("other\n");
     await expect(readFile(elsewhere, "utf8")).resolves.toBe("video bytes");
+  });
+
+  it.each([
+    ["moves the video and another download takes the name", false],
+    ["edits the video in place", true],
+  ])("records only its own video when a script %s", async (_case, inPlace) => {
+    const scripts = path.join(testRoot, "scripts");
+    const elsewhere = path.join(testRoot, "imported.mp4");
+    await mkdir(scripts);
+    const body = inPlace
+      ? `echo tagged >> "$RUNDFUNKARR_FILE"`
+      : `mv "$RUNDFUNKARR_FILE" "${elsewhere}"\necho other > "$RUNDFUNKARR_FILE"`;
+    await writeFile(path.join(scripts, "post.sh"), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    vi.stubEnv("POST_PROCESS_SCRIPTS_DIR", scripts);
+    configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
+      if (where.key === "download.path") return Promise.resolve({ value: testRoot });
+      if (where.key === "download.convertToMkv") return Promise.resolve({ value: "false" });
+      if (where.key === "download.folderLayout") return Promise.resolve({ value: "flat" });
+      if (where.key === "download.postProcessScript") return Promise.resolve({ value: "post.sh" });
+      return Promise.resolve(null);
+    });
+    downloadFindUnique.mockResolvedValue({
+      id: "download-8",
+      title: "Show.S01E08",
+      category: "sonarr",
+      status: "queued",
+      url: "https://example.com/video.mp4",
+    });
+    downloadUpdate.mockResolvedValue({});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("video bytes")));
+
+    await processDownload("download-8");
+
+    const data = downloadUpdate.mock.lastCall![0].data;
+    expect(data.status).toBe("completed");
+    const published = path.join(testRoot, "Show.S01E08.mp4");
+    await deleteOwnedFile(data.fileArtifact);
+    if (inPlace) await expect(access(published)).rejects.toMatchObject({ code: "ENOENT" });
+    else await expect(readFile(published, "utf8")).resolves.toBe("other\n");
   });
 
   it("keeps credentials printed by a failing script out of the history", async () => {

@@ -8,6 +8,7 @@ import {
   deleteOwnedFile,
   deleteSubtitleSidecar,
   recordFileArtifact,
+  refreshFileArtifact,
   type SubtitleArtifact,
 } from "./subtitle-artifact";
 import { getStreamHeight, isStreamingUrl, srfUrnFromUrl } from "@/lib/stream-url";
@@ -150,6 +151,10 @@ function storagePathFor(finalPath: string, downloadBasePath: string): string {
  * Run the configured post-processing script before the download is reported
  * as completed, so it sees the file before Sonarr/Radarr import it (as with
  * SABnzbd). Script problems only add a warning; the file stays importable.
+ *
+ * Also returns the identity of the published video. It is taken before the
+ * script runs: a script may move the file away while another download takes
+ * over the name, and that file must never count as this download's.
  */
 async function runConfiguredScript(
   download: { id: string; title: string; category: string; url: string },
@@ -158,17 +163,18 @@ async function runConfiguredScript(
   storagePath: string,
   size: number,
   signal: AbortSignal
-): Promise<string | null> {
+): Promise<{ warning: string | null; fileArtifact: string | null }> {
+  const published = await recordFileArtifact(filePath);
   let script: string | undefined;
   try {
     script = (await getSetting("download.postProcessScript"))?.trim();
   } catch {
-    return "Post-Processing-Skript konnte nicht gelesen werden.";
+    return {
+      warning: "Post-Processing-Skript konnte nicht gelesen werden.",
+      fileArtifact: published,
+    };
   }
-  if (!script) return null;
-  // Taken before the script runs, so an abort only withdraws this download's
-  // own file even if the script moved it and another download reused the name.
-  const published = await recordFileArtifact(filePath);
+  if (!script) return { warning: null, fileArtifact: published };
   await prisma.download.update({
     where: { id: download.id },
     data: { status: "postprocessing" },
@@ -194,7 +200,7 @@ async function runConfiguredScript(
     await deleteSubtitleSidecar(subtitle && JSON.stringify(subtitle));
     signal.throwIfAborted();
   }
-  return warning;
+  return { warning, fileArtifact: await refreshFileArtifact(published) };
 }
 
 function joinWarnings(...warnings: (string | null)[]): string | null {
@@ -314,7 +320,7 @@ async function processDownload(
 
       // Calculate storage path (may be mapped differently)
       const storagePath = storagePathFor(finalMkvPath, downloadBasePath);
-      const scriptWarning = await runConfiguredScript(
+      const { warning: scriptWarning, fileArtifact } = await runConfiguredScript(
         download,
         finalMkvPath,
         artifact,
@@ -329,7 +335,7 @@ async function processDownload(
       await markAsCompleted(download, {
         warning: joinWarnings(warning, scriptWarning),
         subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
-        fileArtifact: await recordFileArtifact(finalMkvPath),
+        fileArtifact,
         size: stats.size,
         filePath: storagePath,
       });
@@ -422,7 +428,7 @@ async function processDownload(
 
       // Calculate storage path (may be mapped differently)
       const storagePath = storagePathFor(finalMkvPath, downloadBasePath);
-      const scriptWarning = await runConfiguredScript(
+      const { warning: scriptWarning, fileArtifact } = await runConfiguredScript(
         download,
         finalMkvPath,
         artifact,
@@ -437,7 +443,7 @@ async function processDownload(
       await markAsCompleted(download, {
         warning: joinWarnings(warning, scriptWarning),
         subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
-        fileArtifact: await recordFileArtifact(finalMkvPath),
+        fileArtifact,
         size: stats.size,
         filePath: storagePath,
       });
@@ -459,7 +465,7 @@ async function processDownload(
       const stats = await fs.stat(/*turbopackIgnore: true*/ finalPath);
 
       const storagePath = storagePathFor(finalPath, downloadBasePath);
-      const scriptWarning = await runConfiguredScript(
+      const { warning: scriptWarning, fileArtifact } = await runConfiguredScript(
         download,
         finalPath,
         artifact,
@@ -471,7 +477,7 @@ async function processDownload(
       await markAsCompleted(download, {
         warning: joinWarnings(warning, scriptWarning),
         subtitleArtifact: artifact ? JSON.stringify(artifact) : null,
-        fileArtifact: await recordFileArtifact(finalPath),
+        fileArtifact,
         size: stats.size,
         filePath: storagePath,
       });

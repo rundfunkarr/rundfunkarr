@@ -58,6 +58,26 @@ export async function recordFileArtifact(filePath: string): Promise<string | nul
   }
 }
 
+/**
+ * Update a record after other code (a post-processing script) had the file.
+ * Only the same file, edited in place, is taken over. A different file now
+ * at that path may belong to another download and keeps the old record, so
+ * it never passes a later ownership check.
+ */
+export async function refreshFileArtifact(record: string | null): Promise<string | null> {
+  if (!record) return null;
+  try {
+    const artifact = artifactSchema.parse(JSON.parse(record));
+    const stats = await fs.lstat(artifact.path, { bigint: true });
+    const current = identity(stats);
+    if (!stats.isFile() || current.device !== artifact.device || current.inode !== artifact.inode)
+      return record;
+    return JSON.stringify({ path: artifact.path, ...current });
+  } catch {
+    return record;
+  }
+}
+
 /** Remove only the unchanged file recorded when this download published its SRT. */
 export async function deleteSubtitleSidecar(record: string | null | undefined): Promise<void> {
   await deleteOwnedFile(record);
