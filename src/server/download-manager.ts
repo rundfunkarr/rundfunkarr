@@ -164,25 +164,29 @@ async function runConfiguredScript(
   size: number,
   signal: AbortSignal
 ): Promise<{ warning: string | null; fileArtifact: string | null }> {
-  const published = await recordFileArtifact(filePath);
-  let script: string | undefined;
+  // Open the video first and take its identity from that handle, so both
+  // belong to the same file even if the path is replaced in between. Keeping
+  // it open while the script runs also stops its inode from being reused by
+  // another file if the script deletes it (see refreshFileArtifact).
+  const held = await fs
+    .open(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    .catch(() => null);
   try {
-    script = (await getSetting("download.postProcessScript"))?.trim();
-  } catch {
-    return {
-      warning: "Post-Processing-Skript konnte nicht gelesen werden.",
-      fileArtifact: published,
-    };
-  }
-  if (!script) return { warning: null, fileArtifact: published };
-  await prisma.download.update({
-    where: { id: download.id },
-    data: { status: "postprocessing" },
-  });
-  // Keep the video open while the script runs, so its inode cannot be reused
-  // by another file if the script deletes it (see refreshFileArtifact).
-  const held = await fs.open(filePath, "r").catch(() => null);
-  try {
+    const published = held ? await recordFileArtifact(filePath, held) : null;
+    let script: string | undefined;
+    try {
+      script = (await getSetting("download.postProcessScript"))?.trim();
+    } catch {
+      return {
+        warning: "Post-Processing-Skript konnte nicht gelesen werden.",
+        fileArtifact: published,
+      };
+    }
+    if (!script) return { warning: null, fileArtifact: published };
+    await prisma.download.update({
+      where: { id: download.id },
+      data: { status: "postprocessing" },
+    });
     const warning = await runPostProcessScript(
       script,
       {

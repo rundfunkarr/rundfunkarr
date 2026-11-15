@@ -50,9 +50,15 @@ export async function publishSubtitleSidecar(
  * Record the identity of a file this download published, so a later deletion
  * can tell it apart from another file that reuses the same name.
  */
-export async function recordFileArtifact(filePath: string): Promise<string | null> {
+export async function recordFileArtifact(
+  filePath: string,
+  held?: FileHandle | null
+): Promise<string | null> {
   try {
-    const stats = await fs.lstat(filePath, { bigint: true });
+    // From an open handle, the identity belongs to exactly the file it holds.
+    const stats = held
+      ? await held.stat({ bigint: true })
+      : await fs.lstat(filePath, { bigint: true });
     return stats.isFile() ? JSON.stringify({ path: filePath, ...identity(stats) }) : null;
   } catch {
     return null;
@@ -75,6 +81,9 @@ export async function refreshFileArtifact(
   try {
     const artifact = artifactSchema.parse(JSON.parse(record));
     const original = await held.stat({ bigint: true });
+    // The handle must hold the recorded file, not one that replaced it.
+    if (String(original.dev) !== artifact.device || String(original.ino) !== artifact.inode)
+      return record;
     const stats = await fs.lstat(artifact.path, { bigint: true });
     if (!stats.isFile() || stats.dev !== original.dev || stats.ino !== original.ino) return record;
     return JSON.stringify({ path: artifact.path, ...identity(stats) });

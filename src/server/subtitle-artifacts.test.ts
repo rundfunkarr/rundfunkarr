@@ -235,6 +235,37 @@ describe("video identity across a post-processing script", () => {
     }
   });
 
+  it("keeps the record when the path was replaced before the handle was opened", async () => {
+    const record = await recordFileArtifact(video);
+    const replacement = path.join(directory, "replacement.mkv");
+    await writeFile(replacement, "another download");
+    await rename(replacement, video);
+    const held = await open(video, "r");
+    try {
+      await expect(refreshFileArtifact(record, held)).resolves.toBe(record);
+      await deleteOwnedFile(record);
+      await expect(readFile(video, "utf8")).resolves.toBe("another download");
+    } finally {
+      await held.close();
+    }
+  });
+
+  it("records the identity of the file a handle holds", async () => {
+    const held = await open(video, "r");
+    try {
+      const record = await recordFileArtifact(video, held);
+      // The path changes hands after opening; the record still names the held file.
+      const replacement = path.join(directory, "replacement.mkv");
+      await writeFile(replacement, "another download");
+      await rename(replacement, video);
+      await expect(refreshFileArtifact(record, held)).resolves.toBe(record);
+      await deleteOwnedFile(record);
+      await expect(readFile(video, "utf8")).resolves.toBe("another download");
+    } finally {
+      await held.close();
+    }
+  });
+
   it("keeps the record when the file at the path is not the held one", async () => {
     // Models a deleted original whose inode went to another download's file:
     // the path still shows the recorded inode, but the held handle does not.
