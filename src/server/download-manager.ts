@@ -183,9 +183,15 @@ async function runConfiguredScript(
       };
     }
     if (!script) return { warning: null, fileArtifact: published };
+    // Persist ownership before the script runs: after a restart, recovery
+    // withdraws these files instead of leaving them beside the new attempt.
     await prisma.download.update({
       where: { id: download.id },
-      data: { status: "postprocessing" },
+      data: {
+        status: "postprocessing",
+        fileArtifact: published,
+        subtitleArtifact: subtitle ? JSON.stringify(subtitle) : null,
+      },
     });
     const warning = await runPostProcessScript(
       script,

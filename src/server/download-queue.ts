@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getSetting, clearSettingsCache } from "@/lib/settings";
 import { logger } from "@/lib/logger";
+import { deleteOwnedFile, deleteSubtitleSidecar } from "./subtitle-artifact";
 
 interface Worker {
   controller: AbortController;
@@ -101,6 +102,17 @@ async function drain(): Promise<void> {
 
 export async function recoverDownloads(): Promise<void> {
   if (state.recovered) return;
+  // A restart during post-processing leaves the published files behind. The
+  // job starts over, so withdraw them (only while they are unchanged); in a
+  // shared folder the new attempt would otherwise add a numbered copy.
+  const interrupted = await prisma.download.findMany({
+    where: { status: "postprocessing" },
+    select: { fileArtifact: true, subtitleArtifact: true },
+  });
+  for (const { fileArtifact, subtitleArtifact } of interrupted) {
+    await deleteOwnedFile(fileArtifact);
+    await deleteSubtitleSidecar(subtitleArtifact);
+  }
   await prisma.download.updateMany({
     where: { status: { in: ["downloading", "converting", "postprocessing"] } },
     data: {
@@ -109,6 +121,8 @@ export async function recoverDownloads(): Promise<void> {
       speed: 0,
       downloadedBytes: 0,
       nextRetryAt: null,
+      fileArtifact: null,
+      subtitleArtifact: null,
       error: "Nach einem Neustart erneut eingeplant.",
     },
   });

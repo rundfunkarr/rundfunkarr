@@ -475,7 +475,7 @@ describe("processDownload", () => {
       ).resolves.toBe("video bytes");
       expect(downloadUpdate).toHaveBeenCalledWith({
         where: { id: "download-5" },
-        data: { status: "postprocessing" },
+        data: expect.objectContaining({ status: "postprocessing" }),
       });
       expect(downloadUpdate).toHaveBeenLastCalledWith({
         where: { id: "download-5" },
@@ -564,6 +564,14 @@ describe("processDownload", () => {
     controller.abort("cancel");
     await processing;
 
+    // Ownership is stored before the script, so recovery after a restart finds it.
+    expect(downloadUpdate).toHaveBeenCalledWith({
+      where: { id: "download-9" },
+      data: expect.objectContaining({
+        status: "postprocessing",
+        fileArtifact: expect.stringContaining("Show.S01E09.mp4"),
+      }),
+    });
     await expect(access(path.join(testRoot, "Show.S01E09.mp4"))).rejects.toMatchObject({
       code: "ENOENT",
     });
