@@ -1,5 +1,6 @@
 import type { BigIntStats } from "node:fs";
 import * as fs from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { z } from "zod";
 
 const identifier = z.string().regex(/^\d+$/);
@@ -60,19 +61,23 @@ export async function recordFileArtifact(filePath: string): Promise<string | nul
 
 /**
  * Update a record after other code (a post-processing script) had the file.
- * Only the same file, edited in place, is taken over. A different file now
- * at that path may belong to another download and keeps the old record, so
- * it never passes a later ownership check.
+ * `held` is a handle opened on the file before that code ran. While it stays
+ * open, the file system cannot hand the file's inode to another file, so only
+ * the same file, edited in place, matches it. A different file now at that
+ * path may belong to another download and keeps the old record, so it never
+ * passes a later ownership check.
  */
-export async function refreshFileArtifact(record: string | null): Promise<string | null> {
-  if (!record) return null;
+export async function refreshFileArtifact(
+  record: string | null,
+  held: FileHandle | null
+): Promise<string | null> {
+  if (!record || !held) return record;
   try {
     const artifact = artifactSchema.parse(JSON.parse(record));
+    const original = await held.stat({ bigint: true });
     const stats = await fs.lstat(artifact.path, { bigint: true });
-    const current = identity(stats);
-    if (!stats.isFile() || current.device !== artifact.device || current.inode !== artifact.inode)
-      return record;
-    return JSON.stringify({ path: artifact.path, ...current });
+    if (!stats.isFile() || stats.dev !== original.dev || stats.ino !== original.ino) return record;
+    return JSON.stringify({ path: artifact.path, ...identity(stats) });
   } catch {
     return record;
   }

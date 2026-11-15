@@ -153,8 +153,8 @@ function storagePathFor(finalPath: string, downloadBasePath: string): string {
  * SABnzbd). Script problems only add a warning; the file stays importable.
  *
  * Also returns the identity of the published video. It is taken before the
- * script runs: a script may move the file away while another download takes
- * over the name, and that file must never count as this download's.
+ * script runs: a script may move or delete the file while another download
+ * takes over the name, and that file must never count as this download's.
  */
 async function runConfiguredScript(
   download: { id: string; title: string; category: string; url: string },
@@ -179,28 +179,36 @@ async function runConfiguredScript(
     where: { id: download.id },
     data: { status: "postprocessing" },
   });
-  const warning = await runPostProcessScript(
-    script,
-    {
-      id: download.id,
-      title: download.title,
-      category: download.category,
-      url: download.url,
-      filePath,
-      storagePath,
-      size,
-    },
-    signal
-  );
-  if (signal.aborted) {
-    // Paused or cancelled while the script ran: as during conversion, the
-    // download must not complete. Withdraw the published files so nothing is
-    // left behind; resuming downloads them again.
-    await deleteOwnedFile(await refreshFileArtifact(published));
-    await deleteSubtitleSidecar(subtitle && JSON.stringify(subtitle));
-    signal.throwIfAborted();
+  // Keep the video open while the script runs, so its inode cannot be reused
+  // by another file if the script deletes it (see refreshFileArtifact).
+  const held = await fs.open(filePath, "r").catch(() => null);
+  try {
+    const warning = await runPostProcessScript(
+      script,
+      {
+        id: download.id,
+        title: download.title,
+        category: download.category,
+        url: download.url,
+        filePath,
+        storagePath,
+        size,
+      },
+      signal
+    );
+    const fileArtifact = await refreshFileArtifact(published, held);
+    if (signal.aborted) {
+      // Paused or cancelled while the script ran: as during conversion, the
+      // download must not complete. Withdraw the published files so nothing is
+      // left behind; resuming downloads them again.
+      await deleteOwnedFile(fileArtifact);
+      await deleteSubtitleSidecar(subtitle && JSON.stringify(subtitle));
+      signal.throwIfAborted();
+    }
+    return { warning, fileArtifact };
+  } finally {
+    await held?.close().catch(() => {});
   }
-  return { warning, fileArtifact: await refreshFileArtifact(published) };
 }
 
 function joinWarnings(...warnings: (string | null)[]): string | null {

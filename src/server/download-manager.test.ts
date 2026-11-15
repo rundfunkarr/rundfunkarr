@@ -614,15 +614,20 @@ sleep 30
   });
 
   it.each([
-    ["moves the video and another download takes the name", false],
-    ["edits the video in place", true],
-  ])("records only its own video when a script %s", async (_case, inPlace) => {
+    ["moves the video and another download takes the name", "move"],
+    ["deletes the video and another download takes the name", "delete"],
+    ["edits the video in place", "edit"],
+  ])("records only its own video when a script %s", async (_case, action) => {
+    const inPlace = action === "edit";
     const scripts = path.join(testRoot, "scripts");
     const elsewhere = path.join(testRoot, "imported.mp4");
     await mkdir(scripts);
-    const body = inPlace
-      ? `echo tagged >> "$RUNDFUNKARR_FILE"`
-      : `mv "$RUNDFUNKARR_FILE" "${elsewhere}"\necho other > "$RUNDFUNKARR_FILE"`;
+    // After a delete, Linux may hand the freed inode straight to the new file.
+    const body = {
+      edit: `echo tagged >> "$RUNDFUNKARR_FILE"`,
+      move: `mv "$RUNDFUNKARR_FILE" "${elsewhere}"\necho other > "$RUNDFUNKARR_FILE"`,
+      delete: `rm "$RUNDFUNKARR_FILE"\necho other > "$RUNDFUNKARR_FILE"`,
+    }[action];
     await writeFile(path.join(scripts, "post.sh"), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
     vi.stubEnv("POST_PROCESS_SCRIPTS_DIR", scripts);
     configFindUnique.mockImplementation(({ where }: { where: { key: string } }) => {
