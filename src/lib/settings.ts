@@ -87,8 +87,9 @@ export async function getDownloadFolderLayout(): Promise<DownloadFolderLayout> {
 }
 
 export async function isSeriesUmlautStrippingEnabled(): Promise<boolean> {
-  // On unless explicitly disabled: Sonarr folds "ö" to "o" and misses "oe" spellings.
-  return (await getSetting("matching.normalizeSeriesNamesForSonarr")) !== "false";
+  // On until a value is saved: Sonarr folds "ö" to "o" and misses "oe" spellings.
+  const value = await getSetting("matching.normalizeSeriesNamesForSonarr");
+  return value === null || value === "true";
 }
 
 export function clearSettingsCache(): void {
