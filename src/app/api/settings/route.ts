@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   "matching.strategy": "fuzzy",
   "matching.threshold": "0.7",
   "matching.minDuration": "300",
-  "matching.normalizeSeriesNamesForSonarr": "false",
+  "matching.normalizeSeriesNamesForSonarr": "true",
 
   // Display: preview images from programme pages and TVDB series posters
   "search.thumbnails": "true",
