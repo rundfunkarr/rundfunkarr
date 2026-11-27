@@ -114,8 +114,8 @@ describe("isSeriesUmlautStrippingEnabled", () => {
   it.each([
     ["true", true],
     ["false", false],
-    [null, false],
-  ])("is %s -> %s (opt-in)", async (value, expected) => {
+    [null, true],
+  ])("is %s -> %s (on by default)", async (value, expected) => {
     findUnique.mockResolvedValue(value === null ? null : { value });
 
     expect(await isSeriesUmlautStrippingEnabled()).toBe(expected);
